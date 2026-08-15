@@ -49,3 +49,10 @@ export function formatTranslationLine(
 export function renderLogFile(lines: LogLine[]): string {
   return lines.map((line) => line.text).join("\n") + "\n";
 }
+
+/** 화면에 뿌리는 짧은 시각 `HH:mm:ss`. 로그 파일이 아니라 실시간 목록용이다. */
+export function formatClock(epochMs: number): string {
+  const date = new Date(epochMs);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}

@@ -26,6 +26,7 @@ export type UiStrings = {
     lastInput: string;
     lastOutput: string;
     failed: string;
+    newMessages: string;
   };
   meeting: { closed: string };
   appearance: {
@@ -55,6 +56,7 @@ const ko: UiStrings = {
     lastInput: "마지막 입력",
     lastOutput: "마지막 번역",
     failed: "번역 실패",
+    newMessages: "새 문장",
   },
   meeting: { closed: "종료된 회의입니다" },
   appearance: {
@@ -92,6 +94,7 @@ const vi: UiStrings = {
     lastInput: "Lần nhập cuối",
     lastOutput: "Bản dịch cuối",
     failed: "Dịch thất bại",
+    newMessages: "Câu mới",
   },
   meeting: { closed: "Cuộc họp đã kết thúc" },
   appearance: {
@@ -129,6 +132,7 @@ const th: UiStrings = {
     lastInput: "ป้อนข้อมูลล่าสุด",
     lastOutput: "คำแปลล่าสุด",
     failed: "แปลไม่สำเร็จ",
+    newMessages: "ข้อความใหม่",
   },
   meeting: { closed: "การประชุมสิ้นสุดแล้ว" },
   appearance: {
@@ -166,6 +170,7 @@ const si: UiStrings = {
     lastInput: "අවසන් ඇතුළත් කිරීම",
     lastOutput: "අවසන් පරිවර්තනය",
     failed: "පරිවර්තනය අසාර්ථකයි",
+    newMessages: "නව වාක්‍ය",
   },
   meeting: { closed: "රැස්වීම අවසන් වී ඇත" },
   appearance: {

@@ -43,7 +43,7 @@ function getThemeSnapshot(): Theme | null {
 }
 
 function getFontSizeSnapshot(): FontSize {
-  const value = document.documentElement.getAttribute("data-font");
+  const value = document.documentElement.getAttribute("data-size");
   return isFontSize(value) ? value : DEFAULT_FONT_SIZE;
 }
 
@@ -79,7 +79,7 @@ export function useAppearance() {
   }, []);
 
   const setFontSize = useCallback((next: FontSize) => {
-    document.documentElement.setAttribute("data-font", next);
+    document.documentElement.setAttribute("data-size", next);
     try {
       localStorage.setItem(FONT_SIZE_KEY, next);
     } catch {

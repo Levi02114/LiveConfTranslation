@@ -37,8 +37,8 @@ export const APPEARANCE_INIT_SCRIPT = `
     var theme = localStorage.getItem(${JSON.stringify(THEME_KEY)});
     if (theme === "light" || theme === "dark") root.setAttribute("data-theme", theme);
     var font = localStorage.getItem(${JSON.stringify(FONT_SIZE_KEY)});
-    if (font) root.setAttribute("data-font", font);
-    else root.setAttribute("data-font", ${JSON.stringify(DEFAULT_FONT_SIZE)});
+    if (font) root.setAttribute("data-size", font);
+    else root.setAttribute("data-size", ${JSON.stringify(DEFAULT_FONT_SIZE)});
   } catch (e) {
     /* 시크릿 모드 등에서 localStorage 가 막혀 있어도 화면은 떠야 한다. */
   }
