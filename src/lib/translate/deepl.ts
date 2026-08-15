@@ -1,6 +1,7 @@
 import "server-only";
 
-import { deeplApiKey, deeplApiUrl } from "@/lib/env";
+import { deeplApiUrl } from "@/lib/env";
+import { engineKey } from "@/lib/secrets";
 import type { LanguageCode } from "@/lib/languages";
 
 import { TranslationError, type TranslateInput, type TranslationEngine } from "./types";
@@ -30,11 +31,11 @@ export const deeplEngine: TranslationEngine = {
   },
 
   isConfigured() {
-    return Boolean(deeplApiKey());
+    return Boolean(engineKey("deepl"));
   },
 
   async translate({ text, from, to, signal }: TranslateInput) {
-    const key = deeplApiKey();
+    const key = engineKey("deepl");
     if (!key) {
       throw new TranslationError("DEEPL_API_KEY 가 설정되지 않았습니다", "deepl");
     }
@@ -50,7 +51,7 @@ export const deeplEngine: TranslationEngine = {
 
     let response: Response;
     try {
-      response = await fetch(`${deeplApiUrl()}/v2/translate`, {
+      response = await fetch(`${deeplApiUrl(key)}/v2/translate`, {
         method: "POST",
         headers: {
           authorization: `DeepL-Auth-Key ${key}`,

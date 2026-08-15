@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AppearanceControls } from "@/components/appearance-controls";
+import { EngineKeysDialog, type EngineKeyStatus } from "./engine-keys-dialog";
 import { getStrings } from "@/lib/i18n";
 import type { Language, LanguageCode } from "@/lib/languages";
 import { formatTimestamp } from "@/lib/log-format";
@@ -18,19 +19,23 @@ export function MeetingList({
   meetings,
   languages,
   defaultLangs,
-  engines,
+  engines: initialEngines,
+  engineKeys,
   defaultEngine,
 }: {
   meetings: Row[];
   languages: Language[];
   defaultLangs: LanguageCode[];
   engines: { id: EngineId; label: string; configured: boolean }[];
+  engineKeys: EngineKeyStatus[];
   defaultEngine: EngineId;
 }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [langs, setLangs] = useState<LanguageCode[]>(defaultLangs);
   const [engine, setEngine] = useState<EngineId>(defaultEngine);
+  // 키를 등록하면 "(키 없음)" 표시가 즉시 사라져야 한다.
+  const [engines, setEngines] = useState(initialEngines);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -135,7 +140,7 @@ export function MeetingList({
           </div>
         </div>
 
-        <div className="flex items-center gap-3.5">
+        <div className="flex flex-wrap items-center gap-3.5">
           <div className="font-mono text-[11px] text-muted">번역 엔진</div>
           <select
             value={engine}
@@ -149,6 +154,17 @@ export function MeetingList({
               </option>
             ))}
           </select>
+          <EngineKeysDialog
+            engines={engines.map((item) => ({ id: item.id, label: item.label }))}
+            initial={engineKeys}
+            onChange={(status) =>
+              setEngines((prev) =>
+                prev.map((item) =>
+                  item.id === status.engine ? { ...item, configured: status.configured } : item,
+                ),
+              )
+            }
+          />
         </div>
 
         {error ? <div className="font-mono text-[12px]">{error}</div> : null}

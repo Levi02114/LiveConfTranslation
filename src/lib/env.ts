@@ -53,13 +53,14 @@ export function deeplApiKey(): string | undefined {
  *
  * 무료 플랜 키는 `:fx` 로 끝나고 `api-free.deepl.com` 을 써야 한다.
  * 명시적으로 지정하고 싶으면 `DEEPL_API_URL` 로 덮어쓴다.
+ *
+ * 키를 인자로 받는 이유: 관리자가 화면에서 등록한 키는 DB 에 있어 환경변수에
+ * 없다. 엔드포인트는 **실제로 쓰는 키**를 보고 정해야 한다.
  */
-export function deeplApiUrl(): string {
+export function deeplApiUrl(key: string | undefined): string {
   const explicit = process.env.DEEPL_API_URL;
   if (explicit) return explicit.replace(/\/$/, "");
-  return deeplApiKey()?.endsWith(":fx")
-    ? "https://api-free.deepl.com"
-    : "https://api.deepl.com";
+  return key?.endsWith(":fx") ? "https://api-free.deepl.com" : "https://api.deepl.com";
 }
 
 export function openaiApiKey(): string | undefined {

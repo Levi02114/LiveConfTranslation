@@ -559,3 +559,75 @@ export function getRecentCombined(meetingId: string, limit = 100): CombinedEntry
     translations: byMessage.get(message.id) ?? [],
   }));
 }
+
+// ---------------------------------------------------------- 엔진 API 키
+
+/**
+ * 저장된 번역 엔진 API 키.
+ *
+ * `secret` 은 암호문이다. 이 계층은 복호화하지 않는다 — 암호화 규칙은
+ * `lib/crypto.ts` 에, 어떤 키를 쓸지 고르는 규칙은 `lib/secrets.ts` 에 둔다.
+ */
+export type EngineSecret = {
+  engine: EngineId;
+  secret: Uint8Array;
+  hint: string;
+  updatedAt: number;
+};
+
+/** 화면에 내려도 되는 부분만. 암호문이 라우트 밖으로 새지 않게 분리해 둔다. */
+export type EngineSecretInfo = {
+  engine: EngineId;
+  hint: string;
+  updatedAt: number;
+};
+
+export function upsertEngineSecret(input: {
+  engine: EngineId;
+  secret: Uint8Array;
+  hint: string;
+}): void {
+  getDb()
+    .prepare(
+      `INSERT INTO engine_secrets (engine, secret, hint, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (engine) DO UPDATE SET
+         secret = excluded.secret,
+         hint = excluded.hint,
+         updated_at = excluded.updated_at`,
+    )
+    .run(input.engine, input.secret, input.hint, Date.now());
+}
+
+export function getEngineSecret(engine: EngineId): EngineSecret | null {
+  const row = getDb()
+    .prepare(`SELECT engine, secret, hint, updated_at FROM engine_secrets WHERE engine = ?`)
+    .get(engine) as unknown as
+    | { engine: string; secret: Uint8Array; hint: string; updated_at: number }
+    | undefined;
+
+  if (!row) return null;
+
+  return {
+    engine: row.engine as EngineId,
+    secret: row.secret,
+    hint: row.hint,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function listEngineSecrets(): EngineSecretInfo[] {
+  const rows = getDb()
+    .prepare(`SELECT engine, hint, updated_at FROM engine_secrets ORDER BY engine`)
+    .all() as unknown as { engine: string; hint: string; updated_at: number }[];
+
+  return rows.map((row) => ({
+    engine: row.engine as EngineId,
+    hint: row.hint,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export function deleteEngineSecret(engine: EngineId): void {
+  getDb().prepare(`DELETE FROM engine_secrets WHERE engine = ?`).run(engine);
+}

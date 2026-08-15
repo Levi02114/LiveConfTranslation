@@ -1,6 +1,6 @@
 import "server-only";
 
-import { googleApiKey } from "@/lib/env";
+import { engineKey } from "@/lib/secrets";
 
 import { TranslationError, type TranslateInput, type TranslationEngine } from "./types";
 
@@ -41,11 +41,11 @@ export const googleEngine: TranslationEngine = {
   },
 
   isConfigured() {
-    return Boolean(googleApiKey());
+    return Boolean(engineKey("google"));
   },
 
   async translate({ text, from, to, signal }: TranslateInput) {
-    const key = googleApiKey();
+    const key = engineKey("google");
     if (!key) {
       throw new TranslationError(
         "GOOGLE_TRANSLATE_API_KEY 가 설정되지 않았습니다",

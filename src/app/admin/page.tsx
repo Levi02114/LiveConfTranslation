@@ -4,6 +4,7 @@ import { isAdmin } from "@/lib/auth";
 import { defaultEngine } from "@/lib/env";
 import { DEFAULT_LANGUAGES, LANGUAGES } from "@/lib/languages";
 import { getMeetingLangs, listMeetings } from "@/lib/repo";
+import { engineKeyStatus } from "@/lib/secrets";
 import { isEngineId, listEngines } from "@/lib/translate";
 
 import { MeetingList } from "./meeting-list";
@@ -30,6 +31,7 @@ export default async function AdminPage() {
         label: engine.label,
         configured: engine.isConfigured(),
       }))}
+      engineKeys={listEngines().map((engine) => engineKeyStatus(engine.id))}
       defaultEngine={isEngineId(configured) ? configured : "google"}
     />
   );

@@ -1,6 +1,7 @@
 import "server-only";
 
-import { openaiBaseUrl, openaiApiKey, openaiModel } from "@/lib/env";
+import { openaiBaseUrl, openaiModel } from "@/lib/env";
+import { engineKey } from "@/lib/secrets";
 import { getLanguage, type LanguageCode } from "@/lib/languages";
 
 import { TranslationError, type TranslateInput, type TranslationEngine } from "./types";
@@ -56,11 +57,11 @@ export const openaiEngine: TranslationEngine = {
   },
 
   isConfigured() {
-    return Boolean(openaiApiKey());
+    return Boolean(engineKey("openai"));
   },
 
   async translate({ text, from, to, context, signal }: TranslateInput) {
-    const key = openaiApiKey();
+    const key = engineKey("openai");
     if (!key) {
       throw new TranslationError("OPENAI_API_KEY 가 설정되지 않았습니다", "openai");
     }

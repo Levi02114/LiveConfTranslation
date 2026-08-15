@@ -75,6 +75,15 @@ CREATE TABLE IF NOT EXISTS translations (
   UNIQUE (message_id, lang)
 );
 
+CREATE TABLE IF NOT EXISTS engine_secrets (
+  engine      TEXT PRIMARY KEY,               -- 'google' | 'deepl' | 'openai'
+  -- AES-256-GCM 암호문(iv || tag || ciphertext). 평문 키는 저장하지 않는다.
+  secret      BLOB NOT NULL,
+  -- 관리자가 어떤 키인지 알아볼 수 있게 하는 마스킹 문자열. 복호화 없이 읽는다.
+  hint        TEXT NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_meeting ON messages (meeting_id, id);
 CREATE INDEX IF NOT EXISTS idx_translations_message ON translations (message_id);
 CREATE INDEX IF NOT EXISTS idx_pages_meeting ON pages (meeting_id);
