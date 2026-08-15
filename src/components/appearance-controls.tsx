@@ -2,6 +2,7 @@
 
 import { useAppearance } from "@/hooks/use-appearance";
 import type { UiStrings } from "@/lib/i18n";
+import { LANGUAGES, type LanguageCode } from "@/lib/languages";
 
 /**
  * 테마·글자 크기 조절. 화면 오른쪽 위에 떠 있다.
@@ -22,9 +23,19 @@ export function AppearanceControls({
    * 동작하지 않는 컨트롤을 띄워 두면 사용자가 고장으로 읽는다.
    */
   textSize = true,
+  language,
 }: {
   strings: UiStrings["appearance"];
   textSize?: boolean;
+  /**
+   * 화면 언어 선택. 관리자 화면에서만 넘어온다 — 참석자 페이지는 URL 이 곧
+   * 언어라서 고를 것이 없다.
+   */
+  language?: {
+    value: LanguageCode;
+    label: string;
+    onChange: (next: LanguageCode) => void;
+  };
 }) {
   const { effectiveTheme, fontSize, toggleTheme, stepFontSize } = useAppearance();
 
@@ -33,6 +44,23 @@ export function AppearanceControls({
 
   return (
     <div className="fixed top-2.5 right-3.5 z-50 flex items-center gap-3 font-mono text-[11px] text-muted opacity-60 transition-opacity hover:opacity-100">
+      {language ? (
+        <select
+          value={language.value}
+          onChange={(event) => language.onChange(event.target.value as LanguageCode)}
+          title={language.label}
+          aria-label={language.label}
+          className="cursor-pointer border border-line bg-bg px-1.5 py-1 font-mono text-[11px] text-muted outline-none hover:text-fg"
+        >
+          {LANGUAGES.map((item) => (
+            // 어느 언어로 보고 있든 읽을 수 있도록 그 언어 표기로 낸다.
+            <option key={item.code} value={item.code}>
+              {item.nativeName}
+            </option>
+          ))}
+        </select>
+      ) : null}
+
       <button
         type="button"
         onClick={toggleTheme}

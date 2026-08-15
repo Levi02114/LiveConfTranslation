@@ -3,6 +3,7 @@
 import { useCallback, useState, useSyncExternalStore } from "react";
 
 import { AppearanceControls } from "@/components/appearance-controls";
+import { copyText } from "@/lib/clipboard";
 import { useRealtime } from "@/hooks/use-realtime";
 import { getStrings } from "@/lib/i18n";
 import type { Language, LanguageCode } from "@/lib/languages";
@@ -43,7 +44,7 @@ export function DashboardView({
   const [closed, setClosed] = useState(meeting.status === "closed");
   const [closedAt, setClosedAt] = useState<number | null>(meeting.closedAt);
   const [flows, setFlows] = useState<Flow[]>(() => seedFlows(history, languages));
-  const [copied, setCopied] = useState<string | null>(null);
+  const [copied, setCopied] = useState<{ key: string; ok: boolean } | null>(null);
 
   // 참석자에게 나눠 줄 URL 은 절대 주소여야 한다. 서버는 접속자가 어느 주소로
   // 들어왔는지 모르므로(로컬 IP·호스트명 제각각) 브라우저에서 읽는다.
@@ -97,13 +98,13 @@ export function DashboardView({
   };
 
   const copy = async (key: string, url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(key);
-      setTimeout(() => setCopied((current) => (current === key ? null : current)), 1200);
-    } catch {
-      // 클립보드가 막힌 브라우저에서는 주소를 직접 긁어 가면 된다.
-    }
+    // 실패해도 사용자에게 알린다. 조용히 아무 일도 안 하면 눌렀는지조차 모른다.
+    const ok = await copyText(url);
+    setCopied({ key, ok });
+    setTimeout(
+      () => setCopied((current) => (current?.key === key ? null : current)),
+      ok ? 1200 : 2500,
+    );
   };
 
   const openLog = () => {
@@ -183,13 +184,13 @@ export function DashboardView({
               <div className="text-[15px]">{language.label}</div>
               <UrlCell
                 url={input ? `${origin}/in/${input.token}` : ""}
-                copied={copied === `in-${language.code}`}
+                copied={copied?.key === `in-${language.code}` ? copied : null}
                 onCopy={(url) => void copy(`in-${language.code}`, url)}
                 className={copyBtn}
               />
               <UrlCell
                 url={output ? `${origin}/out/${output.token}` : ""}
-                copied={copied === `out-${language.code}`}
+                copied={copied?.key === `out-${language.code}` ? copied : null}
                 onCopy={(url) => void copy(`out-${language.code}`, url)}
                 className={copyBtn}
               />
@@ -202,7 +203,7 @@ export function DashboardView({
             <div className="text-[15px]">통합 보기</div>
             <UrlCell
               url={`${origin}/all/${combined.token}`}
-              copied={copied === "all"}
+              copied={copied?.key === "all" ? copied : null}
               onCopy={(url) => void copy("all", url)}
               className={copyBtn}
             />
@@ -253,15 +254,21 @@ function UrlCell({
   className,
 }: {
   url: string;
-  copied: boolean;
+  copied: { key: string; ok: boolean } | null;
   onCopy: (url: string) => void;
   className: string;
 }) {
   return (
     <div className="flex min-w-0 items-center gap-2.5">
-      <span className="truncate font-mono text-[12px] text-muted">{url || "—"}</span>
+      {/*
+        복사가 막힌 환경에서도 주소를 직접 긁어 갈 수 있어야 한다.
+        말줄임으로 잘려 보여도 선택하면 전체가 잡히도록 title 에 원문을 둔다.
+      */}
+      <span className="truncate font-mono text-[12px] text-muted select-all" title={url}>
+        {url || "—"}
+      </span>
       <button type="button" disabled={!url} onClick={() => onCopy(url)} className={className}>
-        {copied ? "복사됨" : "복사"}
+        {copied ? (copied.ok ? "복사됨" : "복사 실패") : "복사"}
       </button>
     </div>
   );

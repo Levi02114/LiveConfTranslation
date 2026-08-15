@@ -33,7 +33,7 @@ function decodeHtmlEntities(text: string): string {
 
 export const googleEngine: TranslationEngine = {
   id: "google",
-  label: "Google 번역",
+  label: "Google Translate",
 
   // 대상 4개 언어를 모두 지원한다.
   supports() {

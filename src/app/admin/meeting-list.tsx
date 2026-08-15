@@ -4,18 +4,21 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AppearanceControls } from "@/components/appearance-controls";
-import { EngineKeysDialog, type EngineKeyStatus } from "./engine-keys-dialog";
-import { getStrings } from "@/lib/i18n";
+import { useSetAdminLang } from "@/hooks/use-admin-lang";
+import type { AdminStrings, UiStrings } from "@/lib/i18n";
 import type { Language, LanguageCode } from "@/lib/languages";
 import { formatTimestamp } from "@/lib/log-format";
 import type { Meeting } from "@/lib/repo";
 import type { EngineId } from "@/lib/translate/types";
 
-const strings = getStrings("ko");
+import { EngineKeysDialog, type EngineKeyStatus } from "./engine-keys-dialog";
 
 type Row = Meeting & { langs: LanguageCode[] };
 
 export function MeetingList({
+  lang,
+  strings,
+  ui,
   meetings,
   languages,
   defaultLangs,
@@ -23,6 +26,9 @@ export function MeetingList({
   engineKeys,
   defaultEngine,
 }: {
+  lang: LanguageCode;
+  strings: AdminStrings;
+  ui: UiStrings;
   meetings: Row[];
   languages: Language[];
   defaultLangs: LanguageCode[];
@@ -31,13 +37,15 @@ export function MeetingList({
   defaultEngine: EngineId;
 }) {
   const router = useRouter();
+  const setLang = useSetAdminLang();
+
   const [title, setTitle] = useState("");
   const [langs, setLangs] = useState<LanguageCode[]>(defaultLangs);
   const [engine, setEngine] = useState<EngineId>(defaultEngine);
-  // 키를 등록하면 "(키 없음)" 표시가 즉시 사라져야 한다.
-  const [engines, setEngines] = useState(initialEngines);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // 키를 등록하면 "(키 없음)" 표시가 즉시 사라져야 한다.
+  const [engines, setEngines] = useState(initialEngines);
 
   const toggle = (code: LanguageCode) => {
     setLangs((prev) =>
@@ -48,11 +56,11 @@ export function MeetingList({
   const create = async () => {
     if (pending) return;
     if (!title.trim()) {
-      setError("회의 제목을 입력해 주세요");
+      setError(strings.list.needTitle);
       return;
     }
     if (langs.length < 2) {
-      setError("서로 다른 언어를 두 개 이상 골라 주세요");
+      setError(strings.list.needLanguages);
       return;
     }
 
@@ -64,18 +72,15 @@ export function MeetingList({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title: title.trim(), langs, engine }),
       });
-      const payload = (await response.json()) as {
-        meeting?: Meeting;
-        error?: string;
-      };
+      const payload = (await response.json()) as { meeting?: Meeting; error?: string };
 
       if (!response.ok || !payload.meeting) {
-        setError(payload.error ?? "회의를 만들지 못했습니다");
+        setError(payload.error ?? strings.list.createFailed);
         return;
       }
       router.push(`/admin/meetings/${payload.meeting.id}`);
     } catch {
-      setError("회의를 만들지 못했습니다");
+      setError(strings.list.createFailed);
     } finally {
       setPending(false);
     }
@@ -91,23 +96,32 @@ export function MeetingList({
   const open = meetings.filter((meeting) => meeting.status === "open");
   const closed = meetings.filter((meeting) => meeting.status === "closed");
 
-  const label = (codes: LanguageCode[]) =>
+  /*
+   * 언어 이름은 그 언어 표기(`nativeName`)로 쓴다. 관리자 화면이 네 언어로 뜨는데
+   * 언어 목록만 한국어면 읽을 수 없고, 언어 이름 16벌을 따로 번역할 이유도 없다.
+   */
+  const nameList = (codes: LanguageCode[]) =>
     codes
-      .map((code) => languages.find((language) => language.code === code)?.label ?? code)
+      .map((code) => languages.find((language) => language.code === code)?.nativeName ?? code)
       .join(" · ");
 
   return (
     <div className="mx-auto max-w-[840px] px-8 pt-20 pb-16">
-      <AppearanceControls strings={strings.appearance} textSize={false} />
+      <AppearanceControls
+        strings={ui.appearance}
+        language={{ value: lang, label: strings.language.label, onChange: setLang }}
+      />
 
       <div className="flex items-baseline justify-between gap-4">
-        <div className="font-mono text-[12px] tracking-[0.04em] text-muted">회의</div>
+        <div className="font-mono text-[12px] tracking-[0.04em] text-muted">
+          {strings.list.heading}
+        </div>
         <button
           type="button"
           onClick={() => void logout()}
           className="cursor-pointer font-mono text-[11px] text-muted hover:text-fg"
         >
-          로그아웃
+          {strings.list.logout}
         </button>
       </div>
 
@@ -115,12 +129,12 @@ export function MeetingList({
         <input
           value={title}
           onChange={(event) => setTitle(event.target.value)}
-          placeholder="회의 제목"
-          className="border-0 border-b border-line bg-transparent py-1.5 text-[24px] outline-none focus:border-fg"
+          placeholder={strings.list.titlePlaceholder}
+          className="app-text border-0 border-b border-line bg-transparent py-1.5 outline-none focus:border-fg"
         />
 
         <div>
-          <div className="mb-2.5 font-mono text-[11px] text-muted">언어</div>
+          <div className="mb-2.5 font-mono text-[11px] text-muted">{strings.list.languages}</div>
           <div className="flex flex-wrap gap-2">
             {languages.map((language) => {
               const on = langs.includes(language.code);
@@ -133,7 +147,7 @@ export function MeetingList({
                     on ? "border-fg bg-fg text-bg" : "border-line text-muted hover:border-fg"
                   }`}
                 >
-                  {language.label}
+                  {language.nativeName}
                 </button>
               );
             })}
@@ -141,7 +155,7 @@ export function MeetingList({
         </div>
 
         <div className="flex flex-wrap items-center gap-3.5">
-          <div className="font-mono text-[11px] text-muted">번역 엔진</div>
+          <div className="font-mono text-[11px] text-muted">{strings.list.engine}</div>
           <select
             value={engine}
             onChange={(event) => setEngine(event.target.value as EngineId)}
@@ -150,11 +164,12 @@ export function MeetingList({
             {engines.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.label}
-                {item.configured ? "" : " (키 없음)"}
+                {item.configured ? "" : ` (${strings.list.engineNoKey})`}
               </option>
             ))}
           </select>
           <EngineKeysDialog
+            strings={strings.keys}
             engines={engines.map((item) => ({ id: item.id, label: item.label }))}
             initial={engineKeys}
             onChange={(status) =>
@@ -176,12 +191,12 @@ export function MeetingList({
             disabled={pending}
             className="cursor-pointer border border-fg px-6 py-2.5 font-mono text-[14px] transition-colors hover:bg-fg hover:text-bg disabled:cursor-default disabled:opacity-30"
           >
-            {pending ? "만드는 중" : "회의 만들기"}
+            {pending ? strings.list.creating : strings.list.create}
           </button>
         </div>
       </div>
 
-      <Section title="진행 중" empty="진행 중인 회의가 없습니다">
+      <Section title={strings.list.active} empty={strings.list.noActive} count={open.length}>
         {open.map((meeting) => (
           <button
             key={meeting.id}
@@ -189,15 +204,16 @@ export function MeetingList({
             onClick={() => router.push(`/admin/meetings/${meeting.id}`)}
             className="flex w-full cursor-pointer items-baseline justify-between gap-4 border-t border-line py-4 text-left hover:opacity-60"
           >
-            <span className="text-[19px]">{meeting.title}</span>
+            <span className="app-text">{meeting.title}</span>
             <span className="shrink-0 font-mono text-[12px] whitespace-nowrap text-muted">
-              {label(meeting.langs)} · {formatTimestamp(meeting.createdAt)} · 진행 중 →
+              {nameList(meeting.langs)} · {formatTimestamp(meeting.createdAt)} ·{" "}
+              {strings.list.active} →
             </span>
           </button>
         ))}
       </Section>
 
-      <Section title="종료됨" empty="종료된 회의가 없습니다">
+      <Section title={strings.list.closed} empty={strings.list.noClosed} count={closed.length}>
         {closed.map((meeting) => (
           <button
             key={meeting.id}
@@ -205,9 +221,9 @@ export function MeetingList({
             onClick={() => router.push(`/admin/meetings/${meeting.id}`)}
             className="flex w-full cursor-pointer items-baseline justify-between gap-4 border-t border-line py-4 text-left text-muted hover:opacity-60"
           >
-            <span className="text-[19px]">{meeting.title}</span>
+            <span className="app-text">{meeting.title}</span>
             <span className="shrink-0 font-mono text-[12px] whitespace-nowrap">
-              {label(meeting.langs)} · {formatTimestamp(meeting.createdAt)}
+              {nameList(meeting.langs)} · {formatTimestamp(meeting.createdAt)}
             </span>
           </button>
         ))}
@@ -219,19 +235,18 @@ export function MeetingList({
 function Section({
   title,
   empty,
+  count,
   children,
 }: {
   title: string;
   empty: string;
+  count: number;
   children: React.ReactNode;
 }) {
-  const items = Array.isArray(children) ? children : [children];
-  const isEmpty = items.filter(Boolean).length === 0;
-
   return (
     <div className="pt-8">
       <div className="mb-1.5 font-mono text-[11px] text-muted">{title}</div>
-      {isEmpty ? <p className="py-4 font-mono text-[12px] text-muted">{empty}</p> : children}
+      {count === 0 ? <p className="py-4 font-mono text-[12px] text-muted">{empty}</p> : children}
     </div>
   );
 }

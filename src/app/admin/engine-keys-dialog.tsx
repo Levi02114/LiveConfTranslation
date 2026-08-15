@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 
+import type { AdminStrings } from "@/lib/i18n";
 import { formatTimestamp } from "@/lib/log-format";
 import type { EngineId } from "@/lib/translate/types";
 
@@ -23,10 +24,12 @@ export type EngineKeyStatus = {
  * 안전하고, 팝업 차단에도 걸리지 않는다.
  */
 export function EngineKeysDialog({
+  strings,
   engines,
   initial,
   onChange,
 }: {
+  strings: AdminStrings["keys"];
   engines: { id: EngineId; label: string }[];
   initial: EngineKeyStatus[];
   /** 등록·삭제 결과를 부모에게 알린다 — 엔진 목록의 "(키 없음)" 표시가 따라가야 한다. */
@@ -60,14 +63,14 @@ export function EngineKeysDialog({
       const payload = (await response.json()) as { key?: EngineKeyStatus; error?: string };
 
       if (!response.ok || !payload.key) {
-        setError(payload.error ?? "키를 저장하지 못했습니다");
+        setError(payload.error ?? strings.saveFailed);
         return;
       }
       apply(payload.key);
       // 저장한 값은 화면에 남기지 않는다.
       setDrafts((prev) => ({ ...prev, [engine]: "" }));
     } catch {
-      setError("키를 저장하지 못했습니다");
+      setError(strings.saveFailed);
     } finally {
       setBusy(null);
     }
@@ -85,12 +88,12 @@ export function EngineKeysDialog({
       const payload = (await response.json()) as { key?: EngineKeyStatus; error?: string };
 
       if (!response.ok || !payload.key) {
-        setError(payload.error ?? "키를 지우지 못했습니다");
+        setError(payload.error ?? strings.removeFailed);
         return;
       }
       apply(payload.key);
     } catch {
-      setError("키를 지우지 못했습니다");
+      setError(strings.removeFailed);
     } finally {
       setBusy(null);
     }
@@ -103,7 +106,7 @@ export function EngineKeysDialog({
         onClick={() => dialogRef.current?.showModal()}
         className="cursor-pointer border border-line px-2.5 py-1.5 font-mono text-[12px] text-muted transition-colors hover:border-fg hover:bg-fg hover:text-bg"
       >
-        API 키 등록
+        {strings.button}
       </button>
 
       <dialog
@@ -118,21 +121,18 @@ export function EngineKeysDialog({
         <div className="px-7 py-6">
           <div className="flex items-baseline justify-between gap-4">
             <div className="font-mono text-[12px] tracking-[0.04em] text-muted">
-              번역 엔진 API 키
+              {strings.title}
             </div>
             <button
               type="button"
               onClick={() => dialogRef.current?.close()}
               className="cursor-pointer font-mono text-[12px] text-muted hover:text-fg"
             >
-              닫기
+              {strings.close}
             </button>
           </div>
 
-          <p className="mt-3 font-mono text-[11px] leading-[1.6] text-muted">
-            키는 암호화해서 DB 에 저장되며 화면으로 다시 꺼내 볼 수 없습니다.
-            등록한 키가 환경변수보다 우선합니다.
-          </p>
+          <p className="mt-3 font-mono text-[11px] leading-[1.6] text-muted">{strings.note}</p>
 
           {error ? <div className="mt-3 font-mono text-[12px]">{error}</div> : null}
 
@@ -145,8 +145,8 @@ export function EngineKeysDialog({
                     <span className="text-[15px]">{engine.label}</span>
                     <span className="font-mono text-[11px] text-muted">
                       {status?.configured
-                        ? `${status.hint} · ${status.source === "db" ? "등록됨" : "환경변수"}`
-                        : "없음"}
+                        ? `${status.hint} · ${status.source === "db" ? strings.registered : strings.fromEnv}`
+                        : strings.none}
                     </span>
                   </div>
 
@@ -170,7 +170,7 @@ export function EngineKeysDialog({
                           void save(engine.id);
                         }
                       }}
-                      placeholder={status?.configured ? "새 키로 덮어쓰기" : "API 키"}
+                      placeholder={status?.configured ? strings.replacePlaceholder : strings.placeholder}
                       className="min-w-0 flex-1 border-0 border-b border-line bg-transparent py-1.5 font-mono text-[13px] outline-none focus:border-fg"
                     />
                     <button
@@ -179,7 +179,7 @@ export function EngineKeysDialog({
                       disabled={busy !== null || !(drafts[engine.id] ?? "").trim()}
                       className="shrink-0 cursor-pointer border border-fg px-3.5 py-1.5 font-mono text-[12px] transition-colors hover:bg-fg hover:text-bg disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fg"
                     >
-                      {busy === engine.id ? "저장 중" : "저장"}
+                      {busy === engine.id ? strings.saving : strings.save}
                     </button>
                     {status?.source === "db" ? (
                       <button
@@ -188,7 +188,7 @@ export function EngineKeysDialog({
                         disabled={busy !== null}
                         className="shrink-0 cursor-pointer border border-line px-3 py-1.5 font-mono text-[12px] text-muted transition-colors hover:border-fg hover:bg-fg hover:text-bg disabled:cursor-default disabled:opacity-30"
                       >
-                        삭제
+                        {strings.remove}
                       </button>
                     ) : null}
                   </div>
