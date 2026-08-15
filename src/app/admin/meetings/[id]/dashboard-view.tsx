@@ -222,7 +222,7 @@ export function DashboardView({
           >
             <div className="font-mono text-[12px] text-muted">{formatClock(flow.at)}</div>
             <div className="truncate font-mono text-[12px]">{flow.route}</div>
-            <div className="text-[15px] leading-[1.4] [text-wrap:pretty]">{flow.body}</div>
+            <div className="app-text [text-wrap:pretty]">{flow.body}</div>
             <div
               className={`font-mono text-[11px] ${flow.status === "실패" ? "text-fg" : "text-muted"}`}
             >

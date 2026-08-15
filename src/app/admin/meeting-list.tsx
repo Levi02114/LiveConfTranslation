@@ -98,7 +98,7 @@ export function MeetingList({
 
   return (
     <div className="mx-auto max-w-[840px] px-8 pt-20 pb-16">
-      <AppearanceControls strings={strings.appearance} />
+      <AppearanceControls strings={strings.appearance} textSize={false} />
 
       <div className="flex items-baseline justify-between gap-4">
         <div className="font-mono text-[12px] tracking-[0.04em] text-muted">회의</div>

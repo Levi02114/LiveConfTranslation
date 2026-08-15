@@ -56,6 +56,28 @@ function getServerFontSizeSnapshot(): FontSize {
   return DEFAULT_FONT_SIZE;
 }
 
+/**
+ * 기기의 다크 모드 설정.
+ *
+ * 사용자가 아직 테마를 고르지 않았을 때 화면에 실제로 적용되는 값이라, 버튼에
+ * "지금 무엇인지"를 쓰려면 이것까지 봐야 한다. matchMedia 는 React 밖의 값이므로
+ * 여기서도 구독으로 읽는다.
+ */
+function subscribeSystemTheme(listener: () => void): () => void {
+  const query = window.matchMedia("(prefers-color-scheme: dark)");
+  query.addEventListener("change", listener);
+  return () => query.removeEventListener("change", listener);
+}
+
+function getSystemDarkSnapshot(): boolean {
+  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+/** 서버에서는 기기 설정을 알 수 없다. 하이드레이션 직후 실제 값으로 교정된다. */
+function getServerSystemDarkSnapshot(): boolean {
+  return false;
+}
+
 export function useAppearance() {
   const theme = useSyncExternalStore(
     subscribe,
@@ -67,6 +89,14 @@ export function useAppearance() {
     getFontSizeSnapshot,
     getServerFontSizeSnapshot,
   );
+  const systemDark = useSyncExternalStore(
+    subscribeSystemTheme,
+    getSystemDarkSnapshot,
+    getServerSystemDarkSnapshot,
+  );
+
+  /** 지금 화면에 실제로 적용되어 있는 테마. 버튼 라벨은 이것을 보여 준다. */
+  const effectiveTheme: Theme = theme ?? (systemDark ? "dark" : "light");
 
   const setTheme = useCallback((next: Theme) => {
     document.documentElement.setAttribute("data-theme", next);
@@ -90,11 +120,8 @@ export function useAppearance() {
 
   /** 아직 고른 적이 없으면 기기 설정의 반대로 넘긴다. */
   const toggleTheme = useCallback(() => {
-    const current =
-      theme ??
-      (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    setTheme(current === "dark" ? "light" : "dark");
-  }, [theme, setTheme]);
+    setTheme(effectiveTheme === "dark" ? "light" : "dark");
+  }, [effectiveTheme, setTheme]);
 
   const stepFontSize = useCallback(
     (direction: 1 | -1) => {
@@ -106,5 +133,13 @@ export function useAppearance() {
     [fontSize, setFontSize],
   );
 
-  return { theme, fontSize, setTheme, setFontSize, toggleTheme, stepFontSize };
+  return {
+    theme,
+    effectiveTheme,
+    fontSize,
+    setTheme,
+    setFontSize,
+    toggleTheme,
+    stepFontSize,
+  };
 }

@@ -133,7 +133,7 @@ export function LogView({
           <div className="font-mono text-[13px] text-muted">{formatClock(line.at)}</div>
           <div className="font-mono text-[13px]">{nameOf(line.lang)}</div>
           <div
-            className={`text-[15px] leading-[1.5] [text-wrap:pretty] ${
+            className={`app-text [text-wrap:pretty] ${
               line.kind === "translation" ? "text-muted" : ""
             }`}
           >

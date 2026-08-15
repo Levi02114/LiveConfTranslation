@@ -45,7 +45,7 @@ export function LoginForm() {
 
   return (
     <div className="flex min-h-screen items-center justify-center px-6">
-      <AppearanceControls strings={strings.appearance} />
+      <AppearanceControls strings={strings.appearance} textSize={false} />
 
       <div className="w-full max-w-[340px]">
         <div className="mb-7 font-mono text-[12px] tracking-[0.04em] text-muted">
