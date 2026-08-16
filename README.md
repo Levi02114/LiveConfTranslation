@@ -58,12 +58,16 @@ Windows 설치본은 Node.js나 개발 도구를 따로 설치하지 않아도 �
 
 ### 1. 설치 또는 포터블 실행
 
-배포받은 `release/` 폴더에는 보통 다음 두 종류가 생성됩니다.
+[GitHub Releases](https://github.com/Levi02114/LiveConfTranslation/releases/latest)에서 다음 중
+하나를 내려받습니다.
 
 - `... Setup ... .exe`: Windows에 설치하는 버전
 - `... .exe`: 설치 없이 실행하는 포터블 버전
 
 둘 중 하나만 사용하면 됩니다. 한 컴퓨터에서 두 버전을 동시에 실행하지 마세요.
+현재 배포본은 상용 코드 서명 인증서로 서명하지 않았으므로 Windows SmartScreen 경고가
+나타날 수 있습니다. 이 저장소의 Releases에서 받은 파일과 공개된 SHA-256이 일치하는지
+확인한 뒤 실행하세요.
 
 ### 2. 처음 실행할 때 관리자 비밀번호 보관
 
