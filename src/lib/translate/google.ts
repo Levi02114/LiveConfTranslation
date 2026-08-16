@@ -1,8 +1,15 @@
 import "server-only";
 
+import { isCatalogLanguage } from "@/lib/language-catalog";
+import type { LanguageCode } from "@/lib/languages";
 import { engineKey } from "@/lib/secrets";
 
-import { TranslationError, type TranslateInput, type TranslationEngine } from "./types";
+import {
+  type BatchTranslateInput,
+  TranslationError,
+  type TranslateInput,
+  type TranslationEngine,
+} from "./types";
 
 /**
  * Google Cloud Translation API v2.
@@ -31,13 +38,69 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&amp;/g, "&");
 }
 
+/** 한 요청에 넣을 문장 수. v2 는 요청당 세그먼트 수와 총 길이에 제한이 있다. */
+const BATCH_LIMIT = 64;
+
+/** Google 호출 한 번. 문장 배열을 받아 같은 순서로 돌려준다. */
+async function callGoogle(
+  texts: readonly string[],
+  from: LanguageCode,
+  to: LanguageCode,
+  signal: AbortSignal | undefined,
+): Promise<string[]> {
+  const key = engineKey("google");
+  if (!key) {
+    throw new TranslationError("GOOGLE_TRANSLATE_API_KEY 가 설정되지 않았습니다", "google");
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${ENDPOINT}?key=${encodeURIComponent(key)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      // q 에 배열을 주면 여러 문장을 한 번에 옮긴다. 응답도 같은 순서로 온다.
+      body: JSON.stringify({ q: texts, source: from, target: to, format: "text" }),
+      signal,
+    });
+  } catch (cause) {
+    throw new TranslationError("Google 번역 서버에 연결하지 못했습니다", "google", cause);
+  }
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new TranslationError(
+      `Google 번역이 ${response.status} 를 반환했습니다${detail ? `: ${detail.slice(0, 200)}` : ""}`,
+      "google",
+    );
+  }
+
+  const payload = (await response.json()) as {
+    data?: { translations?: { translatedText?: string }[] };
+  };
+
+  const translations = payload.data?.translations;
+  if (!translations || translations.length !== texts.length) {
+    throw new TranslationError("Google 번역 응답의 번역문 개수가 요청과 다릅니다", "google");
+  }
+
+  return translations.map((item) => {
+    if (typeof item.translatedText !== "string") {
+      throw new TranslationError("Google 번역 응답에 번역문이 없습니다", "google");
+    }
+    return decodeHtmlEntities(item.translatedText);
+  });
+}
+
 export const googleEngine: TranslationEngine = {
   id: "google",
   label: "Google Translate",
 
-  // 대상 4개 언어를 모두 지원한다.
-  supports() {
-    return true;
+  /*
+   * 예전에는 무조건 true 였다. 다루는 언어가 넷뿐일 때는 사실이었지만, 관리자가
+   * 임의의 언어를 추가할 수 있게 된 지금은 거짓말이 된다.
+   */
+  supports(lang: LanguageCode) {
+    return isCatalogLanguage(lang);
   },
 
   isConfigured() {
@@ -45,43 +108,17 @@ export const googleEngine: TranslationEngine = {
   },
 
   async translate({ text, from, to, signal }: TranslateInput) {
-    const key = engineKey("google");
-    if (!key) {
-      throw new TranslationError(
-        "GOOGLE_TRANSLATE_API_KEY 가 설정되지 않았습니다",
-        "google",
-      );
+    const [translated] = await callGoogle([text], from, to, signal);
+    return translated;
+  },
+
+  async translateBatch({ texts, from, to, signal }: BatchTranslateInput) {
+    const out: string[] = [];
+
+    for (let index = 0; index < texts.length; index += BATCH_LIMIT) {
+      out.push(...(await callGoogle(texts.slice(index, index + BATCH_LIMIT), from, to, signal)));
     }
 
-    let response: Response;
-    try {
-      response = await fetch(`${ENDPOINT}?key=${encodeURIComponent(key)}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ q: text, source: from, target: to, format: "text" }),
-        signal,
-      });
-    } catch (cause) {
-      throw new TranslationError("Google 번역 서버에 연결하지 못했습니다", "google", cause);
-    }
-
-    if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      throw new TranslationError(
-        `Google 번역이 ${response.status} 를 반환했습니다${detail ? `: ${detail.slice(0, 200)}` : ""}`,
-        "google",
-      );
-    }
-
-    const payload = (await response.json()) as {
-      data?: { translations?: { translatedText?: string }[] };
-    };
-
-    const translated = payload.data?.translations?.[0]?.translatedText;
-    if (typeof translated !== "string") {
-      throw new TranslationError("Google 번역 응답에 번역문이 없습니다", "google");
-    }
-
-    return decodeHtmlEntities(translated);
+    return out;
   },
 };

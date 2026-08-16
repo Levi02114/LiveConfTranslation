@@ -1,23 +1,33 @@
 "use client";
 
-import { useCallback, useState, useSyncExternalStore } from "react";
+import Image from "next/image";
+import { useCallback, useRef, useState, useSyncExternalStore, useTransition } from "react";
 
 import { AppearanceControls } from "@/components/appearance-controls";
 import { copyText } from "@/lib/clipboard";
+import { useSetAdminLang } from "@/hooks/use-admin-lang";
 import { useRealtime } from "@/hooks/use-realtime";
-import { getStrings } from "@/lib/i18n";
+import type { AdminStrings, UiStrings } from "@/lib/i18n-builtin";
 import type { Language, LanguageCode } from "@/lib/languages";
 import { formatClock, formatTimestamp } from "@/lib/log-format";
 import type { ServerMessage } from "@/lib/realtime/protocol";
 import type { CombinedEntry, Meeting, Page } from "@/lib/repo";
 
-const strings = getStrings("ko");
+import { AdminBusyOverlay } from "../../admin-busy-overlay";
 
-/** 실시간 흐름에 남겨 둘 줄 수. 대시보드는 기록이 아니라 감시용이다. */
+/** 실시간 번역에 남겨 둘 줄 수. 대시보드는 기록이 아니라 감시용이다. */
 const FLOW_LIMIT = 60;
 
-const subscribeNever = () => () => {};
-const getOrigin = () => window.location.origin;
+const PUBLIC_ORIGIN_KEY = "lct_public_origin";
+const subscribeOrigin = (onStoreChange: () => void) => {
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener("lct-public-origin", onStoreChange);
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener("lct-public-origin", onStoreChange);
+  };
+};
+const getOrigin = () => localStorage.getItem(PUBLIC_ORIGIN_KEY) ?? window.location.origin;
 const getServerOrigin = () => "";
 
 type Flow = {
@@ -25,7 +35,7 @@ type Flow = {
   at: number;
   route: string;
   body: string;
-  status: "원문" | "완료" | "실패";
+  status: "source" | "done" | "failed";
 };
 
 export function DashboardView({
@@ -34,22 +44,44 @@ export function DashboardView({
   pages,
   history,
   coverage,
+  fallbackCoverage,
+  lang,
+  strings,
+  ui,
+  displayLanguages,
 }: {
   meeting: Meeting;
   languages: Language[];
   pages: Page[];
   history: CombinedEntry[];
   coverage: { engine: string; label: string; configured: boolean; unsupported: LanguageCode[] };
+  fallbackCoverage: {
+    engine: string;
+    label: string;
+    configured: boolean;
+    unsupported: LanguageCode[];
+  } | null;
+  lang: LanguageCode;
+  strings: AdminStrings;
+  ui: UiStrings;
+  displayLanguages: Language[];
 }) {
   const [closed, setClosed] = useState(meeting.status === "closed");
   const [closedAt, setClosedAt] = useState<number | null>(meeting.closedAt);
-  const [flows, setFlows] = useState<Flow[]>(() => seedFlows(history, languages));
+  const [flows, setFlows] = useState<Flow[]>(() => seedFlows(history, languages, ui.status.failed));
   const [copied, setCopied] = useState<{ key: string; ok: boolean } | null>(null);
+  const [qr, setQr] = useState<{ dataUrl: string; fileName: string } | null>(null);
+  const [qrError, setQrError] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
+  const [closeError, setCloseError] = useState<string | null>(null);
+  const qrDialogRef = useRef<HTMLDialogElement>(null);
+  const setLang = useSetAdminLang();
+  const [navigating, startNavigation] = useTransition();
 
   // 참석자에게 나눠 줄 URL 은 절대 주소여야 한다. 서버는 접속자가 어느 주소로
   // 들어왔는지 모르므로(로컬 IP·호스트명 제각각) 브라우저에서 읽는다.
-  // 값이 바뀌지 않으므로 구독은 비워 두고 스냅숏만 읽는다.
-  const origin = useSyncExternalStore(subscribeNever, getOrigin, getServerOrigin);
+  // Electron 이 Quick Tunnel을 켜면 공개 주소로 즉시 교체한다.
+  const origin = useSyncExternalStore(subscribeOrigin, getOrigin, getServerOrigin);
 
   const nameOf = useCallback(
     (code: LanguageCode) =>
@@ -66,7 +98,7 @@ export function DashboardView({
             at: message.createdAt,
             route: nameOf(message.lang),
             body: message.body,
-            status: "원문",
+            status: "source",
           }),
         );
       } else if (message.t === "translation") {
@@ -75,8 +107,8 @@ export function DashboardView({
             key: `t${message.messageId}-${message.lang}`,
             at: message.createdAt,
             route: `→ ${nameOf(message.lang)}`,
-            body: message.status === "ok" ? message.body : (message.error ?? "번역 실패"),
-            status: message.status === "ok" ? "완료" : "실패",
+            body: message.status === "ok" ? message.body : ui.status.failed,
+            status: message.status === "ok" ? "done" : "failed",
           }),
         );
       } else if (message.t === "meeting-closed") {
@@ -84,16 +116,27 @@ export function DashboardView({
         setClosedAt(message.closedAt);
       }
     },
-    [nameOf],
+    [nameOf, ui.status.failed],
   );
 
   useRealtime(`meeting=${encodeURIComponent(meeting.id)}`, onMessage);
 
   const close = async () => {
-    const response = await fetch(`/api/meetings/${meeting.id}`, { method: "POST" });
-    if (response.ok) {
+    if (closing) return;
+    setClosing(true);
+    setCloseError(null);
+    try {
+      const response = await fetch(`/api/meetings/${meeting.id}`, { method: "POST" });
+      if (!response.ok) {
+        setCloseError(strings.list.closeFailed);
+        return;
+      }
       setClosed(true);
       setClosedAt(Date.now());
+    } catch {
+      setCloseError(strings.list.closeFailed);
+    } finally {
+      setClosing(false);
     }
   };
 
@@ -115,6 +158,22 @@ export function DashboardView({
     );
   };
 
+  const showQr = async (key: string, url: string) => {
+    setQr(null);
+    setQrError(null);
+    qrDialogRef.current?.showModal();
+
+    try {
+      const { toDataURL } = await import("qrcode");
+      setQr({
+        dataUrl: await toDataURL(url, { width: 320, margin: 2 }),
+        fileName: `${key}-qr.png`,
+      });
+    } catch {
+      setQrError(strings.dashboard.qrFailed);
+    }
+  };
+
   const inputPages = new Map(
     pages.filter((page) => page.kind === "input" && page.lang).map((page) => [page.lang, page]),
   );
@@ -122,112 +181,176 @@ export function DashboardView({
     pages.filter((page) => page.kind === "output" && page.lang).map((page) => [page.lang, page]),
   );
   const combined = pages.find((page) => page.kind === "combined");
+  const capturePages = new Map(
+    pages.filter((page) => page.kind === "capture" && page.lang).map((page) => [page.lang, page]),
+  );
 
   const copyBtn =
-    "shrink-0 cursor-pointer border border-line px-2 py-1 font-mono text-[11px] text-muted transition-colors hover:bg-fg hover:text-bg";
+    "min-h-9 shrink-0 cursor-pointer whitespace-nowrap border border-line px-2 py-1 font-mono text-[11px] text-muted transition-colors hover:bg-fg hover:text-bg sm:min-h-0";
 
   return (
-    <div className="mx-auto max-w-[980px] px-8 pt-20 pb-16">
-      <AppearanceControls strings={strings.appearance} />
+    <div lang={lang} className="mx-auto max-w-[980px] px-4 pt-20 pb-12 sm:px-8 sm:pb-16">
+      <AdminBusyOverlay
+        label={closing ? strings.list.closingSession : navigating ? strings.list.loading : null}
+      />
+      <AppearanceControls
+        strings={ui.appearance}
+        language={{
+          value: lang,
+          label: strings.language.label,
+          options: displayLanguages,
+          onChange: (next) => startNavigation(() => setLang(next)),
+        }}
+      />
 
-      <div className="flex items-baseline justify-between gap-5">
-        <div>
-          <div className="text-[26px] font-medium">{meeting.title}</div>
+      <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-baseline sm:justify-between sm:gap-5">
+        <div className="min-w-0">
+          <div className="text-[26px] font-medium break-words">{meeting.title}</div>
           <div className="mt-1.5 font-mono text-[12px] text-muted">
-            {languages.map((language) => language.label).join(" · ")} · {coverage.label}
-            {coverage.configured ? "" : " (키 없음)"}
+            {languages.map((language) => language.label).join(" · ")} ·{" "}
+            {strings.list.engine}: {coverage.label}
+            {coverage.configured ? "" : ` (${strings.list.engineNoKey})`}
+            {" · "}
+            {strings.list.fallbackEngine}:{" "}
+            {fallbackCoverage ? fallbackCoverage.label : strings.list.noFallback}
+            {fallbackCoverage && !fallbackCoverage.configured
+              ? ` (${strings.list.engineNoKey})`
+              : ""}
           </div>
         </div>
         {closed ? (
-          <div className="shrink-0 font-mono text-[12px] text-muted">종료됨</div>
+          <div className="shrink-0 font-mono text-[12px] text-muted">{strings.list.closed}</div>
         ) : (
           <button
             type="button"
             onClick={() => void close()}
-            className="shrink-0 cursor-pointer border border-line px-4 py-2 font-mono text-[13px] transition-colors hover:border-fg hover:bg-fg hover:text-bg"
+            disabled={closing}
+            className="shrink-0 cursor-pointer border border-line px-4 py-2 font-mono text-[13px] transition-colors hover:border-fg hover:bg-fg hover:text-bg disabled:cursor-default disabled:opacity-30"
           >
-            회의 종료
+            {closing ? strings.list.closingSession : strings.dashboard.close}
           </button>
         )}
       </div>
 
       {closed ? (
         <div className="mt-4 border border-line px-4 py-3 font-mono text-[13px] text-muted">
-          회의가 종료되었습니다
+          {strings.dashboard.closedNotice}
           {closedAt ? ` · ${formatTimestamp(closedAt)}` : ""}
         </div>
       ) : null}
 
+      {closeError ? <div className="mt-4 font-mono text-[12px]">{closeError}</div> : null}
+
       {coverage.unsupported.length ? (
         <div className="mt-4 border border-line px-4 py-3 font-mono text-[12px] text-muted">
-          {coverage.label} 은(는) {coverage.unsupported.map(nameOf).join(" · ")} 을(를) 지원하지
-          않습니다 — 해당 언어만 Google 로 번역됩니다
+          {strings.dashboard.unsupportedEngine
+            .replace("{engine}", coverage.label)
+            .replace("{languages}", coverage.unsupported.map(nameOf).join(" · "))
+            .replace(
+              "{fallback}",
+              fallbackCoverage?.label ?? strings.list.noFallback,
+            )}
         </div>
       ) : null}
 
       <section className="mt-10">
-        <div className="mb-1 font-mono text-[11px] text-muted">페이지 URL — 참석자에게 배포</div>
-        <div className="grid grid-cols-[110px_1fr_1fr] gap-x-5 gap-y-3 border-b border-line py-3 font-mono text-[11px] text-muted">
-          <div>언어</div>
-          <div>입력 (속기사)</div>
-          <div>출력 (참석자)</div>
+        <div className="mb-1 font-mono text-[11px] text-muted">{strings.dashboard.pages}</div>
+        <div
+          className={`hidden gap-x-5 gap-y-3 border-b border-line py-3 font-mono text-[11px] text-muted sm:grid ${
+            "grid-cols-[110px_1fr_1fr]"
+          }`}
+        >
+          <div>{strings.list.languages}</div>
+          <div>
+            {meeting.inputMode === "human" ? strings.dashboard.input : strings.dashboard.capture}
+          </div>
+          <div>{strings.dashboard.output}</div>
         </div>
 
         {languages.map((language) => {
           const input = inputPages.get(language.code);
+          const capture = capturePages.get(language.code);
           const output = outputPages.get(language.code);
           return (
             <div
               key={language.code}
-              className="grid grid-cols-[110px_1fr_1fr] items-center gap-x-5 gap-y-3 border-b border-line py-3.5"
+              className={`grid grid-cols-1 gap-4 border-b border-line py-4 sm:items-center sm:gap-x-5 sm:gap-y-3 sm:py-3.5 ${
+                "sm:grid-cols-[110px_1fr_1fr]"
+              }`}
             >
               <div className="text-[15px]">{language.label}</div>
-              <UrlCell
-                url={input ? `${origin}/in/${input.token}` : ""}
-                copied={copied?.key === `in-${language.code}` ? copied : null}
-                onCopy={(url) => void copy(`in-${language.code}`, url)}
-                className={copyBtn}
-              />
+              {meeting.inputMode === "human" ? (
+                <UrlCell
+                  url={input ? `${origin}/in/${input.token}` : ""}
+                  copied={copied?.key === `in-${language.code}` ? copied : null}
+                  onCopy={(url) => void copy(`in-${language.code}`, url)}
+                  className={copyBtn}
+                  strings={strings.dashboard}
+                  label={strings.dashboard.input}
+                  onQr={(url) => void showQr(`input-${language.code}`, url)}
+                />
+              ) : (
+                <UrlCell
+                  url={capture ? `${origin}/capture/${capture.token}` : ""}
+                  copied={copied?.key === `capture-${language.code}` ? copied : null}
+                  onCopy={(url) => void copy(`capture-${language.code}`, url)}
+                  className={copyBtn}
+                  strings={strings.dashboard}
+                  label={strings.dashboard.capture}
+                  onQr={(url) => void showQr(`capture-${language.code}`, url)}
+                />
+              )}
               <UrlCell
                 url={output ? `${origin}/out/${output.token}` : ""}
                 copied={copied?.key === `out-${language.code}` ? copied : null}
                 onCopy={(url) => void copy(`out-${language.code}`, url)}
                 className={copyBtn}
+                strings={strings.dashboard}
+                label={strings.dashboard.output}
+                onQr={(url) => void showQr(`output-${language.code}`, url)}
               />
             </div>
           );
         })}
 
         {combined ? (
-          <div className="grid grid-cols-[110px_1fr] items-center gap-x-5 border-b border-line py-3.5">
-            <div className="text-[15px]">통합 보기</div>
+          <div className="grid grid-cols-1 gap-3 border-b border-line py-4 sm:grid-cols-[110px_1fr] sm:items-center sm:gap-x-5 sm:py-3.5">
+            <div className="text-[15px]">{ui.role.combined}</div>
             <UrlCell
               url={`${origin}/all/${combined.token}`}
               copied={copied?.key === "all" ? copied : null}
               onCopy={(url) => void copy("all", url)}
               className={copyBtn}
+              strings={strings.dashboard}
+              onQr={(url) => void showQr("combined", url)}
             />
           </div>
         ) : null}
       </section>
 
       <section className="mt-12">
-        <div className="mb-1 font-mono text-[11px] text-muted">실시간 흐름</div>
+        <div className="mb-1 font-mono text-[11px] text-muted">{strings.dashboard.live}</div>
         {flows.length === 0 ? (
-          <p className="py-4 font-mono text-[12px] text-muted">아직 입력이 없습니다</p>
+          <p className="py-4 font-mono text-[12px] text-muted">{ui.status.noContent}</p>
         ) : null}
         {flows.map((flow) => (
           <div
             key={flow.key}
-            className="grid grid-cols-[50px_86px_1fr_56px] items-baseline gap-3.5 border-t border-line py-2.5"
+            className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-1 border-t border-line py-3 sm:gap-3.5 sm:py-2.5 xl:grid-cols-[auto_auto_minmax(0,1fr)_auto]"
           >
-            <div className="font-mono text-[12px] text-muted">{formatClock(flow.at)}</div>
-            <div className="truncate font-mono text-[12px]">{flow.route}</div>
-            <div className="app-text [text-wrap:pretty]">{flow.body}</div>
+            <div className="col-start-1 row-start-1 font-mono text-[12px] text-muted">
+              {formatClock(flow.at)}
+            </div>
+            <div className="col-start-2 row-start-1 truncate font-mono text-[12px] xl:max-w-[10rem]">
+              {flow.route}
+            </div>
+            <div className="app-text col-start-2 col-end-4 row-start-2 [text-wrap:pretty] xl:col-start-3 xl:col-end-4 xl:row-start-1">
+              {flow.body}
+            </div>
             <div
-              className={`font-mono text-[11px] ${flow.status === "실패" ? "text-fg" : "text-muted"}`}
+              className={`col-start-3 row-start-1 font-mono text-[11px] xl:col-start-4 ${flow.status === "failed" ? "text-fg" : "text-muted"}`}
             >
-              {flow.status}
+              {strings.dashboard[flow.status]}
             </div>
           </div>
         ))}
@@ -239,10 +362,54 @@ export function DashboardView({
           onClick={openLog}
           className="cursor-pointer border border-line px-4 py-2.5 font-mono text-[13px] transition-colors hover:border-fg hover:bg-fg hover:text-bg"
         >
-          로그 보기 →
+          {strings.dashboard.log}
         </button>
-        <span className="font-mono text-[11px] text-muted">새 팝업 창</span>
+        <span className="font-mono text-[11px] text-muted">{strings.dashboard.popup}</span>
       </div>
+
+      <dialog
+        ref={qrDialogRef}
+        onClose={() => {
+          setQr(null);
+          setQrError(null);
+        }}
+        className="m-auto w-[min(380px,calc(100vw-32px))] border border-line bg-bg p-0 text-fg backdrop:bg-black/45"
+      >
+        <div className="p-6">
+          <div className="flex min-h-[320px] items-center justify-center bg-fg">
+            {qr ? (
+              <Image
+                unoptimized
+                src={qr.dataUrl}
+                width={320}
+                height={320}
+                alt="QR"
+                className="h-auto w-full"
+              />
+            ) : (
+              <span className="font-mono text-[12px] text-bg">{qrError ?? "…"}</span>
+            )}
+          </div>
+          <div className="mt-4 flex items-center justify-end gap-3">
+            {qr ? (
+              <a
+                href={qr.dataUrl}
+                download={qr.fileName}
+                className={copyBtn}
+              >
+                {strings.dashboard.downloadQr}
+              </a>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => qrDialogRef.current?.close()}
+              className={copyBtn}
+            >
+              {strings.dashboard.closeQr}
+            </button>
+          </div>
+        </div>
+      </dialog>
     </div>
   );
 }
@@ -252,35 +419,60 @@ function UrlCell({
   copied,
   onCopy,
   className,
+  strings,
+  label,
+  onQr,
 }: {
   url: string;
   copied: { key: string; ok: boolean } | null;
   onCopy: (url: string) => void;
   className: string;
+  strings: AdminStrings["dashboard"];
+  label?: string;
+  onQr: (url: string) => void;
 }) {
   return (
-    <div className="flex min-w-0 items-center gap-2.5">
-      {/*
-        복사가 막힌 환경에서도 주소를 직접 긁어 갈 수 있어야 한다.
-        말줄임으로 잘려 보여도 선택하면 전체가 잡히도록 title 에 원문을 둔다.
-      */}
-      <span className="truncate font-mono text-[12px] text-muted select-all" title={url}>
-        {url || "—"}
-      </span>
-      <button type="button" disabled={!url} onClick={() => onCopy(url)} className={className}>
-        {copied ? (copied.ok ? "복사됨" : "복사 실패") : "복사"}
-      </button>
+    <div className="min-w-0">
+      {label ? <div className="mb-1.5 font-mono text-[11px] text-muted sm:hidden">{label}</div> : null}
+      <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-2.5">
+        {/*
+          복사가 막힌 환경에서도 주소를 직접 긁어 갈 수 있어야 한다.
+          말줄임으로 잘려 보여도 선택하면 전체가 잡히도록 title 에 원문을 둔다.
+        */}
+        <span
+          className="block max-w-full truncate font-mono text-[12px] text-muted select-all"
+          title={url}
+        >
+          {url || "—"}
+        </span>
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+          <button type="button" disabled={!url} onClick={() => onCopy(url)} className={className}>
+            {copied ? (copied.ok ? strings.copied : strings.copyFailed) : strings.copy}
+          </button>
+          <button
+            type="button"
+            disabled={!url}
+            onClick={() => window.open(url, "_blank", "noopener,noreferrer")}
+            className={className}
+          >
+            {strings.openNew}
+          </button>
+          <button type="button" disabled={!url} onClick={() => onQr(url)} className={className}>
+            {strings.showQr}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
 
 function push(prev: Flow[], next: Flow): Flow[] {
   if (prev.some((flow) => flow.key === next.key)) return prev;
-  return [...prev, next].slice(-FLOW_LIMIT);
+  return [next, ...prev].slice(0, FLOW_LIMIT);
 }
 
 /** 대시보드를 늦게 열어도 직전 흐름이 보이도록 지난 기록을 같은 모양으로 편다. */
-function seedFlows(history: CombinedEntry[], languages: Language[]): Flow[] {
+function seedFlows(history: CombinedEntry[], languages: Language[], failedText: string): Flow[] {
   const nameOf = (code: LanguageCode) =>
     languages.find((language) => language.code === code)?.label ?? code;
 
@@ -291,17 +483,17 @@ function seedFlows(history: CombinedEntry[], languages: Language[]): Flow[] {
       at: entry.createdAt,
       route: nameOf(entry.sourceLang),
       body: entry.sourceBody,
-      status: "원문",
+      status: "source",
     });
     for (const translation of entry.translations) {
       flows.push({
         key: `t${entry.messageId}-${translation.lang}`,
         at: entry.createdAt,
         route: `→ ${nameOf(translation.lang)}`,
-        body: translation.status === "ok" ? translation.body : (translation.error ?? "번역 실패"),
-        status: translation.status === "ok" ? "완료" : "실패",
+        body: translation.status === "ok" ? translation.body : failedText,
+        status: translation.status === "ok" ? "done" : "failed",
       });
     }
   }
-  return flows.slice(-FLOW_LIMIT);
+  return flows.slice(-FLOW_LIMIT).reverse();
 }

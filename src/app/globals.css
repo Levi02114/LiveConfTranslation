@@ -36,18 +36,22 @@
   }
 }
 
-/*
- * 글자 크기. 접속자가 각자 조절한다.
- * rem 기준값을 바꾸는 대신 별도 변수를 쓴다 — 여백과 테두리까지 같이 커지면
- * 화면에 담기는 문장 수가 급격히 줄어든다.
- * 회의실 뒤쪽에서도 읽어야 하므로 시안의 단계값(px)을 그대로 쓴다.
- */
-:root { --app-text: 22px; }
-:root[data-size="sm"] { --app-text: 18px; }
-:root[data-size="md"] { --app-text: 22px; }
-:root[data-size="lg"] { --app-text: 29px; }
-:root[data-size="xl"] { --app-text: 39px; }
-:root[data-size="xxl"] { --app-text: 52px; }
+/* 접속자별 글자 배율. rem 기반 UI 전체에 적용한다. */
+:root { font-size: 100%; --app-text: 1.375rem; }
+:root[data-size="sm"] { font-size: 80%; }
+:root[data-size="md"] { font-size: 100%; }
+:root[data-size="lg"] { font-size: 125%; }
+:root[data-size="xl"] { font-size: 150%; }
+:root[data-size="xxl"] { font-size: 200%; }
+
+/* 기존 임의 px 글자 유틸리티도 루트 배율을 따르도록 rem 으로 덮는다. */
+.text-\[11px\] { font-size: 0.6875rem; }
+.text-\[12px\] { font-size: 0.75rem; }
+.text-\[13px\] { font-size: 0.8125rem; }
+.text-\[14px\] { font-size: 0.875rem; }
+.text-\[15px\] { font-size: 0.9375rem; }
+.text-\[26px\] { font-size: 1.625rem; }
+.text-\[27px\] { font-size: 1.6875rem; }
 
 :root {
   --font-sans-stack: var(--font-noto-sans), var(--font-noto-kr), var(--font-noto-thai),

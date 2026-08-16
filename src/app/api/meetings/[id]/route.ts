@@ -1,14 +1,18 @@
+import { revalidatePath } from "next/cache";
+
 import { requireAdmin } from "@/lib/auth";
 import { publish } from "@/lib/realtime/hub";
+import { releaseMeetingCaptures } from "@/lib/realtime/capture-lease";
 import {
   closeMeeting,
+  deleteClosedMeeting,
   getMeeting,
   getMeetingActivity,
   getMeetingLangs,
   getMeetingPages,
   getRecentMessages,
 } from "@/lib/repo";
-import { engineCoverage, listEngines } from "@/lib/translate";
+import { engineCoverage, listEngines, refreshEngineSupport } from "@/lib/translate";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -16,10 +20,12 @@ export async function GET(_request: Request, { params }: Params) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
+  await refreshEngineSupport();
+
   const { id } = await params;
   const meeting = getMeeting(id);
   if (!meeting) {
-    return Response.json({ error: "회의를 찾을 수 없습니다" }, { status: 404 });
+    return Response.json({ error: "세션을 찾을 수 없습니다" }, { status: 404 });
   }
 
   const langs = getMeetingLangs(id);
@@ -43,7 +49,7 @@ export async function POST(_request: Request, { params }: Params) {
   const { id } = await params;
   const meeting = getMeeting(id);
   if (!meeting) {
-    return Response.json({ error: "회의를 찾을 수 없습니다" }, { status: 404 });
+    return Response.json({ error: "세션을 찾을 수 없습니다" }, { status: 404 });
   }
 
   if (meeting.status === "closed") {
@@ -51,9 +57,32 @@ export async function POST(_request: Request, { params }: Params) {
   }
 
   closeMeeting(id);
+  releaseMeetingCaptures(id);
+  revalidatePath("/admin");
 
   // 열려 있는 입력 페이지가 즉시 잠기도록 알린다.
   publish(id, { t: "meeting-closed", closedAt: Date.now() });
 
   return Response.json({ meeting: getMeeting(id) });
+}
+
+/** 종료된 세션과 하위 기록을 실제로 삭제한다. */
+export async function DELETE(_request: Request, { params }: Params) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
+
+  const { id } = await params;
+  const meeting = getMeeting(id);
+  if (!meeting) {
+    return Response.json({ error: "세션을 찾을 수 없습니다" }, { status: 404 });
+  }
+  if (meeting.status !== "closed") {
+    return Response.json({ error: "진행 중인 세션은 삭제할 수 없습니다" }, { status: 409 });
+  }
+
+  if (!deleteClosedMeeting(id)) {
+    return Response.json({ error: "세션을 찾을 수 없습니다" }, { status: 404 });
+  }
+  revalidatePath("/admin");
+  return Response.json({ deleted: true });
 }

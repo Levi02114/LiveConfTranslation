@@ -1,24 +1,30 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 
 import { AppearanceControls } from "@/components/appearance-controls";
 import { useSetAdminLang } from "@/hooks/use-admin-lang";
-import type { AdminStrings, UiStrings } from "@/lib/i18n";
-import type { LanguageCode } from "@/lib/languages";
+import type { AdminStrings, UiStrings } from "@/lib/i18n-builtin";
+import type { Language, LanguageCode } from "@/lib/languages";
+
+import { AdminBusyOverlay } from "../admin-busy-overlay";
 
 export function LoginForm({
   lang,
+  languages,
   strings,
   ui,
 }: {
   lang: LanguageCode;
+  /** 우상단 표시 언어 드롭다운에 넣을 목록. 서버가 DB 에서 읽어 내려 준다. */
+  languages: readonly Language[];
   strings: AdminStrings;
   ui: UiStrings;
 }) {
   const router = useRouter();
   const setLang = useSetAdminLang();
+  const [navigating, startNavigation] = useTransition();
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -42,8 +48,10 @@ export function LoginForm({
       }
 
       // 서버 컴포넌트가 새 쿠키로 다시 그려지도록 갱신한 뒤 넘어간다.
-      router.refresh();
-      router.replace("/admin");
+      startNavigation(() => {
+        router.refresh();
+        router.replace("/admin");
+      });
     } catch {
       setError(strings.login.failed);
     } finally {
@@ -53,9 +61,15 @@ export function LoginForm({
 
   return (
     <div className="flex min-h-screen items-center justify-center px-6">
+      <AdminBusyOverlay label={pending || navigating ? strings.login.pending : null} />
       <AppearanceControls
         strings={ui.appearance}
-        language={{ value: lang, label: strings.language.label, onChange: setLang }}
+        language={{
+          value: lang,
+          label: strings.language.label,
+          options: languages,
+          onChange: (next) => startNavigation(() => setLang(next)),
+        }}
       />
 
       <div className="w-full max-w-[340px]">

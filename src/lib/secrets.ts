@@ -1,8 +1,8 @@
 import "server-only";
 
 import { decryptSecret, maskSecret } from "@/lib/crypto";
-import { deeplApiKey, googleApiKey, openaiApiKey } from "@/lib/env";
-import { getEngineSecret } from "@/lib/repo";
+import { deeplApiKey, googleApiKey, openaiApiKey, openaiModel } from "@/lib/env";
+import { getEngineSecret, getEngineSetting } from "@/lib/repo";
 import type { EngineId } from "@/lib/translate/types";
 
 /**
@@ -78,4 +78,18 @@ export function engineKeyStatus(engine: EngineId): {
           : null,
     updatedAt: resolved?.source === "db" ? (stored?.updatedAt ?? null) : null,
   };
+}
+
+/**
+ * 번역에 쓸 OpenAI 언어모델.
+ *
+ * API 키와 같은 규칙으로 **DB(관리자가 화면에서 고른 값) → 환경변수 → 기본값**
+ * 순으로 본다. 회의 중에 모델을 바꿔도 서버 재시작 없이 다음 문장부터 먹힌다.
+ *
+ * `lib/env.ts` 가 아니라 여기 있는 이유: `env.ts` 는 `process.env` 전용 통로라
+ * DB 를 읽어서는 안 된다(`AGENTS.md`).
+ */
+export function resolveOpenaiModel(): string {
+  const stored = getEngineSetting("openai")?.model?.trim();
+  return stored || openaiModel();
 }

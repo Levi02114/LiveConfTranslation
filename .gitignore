@@ -19,6 +19,8 @@
 
 # production
 /build
+/dist
+/release
 
 # misc
 .DS_Store
@@ -45,6 +47,10 @@ next-env.d.ts
 # 내용물은 추적하지 않고 폴더와 안내 문서만 유지한다.
 /.tmp/*
 !/.tmp/README.md
+
+# AI Artifact
+.orca
+AGENTS.md
 
 # SQLite 데이터베이스
 /data

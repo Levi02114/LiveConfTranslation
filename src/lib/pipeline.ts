@@ -6,6 +6,7 @@ import {
   getMeetingLangs,
   getRecentSourceBodies,
   insertMessage,
+  insertMessageOnce,
   type Meeting,
   upsertTranslation,
 } from "@/lib/repo";
@@ -43,6 +44,35 @@ export function acceptMessage(input: {
   return message;
 }
 
+/** Realtime 완료 이벤트를 멱등하게 저장·배포한다. */
+export function acceptTranscript(input: {
+  meeting: Meeting;
+  pageId: string;
+  lang: LanguageCode;
+  body: string;
+  ingestKey: string;
+}) {
+  const result = insertMessageOnce({
+    meetingId: input.meeting.id,
+    pageId: input.pageId,
+    lang: input.lang,
+    body: input.body,
+    ingestKey: input.ingestKey,
+  });
+
+  if (result.inserted) {
+    publish(input.meeting.id, {
+      t: "message",
+      messageId: result.message.id,
+      lang: result.message.lang,
+      body: result.message.body,
+      createdAt: result.message.createdAt,
+    });
+  }
+
+  return result;
+}
+
 /**
  * 원문을 회의의 나머지 언어로 번역해 저장·배포한다.
  *
@@ -62,19 +92,23 @@ export async function translateMessage(input: {
 
   // 문맥은 LLM 엔진만 쓴다. 기계 번역 엔진이면 조회 자체를 건너뛴다.
   const context =
-    input.meeting.engine === "openai"
+    input.meeting.engine === "openai" || input.meeting.fallbackEngine === "openai"
       ? getRecentSourceBodies(input.meeting.id, input.messageId)
       : undefined;
 
   await Promise.allSettled(
     targets.map(async (target) => {
       try {
-        const result = await translateText(input.meeting.engine, {
-          text: input.body,
-          from: input.sourceLang,
-          to: target,
-          context,
-        });
+        const result = await translateText(
+          input.meeting.engine,
+          {
+            text: input.body,
+            from: input.sourceLang,
+            to: target,
+            context,
+          },
+          input.meeting.fallbackEngine,
+        );
 
         const createdAt = upsertTranslation({
           messageId: input.messageId,

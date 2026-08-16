@@ -12,11 +12,11 @@ export const FONT_SIZES = ["sm", "md", "lg", "xl", "xxl"] as const;
 export type FontSize = (typeof FONT_SIZES)[number];
 
 export const FONT_SIZE_LABELS: Record<FontSize, string> = {
-  sm: "작게",
-  md: "보통",
-  lg: "크게",
-  xl: "더 크게",
-  xxl: "아주 크게",
+  sm: "80%",
+  md: "100%",
+  lg: "125%",
+  xl: "150%",
+  xxl: "200%",
 };
 
 export const THEME_KEY = "lct.theme";

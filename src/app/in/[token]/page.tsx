@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { getStrings } from "@/lib/i18n";
 import { getLanguage } from "@/lib/languages";
-import { getMeeting, getPageByToken } from "@/lib/repo";
+import { getMeeting, getMeetingLangs, getPageByToken, getRecentCombined } from "@/lib/repo";
 
 import { InputView } from "./input-view";
 
@@ -38,6 +38,7 @@ export default async function InputPage({
 
   const page = getPageByToken(token);
   if (!page || page.kind !== "input" || !page.lang) notFound();
+  const pageLang = page.lang;
 
   const meeting = getMeeting(page.meetingId);
   if (!meeting) notFound();
@@ -45,9 +46,11 @@ export default async function InputPage({
   return (
     <InputView
       token={token}
-      language={getLanguage(page.lang)}
-      strings={getStrings(page.lang)}
+      language={getLanguage(pageLang)}
+      languages={getMeetingLangs(meeting.id).map((code) => getLanguage(code, pageLang))}
+      strings={getStrings(pageLang)}
       meetingTitle={meeting.title}
+      history={getRecentCombined(meeting.id)}
       initiallyClosed={meeting.status === "closed"}
     />
   );

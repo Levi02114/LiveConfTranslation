@@ -60,7 +60,7 @@ function getServerFontSizeSnapshot(): FontSize {
  * 기기의 다크 모드 설정.
  *
  * 사용자가 아직 테마를 고르지 않았을 때 화면에 실제로 적용되는 값이라, 버튼에
- * "지금 무엇인지"를 쓰려면 이것까지 봐야 한다. matchMedia 는 React 밖의 값이므로
+ * "누르면 무엇으로 바뀌는지"를 쓰려면 이것까지 봐야 한다. matchMedia 는 React 밖의 값이므로
  * 여기서도 구독으로 읽는다.
  */
 function subscribeSystemTheme(listener: () => void): () => void {

@@ -11,6 +11,8 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    "dist/**",
+    "release/**",
     "next-env.d.ts",
     // 임시 작업 폴더. 디자인 시안이 들고 온 런타임 코드까지 검사할 이유가 없다.
     ".tmp/**",

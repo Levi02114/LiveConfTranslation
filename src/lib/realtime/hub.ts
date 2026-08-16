@@ -18,7 +18,7 @@ export type Connection = {
   clientId: string;
   meetingId: string;
   /** 이 연결이 붙은 페이지 성격. 대시보드는 회의 전체를 본다. */
-  kind: "input" | "output" | "combined" | "dashboard";
+  kind: "input" | "output" | "combined" | "capture" | "dashboard";
   /** input/output 페이지의 언어. combined·dashboard 는 없다. */
   lang: LanguageCode | null;
   name: string;
@@ -63,12 +63,19 @@ function shouldDeliver(connection: Connection, message: ServerMessage): boolean 
 
     case "output":
       // 참석자는 자기 언어 번역만 본다.
-      return message.t === "translation" && message.lang === connection.lang;
+      return (
+        (message.t === "message" && message.lang === connection.lang) ||
+        (message.t === "translation" && message.lang === connection.lang)
+      );
+
+    case "capture":
+      // 수집 화면은 확정 원문만 모니터링한다. 번역은 참석자 페이지가 맡는다.
+      return message.t === "message";
 
     case "input":
-      // 속기사는 자기 언어로 확정된 원문과, 같은 방의 접속자 상태를 본다.
+      // 속기사는 다른 언어 속기사의 확정 원문과 번역까지 함께 본다.
       if (message.t === "presence") return true;
-      return message.t === "message" && message.lang === connection.lang;
+      return message.t === "message" || message.t === "translation";
   }
 }
 

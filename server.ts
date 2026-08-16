@@ -28,7 +28,7 @@ import {
   leave,
 } from "@/lib/realtime/hub";
 import { parseClientMessage, type ServerMessage } from "@/lib/realtime/protocol";
-import { getMeeting, getPageByToken } from "@/lib/repo";
+import { getMeeting, getPageByToken, listMeetings } from "@/lib/repo";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT ?? 3000);
@@ -42,6 +42,20 @@ const handle = app.getRequestHandler();
 let anonymousCounter = 0;
 
 const server = createServer((req, res) => {
+  if (req.method === "GET" && req.url === "/api/health") {
+    res.writeHead(200, {
+      "cache-control": "no-store",
+      "content-type": "application/json; charset=utf-8",
+    });
+    res.end(
+      JSON.stringify({
+        service: "live-conf-translation",
+        openMeetings: listMeetings().filter((meeting) => meeting.status === "open").length,
+      }),
+    );
+    return;
+  }
+
   handle(req, res).catch((error: unknown) => {
     console.error("[http] 요청 처리 실패", error);
     res.statusCode = 500;
@@ -160,7 +174,7 @@ async function main() {
   await app.prepare();
 
   server.listen(port, hostname, () => {
-    console.log(`▲ 실시간 회의 번역 서버: http://${hostname}:${port}`);
+    console.log(`▲ 실시간 세션 번역 서버: http://${hostname}:${port}`);
     if (dev) console.log("  개발 모드");
   });
 }

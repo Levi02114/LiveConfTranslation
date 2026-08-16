@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 
-import type { AdminStrings } from "@/lib/i18n";
+import type { AdminStrings } from "@/lib/i18n-builtin";
 import { formatTimestamp } from "@/lib/log-format";
 import type { EngineId } from "@/lib/translate/types";
 
@@ -63,7 +63,7 @@ export function EngineKeysDialog({
       const payload = (await response.json()) as { key?: EngineKeyStatus; error?: string };
 
       if (!response.ok || !payload.key) {
-        setError(payload.error ?? strings.saveFailed);
+        setError(strings.saveFailed);
         return;
       }
       apply(payload.key);
@@ -88,7 +88,7 @@ export function EngineKeysDialog({
       const payload = (await response.json()) as { key?: EngineKeyStatus; error?: string };
 
       if (!response.ok || !payload.key) {
-        setError(payload.error ?? strings.removeFailed);
+        setError(strings.removeFailed);
         return;
       }
       apply(payload.key);

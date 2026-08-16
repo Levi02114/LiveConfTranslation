@@ -22,6 +22,26 @@ export type TranslateInput = {
   signal?: AbortSignal;
 };
 
+/**
+ * 여러 문장을 한 번에 번역할 때 쓰는 입력.
+ *
+ * UI 문구를 새 언어로 옮기는 데 쓴다(90여 개). 한 문장씩 보내면 LLM 엔진은
+ * 왕복만 90번이라 몇 분이 걸린다.
+ */
+export type BatchTranslateInput = {
+  texts: readonly string[];
+  from: LanguageCode;
+  to: LanguageCode;
+  /**
+   * 무엇을 번역하는지.
+   *
+   * `ui` 는 버튼·라벨이라 짧게 유지해야 하고 존댓말 문장으로 늘어나면 안 된다.
+   * 프롬프트를 쓰는 LLM 엔진만 이 값을 본다.
+   */
+  kind?: "meeting" | "ui";
+  signal?: AbortSignal;
+};
+
 export interface TranslationEngine {
   readonly id: EngineId;
   readonly label: string;
@@ -32,9 +52,18 @@ export interface TranslationEngine {
    * 엔진 자신이 신고하게 한다.
    */
   supports(lang: LanguageCode): boolean;
+  /** 엔진 API가 제공하는 최신 지원 언어를 로드한다. */
+  refreshSupport?(): Promise<void>;
   /** API 키가 설정되어 실제로 호출 가능한 상태인지 */
   isConfigured(): boolean;
   translate(input: TranslateInput): Promise<string>;
+  /**
+   * 여러 문장을 한 요청으로 번역한다.
+   *
+   * 선택 사항이다. 없는 엔진은 `translateEach()`(`./index.ts`)가 한 문장씩
+   * 순차 호출로 메워 준다. **입력과 같은 길이·같은 순서**로 돌려주어야 한다.
+   */
+  translateBatch?(input: BatchTranslateInput): Promise<string[]>;
 }
 
 /** 번역 실패를 호출부에서 구분할 수 있게 하는 오류 타입 */

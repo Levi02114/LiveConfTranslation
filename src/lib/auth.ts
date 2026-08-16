@@ -5,7 +5,7 @@
  * 커스텀 서버가 필요로 하는 검증 로직은 `auth-core.ts` 에 있다.
  */
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 import { SESSION_COOKIE, signExpiry, verifySessionValue } from "@/lib/auth-core";
 import { sessionTtlSeconds } from "@/lib/env";
@@ -18,14 +18,13 @@ export async function createAdminSession(): Promise<void> {
   const expiresAt = Date.now() + ttl * 1000;
 
   const store = await cookies();
+  const secure = (await headers()).get("x-forwarded-proto") === "https";
   store.set(SESSION_COOKIE, `${expiresAt}.${signExpiry(expiresAt)}`, {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
     maxAge: ttl,
-    // 초안은 평문 HTTP(로컬 네트워크) 전제라 Secure 를 걸 수 없다.
-    // TLS 를 붙이는 순간 여기를 true 로 바꿔야 한다.
-    secure: false,
+    secure,
   });
 }
 

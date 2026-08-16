@@ -31,11 +31,11 @@ export async function POST(request: Request, { params }: Params) {
 
   const meeting = getMeeting(page.meetingId);
   if (!meeting) {
-    return Response.json({ error: "회의를 찾을 수 없습니다" }, { status: 404 });
+    return Response.json({ error: "세션을 찾을 수 없습니다" }, { status: 404 });
   }
 
   if (meeting.status === "closed") {
-    return Response.json({ error: "종료된 회의입니다" }, { status: 409 });
+    return Response.json({ error: "종료된 세션입니다" }, { status: 409 });
   }
 
   const parsed = schema.safeParse(await request.json().catch(() => null));

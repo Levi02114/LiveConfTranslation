@@ -50,8 +50,8 @@ const FONT_VARIABLES = [sans, sansKr, sansThai, sansSinhala, mono]
   .join(" ");
 
 export const metadata: Metadata = {
-  title: "실시간 회의 번역",
-  description: "회의 내용을 실시간으로 번역해 참석자 언어별로 전달합니다.",
+  title: "실시간 세션 번역",
+  description: "세션 내용을 실시간으로 번역해 참석자 언어별로 전달합니다.",
 };
 
 export default function RootLayout({

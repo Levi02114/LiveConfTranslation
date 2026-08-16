@@ -24,7 +24,7 @@ export async function GET(request: Request, { params }: Params) {
   const { id } = await params;
   const meeting = getMeeting(id);
   if (!meeting) {
-    return Response.json({ error: "회의를 찾을 수 없습니다" }, { status: 404 });
+    return Response.json({ error: "세션을 찾을 수 없습니다" }, { status: 404 });
   }
 
   const url = new URL(request.url);

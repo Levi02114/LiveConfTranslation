@@ -12,6 +12,8 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { databasePath } from "@/lib/env";
+import { newId, newPageToken } from "@/lib/ids";
+import { BUILTIN_LANGUAGES } from "@/lib/languages";
 
 /**
  * SQLite 연결.
@@ -33,6 +35,9 @@ CREATE TABLE IF NOT EXISTS meetings (
   title       TEXT NOT NULL,
   status      TEXT NOT NULL DEFAULT 'open',   -- 'open' | 'closed'
   engine      TEXT NOT NULL DEFAULT 'google', -- 회의 개설 시 고른 번역 엔진
+  fallback_engine TEXT,                       -- 선택 폴백 엔진. NULL 이면 폴백 없음
+  input_mode  TEXT NOT NULL DEFAULT 'human',  -- 'human' | 'realtime'
+  source_lang TEXT,                           -- 이전 단일 원음 모드 호환용(신규 데이터는 NULL)
   created_at  INTEGER NOT NULL,
   closed_at   INTEGER
 );
@@ -47,7 +52,7 @@ CREATE TABLE IF NOT EXISTS meeting_langs (
 CREATE TABLE IF NOT EXISTS pages (
   id          TEXT PRIMARY KEY,
   meeting_id  TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
-  kind        TEXT NOT NULL,                  -- 'input' | 'output'
+  kind        TEXT NOT NULL,                  -- 'input' | 'output' | 'combined' | 'capture'
   lang        TEXT NOT NULL,
   token       TEXT NOT NULL UNIQUE,           -- URL 에 노출되는 접근 토큰
   created_at  INTEGER NOT NULL,
@@ -60,6 +65,7 @@ CREATE TABLE IF NOT EXISTS messages (
   page_id     TEXT REFERENCES pages(id) ON DELETE SET NULL,
   lang        TEXT NOT NULL,                  -- 원문 언어
   body        TEXT NOT NULL,
+  ingest_key  TEXT,                           -- AI 전사 재전송 멱등 키
   created_at  INTEGER NOT NULL
 );
 
@@ -84,10 +90,88 @@ CREATE TABLE IF NOT EXISTS engine_secrets (
   updated_at  INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS languages (
+  code        TEXT PRIMARY KEY,               -- BCP-47. 'ko', 'zh-CN' ...
+  position    INTEGER NOT NULL,               -- 화면에 나열하는 순서
+  added_at    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ui_strings (
+  lang        TEXT NOT NULL REFERENCES languages(code) ON DELETE CASCADE,
+  key         TEXT NOT NULL,                  -- 'list.heading' 같은 점 경로
+  text        TEXT NOT NULL,
+  -- 'machine' 은 엔진이 번역한 것, 'manual' 은 관리자가 고친 것.
+  -- 「다시 번역」이 사람이 고친 문구를 덮어쓰지 않게 하려고 구분한다.
+  origin      TEXT NOT NULL,
+  PRIMARY KEY (lang, key)
+);
+
+CREATE TABLE IF NOT EXISTS engine_settings (
+  engine      TEXT PRIMARY KEY,               -- 'google' | 'deepl' | 'openai'
+  model       TEXT,                           -- OpenAI 언어모델. NULL 이면 환경변수 기본값
+  updated_at  INTEGER NOT NULL
+);
+
+-- 계정에서 쓸 수 있는 OpenAI 모델 목록 캐시.
+--
+-- 관리 화면을 열 때마다 다시 물어보지만, 응답을 기다리는 동안 빈 드롭다운을
+-- 보여 줄 수는 없다. 지난번 목록을 여기서 꺼내 바로 그리고, 응답이 오면 갈아 끼운다.
+-- 키가 없거나 네트워크가 없으면 이 캐시가 그대로 최종 목록이 된다.
+CREATE TABLE IF NOT EXISTS openai_models (
+  model       TEXT PRIMARY KEY,
+  position    INTEGER NOT NULL,               -- 조회 시점의 순서를 보존한다
+  fetched_at  INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_messages_meeting ON messages (meeting_id, id);
 CREATE INDEX IF NOT EXISTS idx_translations_message ON translations (message_id);
 CREATE INDEX IF NOT EXISTS idx_pages_meeting ON pages (meeting_id);
 `;
+
+/**
+ * 기본 언어 네 개를 `languages` 에 심는다.
+ *
+ * 목록을 읽는 곳이 **DB 한 군데뿐이게** 하려는 것이다. "빌트인은 상수에서,
+ * 추가한 것은 DB 에서" 로 갈라 두면 순서와 중복을 두 곳에서 맞춰야 하고 반드시
+ * 어긋난다. 이미 있으면 건드리지 않으므로 순서를 바꿔 놔도 유지된다.
+ */
+function seedLanguages(db: DatabaseSync): void {
+  const insert = db.prepare(
+    "INSERT OR IGNORE INTO languages (code, position, added_at) VALUES (?, ?, ?)",
+  );
+  const now = Date.now();
+  BUILTIN_LANGUAGES.forEach((code, index) => {
+    insert.run(code, index, now);
+  });
+}
+
+/** 이전 단일 원음 세션에도 선택된 모든 언어의 수집 페이지를 채운다. */
+function backfillRealtimeCapturePages(db: DatabaseSync): void {
+  const missing = db.prepare(
+    `SELECT m.id AS meeting_id, ml.lang
+     FROM meetings m
+     JOIN meeting_langs ml ON ml.meeting_id = m.id
+     LEFT JOIN pages p
+       ON p.meeting_id = m.id AND p.kind = 'capture' AND p.lang = ml.lang
+     WHERE m.input_mode = 'realtime' AND p.id IS NULL`,
+  ).all() as unknown as { meeting_id: string; lang: string }[];
+  const insert = db.prepare(
+    `INSERT INTO pages (id, meeting_id, kind, lang, token, created_at)
+     VALUES (?, ?, 'capture', ?, ?, ?)`,
+  );
+  const now = Date.now();
+  for (const row of missing) {
+    insert.run(newId(), row.meeting_id, row.lang, newPageToken(), now);
+  }
+}
+
+/** 기존 개발 DB에도 새 nullable/default 컬럼을 파괴 없이 더한다. */
+function ensureColumn(db: DatabaseSync, table: string, column: string, definition: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string }[];
+  if (!columns.some((item) => item.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
 
 function open(): DatabaseSync {
   const path = databasePath();
@@ -103,6 +187,13 @@ function open(): DatabaseSync {
   // ON DELETE CASCADE 가 실제로 걸리려면 연결마다 켜 줘야 한다.
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(SCHEMA);
+  ensureColumn(db, "meetings", "fallback_engine", "TEXT");
+  ensureColumn(db, "meetings", "input_mode", "TEXT NOT NULL DEFAULT 'human'");
+  ensureColumn(db, "meetings", "source_lang", "TEXT");
+  ensureColumn(db, "messages", "ingest_key", "TEXT");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_ingest_key ON messages (ingest_key)");
+  seedLanguages(db);
+  backfillRealtimeCapturePages(db);
 
   return db;
 }

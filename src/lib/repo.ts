@@ -25,7 +25,8 @@ import type { EngineId } from "@/lib/translate/types";
  */
 
 export type MeetingStatus = "open" | "closed";
-export type PageKind = "input" | "output" | "combined";
+export type InputMode = "human" | "realtime";
+export type PageKind = "input" | "output" | "combined" | "capture";
 
 /**
  * 통합 보기 페이지는 특정 언어에 속하지 않는다.
@@ -41,6 +42,8 @@ export type Meeting = {
   title: string;
   status: MeetingStatus;
   engine: EngineId;
+  fallbackEngine: EngineId | null;
+  inputMode: InputMode;
   createdAt: number;
   closedAt: number | null;
 };
@@ -94,6 +97,8 @@ type MeetingRow = {
   title: string;
   status: string;
   engine: string;
+  fallback_engine: string | null;
+  input_mode: string;
   created_at: number;
   closed_at: number | null;
 };
@@ -104,6 +109,8 @@ function toMeeting(row: MeetingRow): Meeting {
     title: row.title,
     status: row.status as MeetingStatus,
     engine: row.engine as EngineId,
+    fallbackEngine: row.fallback_engine as EngineId | null,
+    inputMode: (row.input_mode || "human") as InputMode,
     createdAt: row.created_at,
     closedAt: row.closed_at,
   };
@@ -141,15 +148,24 @@ export function createMeeting(input: {
   title: string;
   langs: readonly LanguageCode[];
   engine: EngineId;
+  fallbackEngine?: EngineId | null;
+  inputMode?: InputMode;
 }): Meeting {
   const now = Date.now();
   const id = newId();
 
   return transaction(() => {
     getDb().prepare(
-      `INSERT INTO meetings (id, title, status, engine, created_at)
-       VALUES (?, ?, 'open', ?, ?)`,
-    ).run(id, input.title, input.engine, now);
+      `INSERT INTO meetings (id, title, status, engine, fallback_engine, input_mode, created_at)
+       VALUES (?, ?, 'open', ?, ?, ?, ?)`,
+    ).run(
+      id,
+      input.title,
+      input.engine,
+      input.fallbackEngine ?? null,
+      input.inputMode ?? "human",
+      now,
+    );
 
     const insertLang = getDb().prepare(
       `INSERT INTO meeting_langs (meeting_id, lang, position) VALUES (?, ?, ?)`,
@@ -161,9 +177,12 @@ export function createMeeting(input: {
 
     input.langs.forEach((lang, position) => {
       insertLang.run(id, lang, position);
-      for (const kind of ["input", "output"] as const) {
-        insertPage.run(newId(), id, kind, lang, newPageToken(), now);
+      if ((input.inputMode ?? "human") === "human") {
+        insertPage.run(newId(), id, "input", lang, newPageToken(), now);
+      } else {
+        insertPage.run(newId(), id, "capture", lang, newPageToken(), now);
       }
+      insertPage.run(newId(), id, "output", lang, newPageToken(), now);
     });
 
     // 모든 언어를 한 화면에서 보는 페이지. 회의당 하나.
@@ -174,6 +193,8 @@ export function createMeeting(input: {
       title: input.title,
       status: "open" as const,
       engine: input.engine,
+      fallbackEngine: input.fallbackEngine ?? null,
+      inputMode: input.inputMode ?? "human",
       createdAt: now,
       closedAt: null,
     };
@@ -208,6 +229,14 @@ export function closeMeeting(id: string): void {
   );
 }
 
+/** 종료된 세션과 그 하위 페이지·원문·번역을 실제로 삭제한다. */
+export function deleteClosedMeeting(id: string): boolean {
+  const result = getDb()
+    .prepare(`DELETE FROM meetings WHERE id = ? AND status = 'closed'`)
+    .run(id);
+  return result.changes > 0;
+}
+
 // ---------------------------------------------------------------- 페이지
 
 export function getMeetingPages(meetingId: string): Page[] {
@@ -240,22 +269,100 @@ export function insertMessage(input: {
   lang: LanguageCode;
   body: string;
 }): Message {
+  return insertMessageOnce(input).message;
+}
+
+/** AI 완료 이벤트 재전송 시 같은 원문을 두 번 만들지 않는다. */
+export function insertMessageOnce(input: {
+  meetingId: string;
+  pageId: string | null;
+  lang: LanguageCode;
+  body: string;
+  ingestKey?: string;
+}): { message: Message; inserted: boolean } {
   const now = Date.now();
   const result = getDb()
     .prepare(
-      `INSERT INTO messages (meeting_id, page_id, lang, body, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO messages (meeting_id, page_id, lang, body, ingest_key, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     )
-    .run(input.meetingId, input.pageId, input.lang, input.body, now);
+    .run(input.meetingId, input.pageId, input.lang, input.body, input.ingestKey ?? null, now);
+
+  if (result.changes === 0 && input.ingestKey) {
+    const existing = getDb()
+      .prepare(`SELECT * FROM messages WHERE ingest_key = ?`)
+      .get(input.ingestKey) as unknown as {
+      id: number;
+      meeting_id: string;
+      page_id: string | null;
+      lang: string;
+      body: string;
+      created_at: number;
+    };
+    return {
+      inserted: false,
+      message: {
+        id: existing.id,
+        meetingId: existing.meeting_id,
+        pageId: existing.page_id,
+        lang: existing.lang as LanguageCode,
+        body: existing.body,
+        createdAt: existing.created_at,
+      },
+    };
+  }
 
   return {
-    id: Number(result.lastInsertRowid),
-    meetingId: input.meetingId,
-    pageId: input.pageId,
-    lang: input.lang,
-    body: input.body,
-    createdAt: now,
+    inserted: true,
+    message: {
+      id: Number(result.lastInsertRowid),
+      meetingId: input.meetingId,
+      pageId: input.pageId,
+      lang: input.lang,
+      body: input.body,
+      createdAt: now,
+    },
   };
+}
+
+export type OutputEntry = {
+  messageId: number;
+  body: string;
+  status: "ok" | "error";
+  createdAt: number;
+};
+
+/** 대상 언어 번역과 같은 언어 원문을 하나의 참석자 타임라인으로 읽는다. */
+export function getRecentOutput(
+  meetingId: string,
+  lang: LanguageCode,
+  limit = 200,
+): OutputEntry[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT message_id, body, status, created_at FROM (
+         SELECT m.id AS message_id, m.body, 'ok' AS status, m.created_at
+         FROM messages m WHERE m.meeting_id = ? AND m.lang = ?
+         UNION ALL
+         SELECT t.message_id, t.body, t.status, t.created_at
+         FROM translations t
+         JOIN messages m ON m.id = t.message_id
+         WHERE m.meeting_id = ? AND t.lang = ?
+       ) ORDER BY message_id DESC LIMIT ?`,
+    )
+    .all(meetingId, lang, meetingId, lang, limit) as unknown as {
+    message_id: number;
+    body: string;
+    status: string;
+    created_at: number;
+  }[];
+
+  return rows.reverse().map((row) => ({
+    messageId: row.message_id,
+    body: row.body,
+    status: row.status as "ok" | "error",
+    createdAt: row.created_at,
+  }));
 }
 
 /**
@@ -295,12 +402,12 @@ export function upsertTranslation(input: {
 }
 
 /** 대시보드가 처음 열릴 때 채워 넣을 최근 원문 */
-export function getRecentMessages(meetingId: string, limit = 200): Message[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT * FROM messages WHERE meeting_id = ? ORDER BY id DESC LIMIT ?`,
-    )
-    .all(meetingId, limit) as unknown as {
+export function getRecentMessages(meetingId: string, limit: number | null = 200): Message[] {
+  const rows = (limit === null
+    ? getDb().prepare(`SELECT * FROM messages WHERE meeting_id = ? ORDER BY id`).all(meetingId)
+    : getDb()
+        .prepare(`SELECT * FROM messages WHERE meeting_id = ? ORDER BY id DESC LIMIT ?`)
+        .all(meetingId, limit)) as unknown as {
     id: number;
     meeting_id: string;
     page_id: string | null;
@@ -309,7 +416,9 @@ export function getRecentMessages(meetingId: string, limit = 200): Message[] {
     created_at: number;
   }[];
 
-  return rows.reverse().map((row) => ({
+  if (limit !== null) rows.reverse();
+
+  return rows.map((row) => ({
     id: row.id,
     meetingId: row.meeting_id,
     pageId: row.page_id,
@@ -518,7 +627,7 @@ export type CombinedEntry = {
   }[];
 };
 
-export function getRecentCombined(meetingId: string, limit = 100): CombinedEntry[] {
+export function getRecentCombined(meetingId: string, limit: number | null = null): CombinedEntry[] {
   const messages = getRecentMessages(meetingId, limit);
   if (messages.length === 0) return [];
 
@@ -630,4 +739,225 @@ export function listEngineSecrets(): EngineSecretInfo[] {
 
 export function deleteEngineSecret(engine: EngineId): void {
   getDb().prepare(`DELETE FROM engine_secrets WHERE engine = ?`).run(engine);
+}
+
+// ---------------------------------------------------------- 언어
+
+export type LanguageRow = {
+  code: LanguageCode;
+  position: number;
+  addedAt: number;
+};
+
+/** 등록된 언어. **화면과 API 는 언제나 여기를 본다** — 코드 상수를 직접 읽지 않는다. */
+export function listLanguages(): LanguageRow[] {
+  const rows = getDb()
+    .prepare(`SELECT code, position, added_at FROM languages ORDER BY position, code`)
+    .all() as unknown as { code: string; position: number; added_at: number }[];
+
+  return rows.map((row) => ({
+    code: row.code,
+    position: row.position,
+    addedAt: row.added_at,
+  }));
+}
+
+export function hasLanguage(code: LanguageCode): boolean {
+  const row = getDb().prepare(`SELECT 1 FROM languages WHERE code = ?`).get(code);
+  return Boolean(row);
+}
+
+/** 목록 맨 뒤에 붙인다. 이미 있으면 아무 일도 하지 않는다. */
+export function addLanguage(code: LanguageCode): void {
+  const db = getDb();
+  const max = db.prepare(`SELECT MAX(position) AS max FROM languages`).get() as unknown as {
+    max: number | null;
+  };
+
+  db.prepare(`INSERT OR IGNORE INTO languages (code, position, added_at) VALUES (?, ?, ?)`).run(
+    code,
+    (max?.max ?? -1) + 1,
+    Date.now(),
+  );
+}
+
+/** `ui_strings` 는 외래키 CASCADE 로 함께 지워진다. */
+export function deleteLanguage(code: LanguageCode): void {
+  getDb().prepare(`DELETE FROM languages WHERE code = ?`).run(code);
+}
+
+/**
+ * 회의에서 쓰인 적이 있는 언어인지.
+ *
+ * 쓰인 언어를 지우면 그 회의의 페이지·번역·로그가 이름 없는 코드만 남긴다.
+ * 지난 회의 기록을 깨뜨리지 않기 위한 가드다.
+ */
+export function isLanguageUsed(code: LanguageCode): boolean {
+  const row = getDb().prepare(`SELECT 1 FROM meeting_langs WHERE lang = ? LIMIT 1`).get(code);
+  return Boolean(row);
+}
+
+// ---------------------------------------------------------- UI 문구
+
+export type UiStringOrigin = "machine" | "manual";
+
+export type UiStringRow = {
+  key: string;
+  text: string;
+  origin: UiStringOrigin;
+};
+
+/** 한 언어의 UI 문구 오버레이. 빌트인 언어는 대개 비어 있다. */
+export function getUiStrings(lang: LanguageCode): UiStringRow[] {
+  const rows = getDb()
+    .prepare(`SELECT key, text, origin FROM ui_strings WHERE lang = ?`)
+    .all(lang) as unknown as { key: string; text: string; origin: string }[];
+
+  return rows.map((row) => ({
+    key: row.key,
+    text: row.text,
+    origin: row.origin === "manual" ? "manual" : "machine",
+  }));
+}
+
+/**
+ * 문구를 넣거나 덮어쓴다.
+ *
+ * 한 언어의 문구 수십 개가 한 번에 들어오므로 트랜잭션으로 묶는다. 중간에
+ * 실패해서 절반만 반영되면 화면이 두 언어로 섞인다.
+ */
+export function upsertUiStrings(
+  lang: LanguageCode,
+  entries: readonly { key: string; text: string; origin: UiStringOrigin }[],
+): void {
+  if (entries.length === 0) return;
+
+  const db = getDb();
+  const statement = db.prepare(
+    `INSERT INTO ui_strings (lang, key, text, origin)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT (lang, key) DO UPDATE SET
+       text = excluded.text,
+       origin = excluded.origin`,
+  );
+
+  db.exec("BEGIN");
+  try {
+    for (const entry of entries) {
+      statement.run(lang, entry.key, entry.text, entry.origin);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+/** 되돌리기. 행을 지우면 빌트인 문구(없으면 한국어)로 떨어진다. */
+export function deleteUiString(lang: LanguageCode, key: string): void {
+  getDb().prepare(`DELETE FROM ui_strings WHERE lang = ? AND key = ?`).run(lang, key);
+}
+
+// ---------------------------------------------------------- 엔진 설정
+
+export type EngineSetting = {
+  engine: EngineId;
+  model: string | null;
+  updatedAt: number;
+};
+
+export function getEngineSetting(engine: EngineId): EngineSetting | null {
+  const row = getDb()
+    .prepare(`SELECT engine, model, updated_at FROM engine_settings WHERE engine = ?`)
+    .get(engine) as unknown as
+    | { engine: string; model: string | null; updated_at: number }
+    | undefined;
+
+  if (!row) return null;
+
+  return {
+    engine: row.engine as EngineId,
+    model: row.model,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** 관리자 화면에서 마지막으로 고른 번역 엔진. */
+export function getLastEngineSetting(): EngineSetting | null {
+  const row = getDb()
+    .prepare(
+      `SELECT engine, model, updated_at FROM engine_settings
+       WHERE engine IN ('google', 'deepl', 'openai')
+       ORDER BY updated_at DESC LIMIT 1`,
+    )
+    .get() as unknown as
+    | { engine: EngineId; model: string | null; updated_at: number }
+    | undefined;
+
+  return row
+    ? { engine: row.engine, model: row.model, updatedAt: row.updated_at }
+    : null;
+}
+
+/** 엔진 선택 시각만 갱신한다. OpenAI 모델은 그대로 보존한다. */
+export function touchEngineSetting(engine: EngineId): void {
+  getDb()
+    .prepare(
+      `INSERT INTO engine_settings (engine, model, updated_at)
+       VALUES (?, NULL, ?)
+       ON CONFLICT (engine) DO UPDATE SET updated_at = excluded.updated_at`,
+    )
+    .run(engine, Date.now());
+}
+
+/** `model` 이 null 이면 "환경변수 기본값을 쓴다"는 뜻이다. */
+export function upsertEngineSetting(engine: EngineId, model: string | null): void {
+  getDb()
+    .prepare(
+      `INSERT INTO engine_settings (engine, model, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT (engine) DO UPDATE SET
+         model = excluded.model,
+         updated_at = excluded.updated_at`,
+    )
+    .run(engine, model, Date.now());
+}
+
+/* ── OpenAI 모델 목록 캐시 ─────────────────────────────────── */
+
+/** 마지막으로 조회한 모델 목록. 없으면 빈 배열이다. */
+export function listOpenaiModels(): string[] {
+  const rows = getDb()
+    .prepare(`SELECT model FROM openai_models ORDER BY position`)
+    .all() as unknown as { model: string }[];
+
+  return rows.map((row) => row.model);
+}
+
+/**
+ * 캐시를 통째로 갈아 끼운다.
+ *
+ * 계정에서 모델이 사라지는 일도 있으므로 병합이 아니라 교체다. 빈 목록으로는
+ * 덮지 않는다 — 조회 실패를 "모델이 하나도 없음" 으로 기록하면 화면이 비어 버린다.
+ */
+export function replaceOpenaiModels(models: readonly string[]): void {
+  if (models.length === 0) return;
+
+  const db = getDb();
+  const now = Date.now();
+
+  db.exec("BEGIN");
+  try {
+    db.prepare(`DELETE FROM openai_models`).run();
+    const insert = db.prepare(
+      `INSERT INTO openai_models (model, position, fetched_at) VALUES (?, ?, ?)`,
+    );
+    models.forEach((model, index) => {
+      insert.run(model, index, now);
+    });
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
 }

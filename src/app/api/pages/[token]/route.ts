@@ -6,7 +6,7 @@ import {
   getMeetingLangs,
   getPageByToken,
   getRecentCombined,
-  getRecentTranslations,
+  getRecentOutput,
 } from "@/lib/repo";
 
 type Params = { params: Promise<{ token: string }> };
@@ -31,7 +31,7 @@ export async function GET(_request: Request, { params }: Params) {
 
   const meeting = getMeeting(page.meetingId);
   if (!meeting) {
-    return Response.json({ error: "회의를 찾을 수 없습니다" }, { status: 404 });
+    return Response.json({ error: "세션을 찾을 수 없습니다" }, { status: 404 });
   }
 
   const langs = getMeetingLangs(meeting.id);
@@ -49,14 +49,15 @@ export async function GET(_request: Request, { params }: Params) {
       status: meeting.status,
       langs,
       // 통합 보기가 언어별 이름을 자기 언어 표기로 보여 줄 수 있도록 함께 준다.
-      languages: langs.map(getLanguage),
+      languages: langs.map((code) => getLanguage(code)),
     },
     activity: getMeetingActivity(meeting.id),
-    // 회의 중간에 들어와도 앞의 흐름을 볼 수 있어야 한다. 입력 페이지는 필요 없다.
+    // 세션 중간에 들어와도 앞의 흐름을 볼 수 있어야 한다. 입력 페이지도 다른
+    // 속기사의 원문과 번역을 함께 보여 주므로 통합 이력을 쓴다.
     history:
       page.kind === "output" && page.lang
-        ? getRecentTranslations(meeting.id, page.lang)
-        : page.kind === "combined"
+        ? getRecentOutput(meeting.id, page.lang)
+        : page.kind === "combined" || page.kind === "input" || page.kind === "capture"
           ? getRecentCombined(meeting.id)
           : [],
   });

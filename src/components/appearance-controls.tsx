@@ -1,8 +1,9 @@
 "use client";
 
 import { useAppearance } from "@/hooks/use-appearance";
-import type { UiStrings } from "@/lib/i18n";
-import { LANGUAGES, type LanguageCode } from "@/lib/languages";
+import { FONT_SIZE_LABELS } from "@/lib/appearance";
+import type { UiStrings } from "@/lib/i18n-builtin";
+import type { Language, LanguageCode } from "@/lib/languages";
 
 /**
  * 테마·글자 크기 조절. 화면 오른쪽 위에 떠 있다.
@@ -18,9 +19,7 @@ export function AppearanceControls({
   /**
    * 글자 크기 조절을 띄울지.
    *
-   * 이 설정은 `.app-text` 가 붙은 요소, 즉 **회의 내용**에만 걸린다. 회의 내용이
-   * 없는 화면(회의 목록·로그인)에서는 눌러도 아무 일이 일어나지 않으므로 감춘다.
-   * 동작하지 않는 컨트롤을 띄워 두면 사용자가 고장으로 읽는다.
+   * 전체 화면의 글자 배율을 조절한다. 필요한 화면에서만 감출 수 있도록 남겨 둔다.
    */
   textSize = true,
   language,
@@ -28,31 +27,37 @@ export function AppearanceControls({
   strings: UiStrings["appearance"];
   textSize?: boolean;
   /**
-   * 화면 언어 선택. 관리자 화면에서만 넘어온다 — 참석자 페이지는 URL 이 곧
-   * 언어라서 고를 것이 없다.
+   * 화면 언어 선택. 관리자 화면과 특정 언어가 없는 통합 조회에서 넘어온다.
    */
   language?: {
     value: LanguageCode;
     label: string;
+    /**
+     * 고를 수 있는 언어.
+     *
+     * 예전에는 이 컴포넌트가 `LANGUAGES` 상수를 직접 읽었는데, 언어가 DB 로
+     * 옮겨 간 지금은 클라이언트가 알 수 없다. 서버가 내려 준다.
+     */
+    options: readonly Language[];
     onChange: (next: LanguageCode) => void;
   };
 }) {
   const { effectiveTheme, fontSize, toggleTheme, stepFontSize } = useAppearance();
 
   const button =
-    "cursor-pointer border border-line px-2 py-1 leading-none transition-colors hover:bg-fg hover:text-bg";
+    "inline-flex h-[1.3rem] cursor-pointer items-center justify-center border border-line px-[8px] leading-none transition-colors hover:bg-fg hover:text-bg";
 
   return (
-    <div className="fixed top-2.5 right-3.5 z-50 flex items-center gap-3 font-mono text-[11px] text-muted opacity-60 transition-opacity hover:opacity-100">
+    <div className="fixed top-2.5 right-3 left-3 z-50 flex items-center justify-end gap-[6px] bg-bg font-mono text-[11px] text-muted sm:left-auto sm:right-3.5 sm:gap-3">
       {language ? (
         <select
           value={language.value}
-          onChange={(event) => language.onChange(event.target.value as LanguageCode)}
+          onChange={(event) => language.onChange(event.target.value)}
           title={language.label}
           aria-label={language.label}
-          className="cursor-pointer border border-line bg-bg px-1.5 py-1 font-mono text-[11px] text-muted outline-none hover:text-fg"
+          className="h-[1.3rem] min-w-0 flex-1 cursor-pointer border border-line bg-bg px-[6px] font-mono text-[11px] text-muted outline-none hover:text-fg sm:flex-none"
         >
-          {LANGUAGES.map((item) => (
+          {language.options.map((item) => (
             // 어느 언어로 보고 있든 읽을 수 있도록 그 언어 표기로 낸다.
             <option key={item.code} value={item.code}>
               {item.nativeName}
@@ -66,18 +71,18 @@ export function AppearanceControls({
         onClick={toggleTheme}
         title={strings.theme}
         aria-label={strings.theme}
-        className={button}
+        className={`${button} w-[calc(5.75em+18px)] shrink-0 text-[clamp(10px,0.5rem,16px)]`}
         /*
          * 라벨이 기기 설정에 따라 정해지므로 서버가 렌더한 값과 다를 수 있다.
          * 하이드레이션 직후 올바른 값으로 교정되는, 의도된 차이다.
          */
         suppressHydrationWarning
       >
-        {effectiveTheme === "dark" ? strings.dark : strings.light}
+        {effectiveTheme === "dark" ? strings.light : strings.dark}
       </button>
 
       {textSize ? (
-        <div className="flex items-center gap-1.5" title={strings.textSize}>
+        <div className="flex items-center gap-[6px]" title={strings.textSize}>
           <button
             type="button"
             onClick={() => stepFontSize(-1)}
@@ -87,7 +92,9 @@ export function AppearanceControls({
           >
             −
           </button>
-          <span className="min-w-[26px] text-center tracking-[0.05em]">{fontSize}</span>
+          <span className="inline-flex h-[1.3rem] min-w-[44px] items-center justify-center text-center tracking-[0.05em]">
+            {FONT_SIZE_LABELS[fontSize]}
+          </span>
           <button
             type="button"
             onClick={() => stepFontSize(1)}
