@@ -44,13 +44,14 @@ yarn-error.log*
 next-env.d.ts
 
 # 임시 작업 폴더 (디자인 시안, 기획안, 참고자료 등)
-# 내용물은 추적하지 않고 폴더와 안내 문서만 유지한다.
-/.tmp/*
-!/.tmp/README.md
+/.tmp/
 
-# AI Artifact
-.orca
+# AI 작업 파일
+/.orca/
+/.claude/
+/.codex/
 AGENTS.md
+CLAUDE.md
 
 # SQLite 데이터베이스
 /data
