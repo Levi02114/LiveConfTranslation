@@ -137,6 +137,21 @@ export function CaptureView({
     if (container) container.scrollTop = container.scrollHeight;
   }, [messages.length, partial]);
 
+  useEffect(() => {
+    const follow = () => {
+      requestAnimationFrame(() => {
+        const container = scrollRef.current;
+        if (container) container.scrollTop = container.scrollHeight;
+      });
+    };
+    window.addEventListener("resize", follow, { passive: true });
+    window.visualViewport?.addEventListener("resize", follow, { passive: true });
+    return () => {
+      window.removeEventListener("resize", follow);
+      window.visualViewport?.removeEventListener("resize", follow);
+    };
+  }, []);
+
   const refreshDevices = useCallback(async () => {
     const available = (await navigator.mediaDevices.enumerateDevices()).filter(
       (device) => device.kind === "audioinput",
@@ -332,7 +347,7 @@ export function CaptureView({
       <AppearanceControls strings={strings.appearance} />
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-8">
-        <div className="mx-auto max-w-[920px] pt-14">
+        <div className="mx-auto flex min-h-full max-w-[920px] flex-col pt-14">
           <header className="border-b border-line pb-5">
             <div className="text-[27px] font-medium">{language.nativeName}</div>
             <div className="mt-1.5 font-mono text-[12px] text-muted">
@@ -347,7 +362,7 @@ export function CaptureView({
             </div>
           ) : null}
 
-          <div className="pt-6">
+          <div className="mt-auto pt-6">
             {messages.length === 0 && !partial ? (
               <p className="font-mono text-[12px] text-muted">{strings.status.noContent}</p>
             ) : null}

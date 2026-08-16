@@ -346,6 +346,7 @@ export type AdminStrings = {
     closedNotice: string;
     unsupportedEngine: string;
     pages: string;
+    participantGuide: string;
     input: string;
     output: string;
     capture: string;
@@ -470,6 +471,7 @@ const adminKo: AdminStrings = {
     unsupportedEngine:
       "{engine}은(는) {languages}을(를) 지원하지 않습니다 · 폴백 엔진: {fallback}",
     pages: "페이지 URL — 참석자에게 배포",
+    participantGuide: "참가자 안내",
     input: "입력 (속기사)",
     output: "출력 (참석자)",
     capture: "음성 수집",
@@ -599,6 +601,7 @@ const adminVi: AdminStrings = {
     unsupportedEngine:
       "{engine} không hỗ trợ {languages} · Công cụ dự phòng: {fallback}",
     pages: "URL trang — gửi cho người tham dự",
+    participantGuide: "Hướng dẫn người tham dự",
     input: "Nhập liệu (người ghi tốc ký)",
     output: "Bản dịch (người tham dự)",
     capture: "Thu âm",
@@ -728,6 +731,7 @@ const adminTh: AdminStrings = {
     unsupportedEngine:
       "{engine} ไม่รองรับ {languages} · เครื่องมือสำรอง: {fallback}",
     pages: "URL หน้า — แจกจ่ายให้ผู้เข้าร่วม",
+    participantGuide: "คู่มือผู้เข้าร่วม",
     input: "ป้อนข้อมูล (นักชวเลข)",
     output: "คำแปล (ผู้เข้าร่วม)",
     capture: "รับเสียง",
@@ -857,6 +861,7 @@ const adminSi: AdminStrings = {
     unsupportedEngine:
       "{engine} {languages} සඳහා සහය නොදක්වයි · විකල්ප එන්ජිම: {fallback}",
     pages: "පිටු URL — සහභාගිවන්නන්ට බෙදා දෙන්න",
+    participantGuide: "සහභාගිවන්නන්ගේ මාර්ගෝපදේශය",
     input: "ඇතුළත් කිරීම (කෙටි සටහන්කරු)",
     output: "පරිවර්තනය (සහභාගිවන්නා)",
     capture: "හඬ ග්‍රහණය",

@@ -314,17 +314,30 @@ export function DashboardView({
         })}
 
         {combined ? (
-          <div className="grid grid-cols-1 gap-3 border-b border-line py-4 sm:grid-cols-[110px_1fr] sm:items-center sm:gap-x-5 sm:py-3.5">
-            <div className="text-[15px]">{ui.role.combined}</div>
-            <UrlCell
-              url={`${origin}/all/${combined.token}`}
-              copied={copied?.key === "all" ? copied : null}
-              onCopy={(url) => void copy("all", url)}
-              className={copyBtn}
-              strings={strings.dashboard}
-              onQr={(url) => void showQr("combined", url)}
-            />
-          </div>
+          <>
+            <div className="grid grid-cols-1 gap-3 border-b border-line py-4 sm:grid-cols-[110px_1fr] sm:items-center sm:gap-x-5 sm:py-3.5">
+              <div className="text-[15px]">{ui.role.combined}</div>
+              <UrlCell
+                url={`${origin}/all/${combined.token}`}
+                copied={copied?.key === "all" ? copied : null}
+                onCopy={(url) => void copy("all", url)}
+                className={copyBtn}
+                strings={strings.dashboard}
+                onQr={(url) => void showQr("combined", url)}
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-3 border-b border-line py-4 sm:grid-cols-[110px_1fr] sm:items-center sm:gap-x-5 sm:py-3.5">
+              <div className="text-[15px]">{strings.dashboard.participantGuide}</div>
+              <UrlCell
+                url={`${origin}/join/${combined.token}`}
+                copied={copied?.key === "join" ? copied : null}
+                onCopy={(url) => void copy("join", url)}
+                className={copyBtn}
+                strings={strings.dashboard}
+                onQr={(url) => void showQr("participant-guide", url)}
+              />
+            </div>
+          </>
         ) : null}
       </section>
 
