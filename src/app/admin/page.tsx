@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 
 import { ADMIN_LANG_COOKIE, toAdminLang } from "@/lib/admin-lang";
 import { isAdmin } from "@/lib/auth";
-import { defaultEngine } from "@/lib/env";
 import { getAdminStrings, getStrings, resolveEntries } from "@/lib/i18n";
 import { getLanguage, isBuiltinLanguage, type LanguageCode } from "@/lib/languages";
 import {
@@ -16,7 +15,7 @@ import {
   listOpenaiModels,
 } from "@/lib/repo";
 import { engineKeyStatus, resolveOpenaiModel } from "@/lib/secrets";
-import { getEngine, isEngineId, listEngines, refreshEngineSupport } from "@/lib/translate";
+import { getEngine, listEngines, refreshEngineSupport } from "@/lib/translate";
 import type { EngineId } from "@/lib/translate/types";
 import { translateUiStrings } from "@/lib/ui-translate";
 
@@ -66,9 +65,7 @@ export default async function AdminPage() {
   await refreshEngineSupport();
 
   const languages = listLanguages().map((row) => row.code);
-  const configured = defaultEngine();
-  const lastEngine = getLastEngineSetting()?.engine;
-  const selectedEngine = lastEngine ?? (isEngineId(configured) ? configured : "google");
+  const selectedEngine = getLastEngineSetting()?.engine ?? "google";
   await fillMissingUiStrings(languages, selectedEngine);
 
   const lang = toAdminLang((await cookies()).get(ADMIN_LANG_COOKIE)?.value, languages);

@@ -2,7 +2,6 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireAdmin } from "@/lib/auth";
-import { defaultEngine } from "@/lib/env";
 import type { LanguageCode } from "@/lib/languages";
 import { engineKey } from "@/lib/secrets";
 import {
@@ -65,7 +64,7 @@ export async function POST(request: Request) {
     }
   }
 
-  const requested = engine ?? defaultEngine();
+  const requested = engine ?? "google";
   if (!isEngineId(requested)) {
     return Response.json(
       { error: `알 수 없는 번역 엔진입니다: ${requested}` },

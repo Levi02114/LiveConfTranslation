@@ -15,7 +15,7 @@ import { ENGINE_IDS, isEngineId } from "@/lib/translate";
 
 const saveSchema = z.object({
   engine: z.string().refine(isEngineId, "지원하지 않는 번역 엔진입니다"),
-  // 생략하면 엔진 선택 시각만, 빈 문자열/null이면 환경변수 기본 모델을 저장한다.
+  // 생략하면 엔진 선택 시각만, 빈 문자열/null이면 내장 기본 모델을 쓴다.
   model: z.string().trim().max(100).nullable().optional(),
 });
 

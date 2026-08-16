@@ -75,7 +75,7 @@ async function loadSupport(): Promise<DeepLSupport> {
   if (supportGlobal.__lctDeepLSupportPromise) return supportGlobal.__lctDeepLSupportPromise;
 
   const key = engineKey("deepl");
-  if (!key) throw new TranslationError("DEEPL_API_KEY 가 설정되지 않았습니다", "deepl");
+  if (!key) throw new TranslationError("DeepL API 키가 등록되지 않았습니다", "deepl");
 
   supportGlobal.__lctDeepLSupportPromise = Promise.all([
     fetchLanguages("source", key),
@@ -112,7 +112,7 @@ async function callDeepl(
 ): Promise<string[]> {
   const key = engineKey("deepl");
   if (!key) {
-    throw new TranslationError("DEEPL_API_KEY 가 설정되지 않았습니다", "deepl");
+    throw new TranslationError("DeepL API 키가 등록되지 않았습니다", "deepl");
   }
 
   const support = await loadSupport();

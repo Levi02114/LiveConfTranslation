@@ -9,7 +9,6 @@ import type { EngineId } from "@/lib/translate/types";
 export type EngineKeyStatus = {
   engine: EngineId;
   configured: boolean;
-  source: "db" | "env" | null;
   hint: string | null;
   updatedAt: number | null;
 };
@@ -145,12 +144,12 @@ export function EngineKeysDialog({
                     <span className="text-[15px]">{engine.label}</span>
                     <span className="font-mono text-[11px] text-muted">
                       {status?.configured
-                        ? `${status.hint} · ${status.source === "db" ? strings.registered : strings.fromEnv}`
+                        ? `${status.hint} · ${strings.registered}`
                         : strings.none}
                     </span>
                   </div>
 
-                  {status?.source === "db" && status.updatedAt ? (
+                  {status?.updatedAt ? (
                     <div className="mt-1 font-mono text-[11px] text-muted">
                       {formatTimestamp(status.updatedAt)}
                     </div>
@@ -181,7 +180,7 @@ export function EngineKeysDialog({
                     >
                       {busy === engine.id ? strings.saving : strings.save}
                     </button>
-                    {status?.source === "db" ? (
+                    {status?.configured ? (
                       <button
                         type="button"
                         onClick={() => void remove(engine.id)}

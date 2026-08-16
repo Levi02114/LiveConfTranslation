@@ -373,7 +373,6 @@ export type AdminStrings = {
     note: string;
     none: string;
     registered: string;
-    fromEnv: string;
     placeholder: string;
     replacePlaceholder: string;
     save: string;
@@ -500,10 +499,9 @@ const adminKo: AdminStrings = {
     button: "API 키 등록",
     title: "번역 엔진 API 키",
     close: "닫기",
-    note: "키는 암호화해서 저장되며 화면으로 다시 꺼내 볼 수 없습니다. 등록한 키가 환경변수보다 우선합니다.",
+    note: "키는 암호화되어 관리자 데이터베이스에 저장되며 화면으로 다시 꺼내 볼 수 없습니다.",
     none: "없음",
     registered: "등록됨",
-    fromEnv: "환경변수",
     placeholder: "API 키",
     replacePlaceholder: "새 키로 덮어쓰기",
     save: "저장",
@@ -630,10 +628,9 @@ const adminVi: AdminStrings = {
     button: "Đăng ký khóa API",
     title: "Khóa API của công cụ dịch",
     close: "Đóng",
-    note: "Khóa được mã hóa khi lưu và không thể xem lại trên màn hình. Khóa đã đăng ký được ưu tiên hơn biến môi trường.",
+    note: "Khóa được mã hóa, lưu trong cơ sở dữ liệu quản trị và không thể xem lại trên màn hình.",
     none: "Chưa có",
     registered: "Đã đăng ký",
-    fromEnv: "Biến môi trường",
     placeholder: "Khóa API",
     replacePlaceholder: "Ghi đè bằng khóa mới",
     save: "Lưu",
@@ -760,10 +757,9 @@ const adminTh: AdminStrings = {
     button: "ลงทะเบียนคีย์ API",
     title: "คีย์ API ของเครื่องมือแปล",
     close: "ปิด",
-    note: "คีย์จะถูกเข้ารหัสก่อนจัดเก็บและไม่สามารถเรียกดูได้อีก คีย์ที่ลงทะเบียนไว้จะถูกใช้ก่อนตัวแปรสภาพแวดล้อม",
+    note: "คีย์จะถูกเข้ารหัสและจัดเก็บในฐานข้อมูลผู้ดูแลระบบ โดยไม่สามารถเรียกดูบนหน้าจอได้อีก",
     none: "ไม่มี",
     registered: "ลงทะเบียนแล้ว",
-    fromEnv: "ตัวแปรสภาพแวดล้อม",
     placeholder: "คีย์ API",
     replacePlaceholder: "เขียนทับด้วยคีย์ใหม่",
     save: "บันทึก",
@@ -890,10 +886,9 @@ const adminSi: AdminStrings = {
     button: "API යතුර ලියාපදිංචිය",
     title: "පරිවර්තන එන්ජිමේ API යතුර",
     close: "වසන්න",
-    note: "යතුරු සංකේතනය කර ගබඩා කෙරේ; තිරයෙන් නැවත බැලිය නොහැක. ලියාපදිංචි යතුරට පරිසර විචල්‍යයට වඩා ප්‍රමුඛත්වය ලැබේ.",
+    note: "යතුරු සංකේතනය කර පරිපාලක දත්ත ගබඩාවේ තබන අතර තිරයෙන් නැවත බැලිය නොහැක.",
     none: "නැත",
     registered: "ලියාපදිංචියි",
-    fromEnv: "පරිසර විචල්‍යය",
     placeholder: "API යතුර",
     replacePlaceholder: "නව යතුරකින් ප්‍රතිස්ථාපනය",
     save: "සුරකින්න",

@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS ui_strings (
 
 CREATE TABLE IF NOT EXISTS engine_settings (
   engine      TEXT PRIMARY KEY,               -- 'google' | 'deepl' | 'openai'
-  model       TEXT,                           -- OpenAI 언어모델. NULL 이면 환경변수 기본값
+  model       TEXT,                           -- OpenAI 언어모델. NULL 이면 내장 기본값
   updated_at  INTEGER NOT NULL
 );
 

@@ -50,7 +50,7 @@ async function callGoogle(
 ): Promise<string[]> {
   const key = engineKey("google");
   if (!key) {
-    throw new TranslationError("GOOGLE_TRANSLATE_API_KEY 가 설정되지 않았습니다", "google");
+    throw new TranslationError("Google Translate API 키가 등록되지 않았습니다", "google");
   }
 
   let response: Response;

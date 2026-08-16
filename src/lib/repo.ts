@@ -910,7 +910,7 @@ export function touchEngineSetting(engine: EngineId): void {
     .run(engine, Date.now());
 }
 
-/** `model` 이 null 이면 "환경변수 기본값을 쓴다"는 뜻이다. */
+/** `model` 이 null 이면 내장 기본 모델을 쓴다는 뜻이다. */
 export function upsertEngineSetting(engine: EngineId, model: string | null): void {
   getDb()
     .prepare(

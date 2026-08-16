@@ -99,7 +99,7 @@ export const openaiEngine: TranslationEngine = {
   async translate({ text, from, to, context, signal }: TranslateInput) {
     const key = engineKey("openai");
     if (!key) {
-      throw new TranslationError("OPENAI_API_KEY 가 설정되지 않았습니다", "openai");
+      throw new TranslationError("OpenAI API 키가 등록되지 않았습니다", "openai");
     }
 
     const userContent = context?.length
@@ -175,7 +175,7 @@ export const openaiEngine: TranslationEngine = {
 
     const key = engineKey("openai");
     if (!key) {
-      throw new TranslationError("OPENAI_API_KEY 가 설정되지 않았습니다", "openai");
+      throw new TranslationError("OpenAI API 키가 등록되지 않았습니다", "openai");
     }
 
     const system =

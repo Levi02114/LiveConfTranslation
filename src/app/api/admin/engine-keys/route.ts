@@ -49,7 +49,7 @@ export async function POST(request: Request) {
   return Response.json({ key: engineKeyStatus(engine) });
 }
 
-/** 등록된 키를 지운다. 환경변수에 값이 있으면 다시 그쪽이 쓰인다. */
+/** 등록된 키를 지운다. 이후 다시 등록할 때까지 해당 엔진은 사용할 수 없다. */
 export async function DELETE(request: Request) {
   const denied = await requireAdmin();
   if (denied) return denied;

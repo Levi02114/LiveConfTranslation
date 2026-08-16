@@ -40,14 +40,6 @@ export function databasePath(): string {
   return process.env.DATABASE_PATH ?? "data/meetings.db";
 }
 
-export function googleApiKey(): string | undefined {
-  return process.env.GOOGLE_TRANSLATE_API_KEY || undefined;
-}
-
-export function deeplApiKey(): string | undefined {
-  return process.env.DEEPL_API_KEY || undefined;
-}
-
 /**
  * DeepL 엔드포인트.
  *
@@ -63,10 +55,6 @@ export function deeplApiUrl(key: string | undefined): string {
   return key?.endsWith(":fx") ? "https://api-free.deepl.com" : "https://api.deepl.com";
 }
 
-export function openaiApiKey(): string | undefined {
-  return process.env.OPENAI_API_KEY || undefined;
-}
-
 /**
  * OpenAI 호환 엔드포인트.
  *
@@ -75,16 +63,6 @@ export function openaiApiKey(): string | undefined {
  */
 export function openaiBaseUrl(): string {
   return (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
-}
-
-/** 번역에 쓸 OpenAI 모델. 자막은 지연이 중요해 작은 모델을 기본으로 둔다. */
-export function openaiModel(): string {
-  return process.env.OPENAI_TRANSLATION_MODEL ?? "gpt-5.4-mini";
-}
-
-/** 회의를 새로 만들 때 기본으로 선택되는 번역 엔진 */
-export function defaultEngine(): string {
-  return process.env.TRANSLATION_ENGINE ?? "google";
 }
 
 /** 관리자 세션 유효 기간(초). 기본 12시간 — 하루짜리 행사를 덮는다. */

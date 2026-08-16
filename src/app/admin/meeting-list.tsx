@@ -42,7 +42,7 @@ export function MeetingList({
   engines: { id: EngineId; label: string; configured: boolean }[];
   engineKeys: EngineKeyStatus[];
   defaultEngine: EngineId;
-  /** 전역 OpenAI 언어모델. 비어 있으면 환경변수 기본값을 쓴다. */
+  /** 전역 OpenAI 언어모델. 아직 고르지 않았으면 내장 기본값을 쓴다. */
   openaiModel: string;
   /** 마지막으로 성공한 OpenAI 모델 목록. */
   openaiModels: string[];
