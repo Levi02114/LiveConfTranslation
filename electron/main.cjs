@@ -8,7 +8,13 @@ const path = require("node:path");
 
 const { app, BrowserWindow, clipboard, dialog, Menu, shell } = require("electron");
 
-const { extractQuickTunnelUrl, listLanAddresses, parseHealth, pickLanAddress } = require("./network.cjs");
+const {
+  extractQuickTunnelUrl,
+  listLanAddresses,
+  parseHealth,
+  pickLanAddress,
+  toLoopbackBrowserUrl,
+} = require("./network.cjs");
 
 const PORT = 3000;
 const LOOPBACK_ORIGIN = `http://127.0.0.1:${PORT}`;
@@ -139,7 +145,14 @@ function isInternalAdminUrl(value) {
 function openInBrowser(value) {
   try {
     const url = new URL(value);
-    if (url.protocol === "http:" || url.protocol === "https:") void shell.openExternal(url.href);
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      const target = toLoopbackBrowserUrl(
+        url.href,
+        lanAddresses.map((item) => item.address),
+        PORT,
+      );
+      void shell.openExternal(target);
+    }
   } catch {
     // 잘못된 URL 은 열지 않는다.
   }

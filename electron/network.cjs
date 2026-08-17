@@ -41,6 +41,14 @@ function pickLanAddress(interfaces) {
   );
 }
 
+function toLoopbackBrowserUrl(value, addresses, port) {
+  const url = new URL(value);
+  if (url.protocol === "http:" && url.port === String(port) && addresses.includes(url.hostname)) {
+    url.hostname = "127.0.0.1";
+  }
+  return url.href;
+}
+
 function extractQuickTunnelUrl(text) {
   return text.match(/https:\/\/[-a-z0-9]+\.trycloudflare\.com\b/i)?.[0] ?? null;
 }
@@ -58,4 +66,10 @@ function parseHealth(text) {
   }
 }
 
-module.exports = { extractQuickTunnelUrl, listLanAddresses, parseHealth, pickLanAddress };
+module.exports = {
+  extractQuickTunnelUrl,
+  listLanAddresses,
+  parseHealth,
+  pickLanAddress,
+  toLoopbackBrowserUrl,
+};
