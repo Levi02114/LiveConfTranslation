@@ -424,6 +424,10 @@ export type AdminStrings = {
     button: string;
     title: string;
     add: string;
+    download: string;
+    upload: string;
+    uploadReady: string;
+    uploadFailed: string;
     source: string;
     translation: string;
     providerNote: string;
@@ -565,6 +569,10 @@ const adminKo: AdminStrings = {
     button: "단어집",
     title: "번역 단어집",
     add: "단어 추가",
+    download: "CSV 다운로드",
+    upload: "CSV 업로드",
+    uploadReady: "CSV를 불러왔습니다 · 저장을 눌러 적용하세요",
+    uploadFailed: "CSV 파일을 불러오지 못했습니다",
     source: "원단어",
     translation: "번역 단어",
     providerNote:
@@ -707,6 +715,10 @@ const adminVi: AdminStrings = {
     button: "Bảng thuật ngữ",
     title: "Bảng thuật ngữ dịch",
     add: "Thêm thuật ngữ",
+    download: "Tải CSV",
+    upload: "Tải lên CSV",
+    uploadReady: "Đã tải CSV · Nhấn Lưu để áp dụng",
+    uploadFailed: "Không đọc được tệp CSV",
     source: "Thuật ngữ gốc",
     translation: "Thuật ngữ dịch",
     providerNote:
@@ -849,6 +861,10 @@ const adminTh: AdminStrings = {
     button: "อภิธานศัพท์",
     title: "อภิธานศัพท์การแปล",
     add: "เพิ่มคำศัพท์",
+    download: "ดาวน์โหลด CSV",
+    upload: "อัปโหลด CSV",
+    uploadReady: "โหลด CSV แล้ว · กดบันทึกเพื่อใช้งาน",
+    uploadFailed: "อ่านไฟล์ CSV ไม่สำเร็จ",
     source: "คำต้นฉบับ",
     translation: "คำแปล",
     providerNote:
@@ -991,6 +1007,10 @@ const adminSi: AdminStrings = {
     button: "පද මාලාව",
     title: "පරිවර්තන පද මාලාව",
     add: "පදයක් එක් කරන්න",
+    download: "CSV බාගන්න",
+    upload: "CSV උඩුගත කරන්න",
+    uploadReady: "CSV පූරණය කළා · යෙදීමට සුරකින්න ඔබන්න",
+    uploadFailed: "CSV ගොනුව කියවිය නොහැක",
     source: "මුල් පදය",
     translation: "පරිවර්තන පදය",
     providerNote:

@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { type ChangeEvent, useRef, useState } from "react";
 
+import { parseGlossaryCsv, serializeGlossaryCsv } from "@/lib/glossary-csv";
 import type { AdminStrings } from "@/lib/i18n-builtin";
 import type { Language, LanguageCode } from "@/lib/languages";
 
@@ -23,9 +24,11 @@ export function GlossaryDialog({
   displayLang: LanguageCode;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<GlossaryRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const orderedLanguages = [
     ...languages.filter((language) => language.code === displayLang),
     ...languages.filter((language) => language.code !== displayLang),
@@ -33,6 +36,7 @@ export function GlossaryDialog({
 
   const load = async () => {
     setError(null);
+    setNotice(null);
     try {
       const response = await fetch("/api/admin/glossary");
       const payload = (await response.json()) as {
@@ -66,6 +70,47 @@ export function GlossaryDialog({
     ]);
   };
 
+  const download = () => {
+    const csv = serializeGlossaryCsv(
+      languages.map((language) => language.code),
+      rows.map((row) => row.terms),
+    );
+    const url = URL.createObjectURL(new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "glossary.csv";
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
+  const upload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    setError(null);
+    setNotice(null);
+    try {
+      const terms = parseGlossaryCsv(
+        await file.text(),
+        languages.map((language) => language.code),
+      );
+      setRows(
+        terms.map((row) => {
+          newRow += 1;
+          return { clientId: `csv-${Date.now()}-${newRow}`, terms: row };
+        }),
+      );
+      setNotice(strings.uploadReady);
+    } catch {
+      setError(strings.uploadFailed);
+    } finally {
+      input.value = "";
+    }
+  };
+
   const save = async () => {
     if (busy) return;
     if (rows.some((row) => languages.some((language) => !row.terms[language.code]?.trim()))) {
@@ -75,6 +120,7 @@ export function GlossaryDialog({
 
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const response = await fetch("/api/admin/glossary", {
         method: "PUT",
@@ -117,15 +163,39 @@ export function GlossaryDialog({
 
       <dialog
         ref={dialogRef}
-        onClose={() => setError(null)}
+        onClose={() => {
+          setError(null);
+          setNotice(null);
+        }}
         className="m-auto w-[min(780px,calc(100vw-32px))] border border-line bg-bg p-0 text-fg backdrop:bg-black/45"
       >
         <div className="px-5 py-5 sm:px-7 sm:py-6">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="font-mono text-[12px] tracking-[0.04em] text-muted">
               {strings.title}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={download}
+                className="cursor-pointer border border-line px-2 py-1 font-mono text-[11px] hover:border-fg hover:bg-fg hover:text-bg"
+              >
+                {strings.download}
+              </button>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="cursor-pointer border border-line px-2 py-1 font-mono text-[11px] hover:border-fg hover:bg-fg hover:text-bg"
+              >
+                {strings.upload}
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(event) => void upload(event)}
+                className="hidden"
+              />
               <button
                 type="button"
                 onClick={add}
@@ -148,7 +218,8 @@ export function GlossaryDialog({
           <p className="mt-4 font-mono text-[11px] leading-relaxed text-muted">
             {strings.providerNote}
           </p>
-          {error ? <p className="mt-3 font-mono text-[12px]">{error}</p> : null}
+          {error ? <p role="alert" className="mt-3 font-mono text-[12px]">{error}</p> : null}
+          {notice ? <p role="status" className="mt-3 font-mono text-[12px]">{notice}</p> : null}
 
           <div className="mt-4 max-h-[56vh] overflow-y-auto">
             {rows.length === 0 ? (
