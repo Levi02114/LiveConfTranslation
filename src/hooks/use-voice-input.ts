@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { newBrowserId } from "@/lib/browser-id";
 import type { UiStrings } from "@/lib/i18n-builtin";
 
 export type VoiceInputState = "idle" | "starting" | "active";
@@ -86,7 +87,7 @@ export function useVoiceInput({
   );
 
   useEffect(() => {
-    clientId.current = crypto.randomUUID();
+    clientId.current = newBrowserId();
     return () => stop();
   }, [stop]);
 
