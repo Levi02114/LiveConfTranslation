@@ -337,6 +337,19 @@ function installApplicationMenu() {
         },
       ];
 
+  if (tunnelUrl) {
+    addressItems.push({
+      label: `공개 · Cloudflare · ${tunnelUrl}`,
+      type: "radio",
+      checked: shareOrigin === tunnelUrl,
+      click: () => {
+        shareOrigin = tunnelUrl;
+        syncPublicOrigin();
+        installApplicationMenu();
+      },
+    });
+  }
+
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
