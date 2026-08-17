@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppearanceControls } from "@/components/appearance-controls";
 import { TranslationEntry } from "@/components/translation-entry";
 import { useRealtime } from "@/hooks/use-realtime";
+import { useVoiceInput } from "@/hooks/use-voice-input";
 import type { UiStrings } from "@/lib/i18n-builtin";
 import { type Language, textDirection } from "@/lib/languages";
 import type { Peer, ServerMessage } from "@/lib/realtime/protocol";
@@ -21,6 +22,7 @@ export function InputView({
   meetingTitle,
   history,
   initiallyClosed,
+  voiceAvailable,
 }: {
   token: string;
   language: Language;
@@ -29,6 +31,7 @@ export function InputView({
   meetingTitle: string;
   history: CombinedEntry[];
   initiallyClosed: boolean;
+  voiceAvailable: boolean;
 }) {
   const [entries, setEntries] = useState<CombinedEntry[]>(history);
   const [peers, setPeers] = useState<Peer[]>([]);
@@ -40,6 +43,8 @@ export function InputView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const voice = useVoiceInput({ token, strings: strings.capture, closed });
+  const { stop: stopVoice } = voice;
 
   const onMessage = useCallback((message: ServerMessage) => {
     if (message.t === "message") {
@@ -81,8 +86,9 @@ export function InputView({
       setPeers(message.peers);
     } else if (message.t === "meeting-closed") {
       setClosed(true);
+      stopVoice();
     }
-  }, []);
+  }, [stopVoice]);
 
   const { state, send } = useRealtime(`token=${encodeURIComponent(token)}`, onMessage);
 
@@ -101,7 +107,7 @@ export function InputView({
   useEffect(() => {
     const container = scrollRef.current;
     if (container) container.scrollTop = container.scrollHeight;
-  }, [flowSize]);
+  }, [flowSize, voice.partial]);
 
   useEffect(() => {
     const follow = () => {
@@ -264,6 +270,17 @@ export function InputView({
               </div>
             ))}
 
+            {voice.partial ? (
+              <div className="grid grid-cols-1 gap-1 border-t border-line py-3 opacity-50 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-4">
+                <span className="whitespace-nowrap font-mono text-[12px] text-muted sm:pt-[0.4em]">
+                  {strings.capture.partial}
+                </span>
+                <p className="app-text min-w-0 whitespace-pre-wrap italic [text-wrap:pretty]">
+                  {voice.partial}<span aria-hidden>▍</span>
+                </p>
+              </div>
+            ) : null}
+
             <div className="h-12" aria-hidden />
           </div>
         </div>
@@ -271,6 +288,52 @@ export function InputView({
 
       <div className="shrink-0 border-t border-line bg-bg">
         <div className="mx-auto max-w-[920px] px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-8 sm:py-4">
+          <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line pb-3 font-mono text-[11px]">
+            <label
+              className={`flex items-center gap-2 ${
+                voiceAvailable && !closed ? "cursor-pointer" : "cursor-not-allowed opacity-40"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={voice.state !== "idle"}
+                disabled={!voiceAvailable || closed}
+                onChange={(event) =>
+                  event.target.checked ? void voice.start() : voice.stop()
+                }
+                className="h-[15px] w-[15px] accent-[var(--fg)]"
+              />
+              <span>{strings.capture.toggle}</span>
+            </label>
+
+            {!voiceAvailable ? (
+              <span className="text-muted">{strings.capture.keyRequired}</span>
+            ) : null}
+
+            {voice.devices.length ? (
+              <select
+                aria-label={strings.capture.microphone}
+                value={voice.deviceId}
+                onChange={(event) => voice.setDeviceId(event.target.value)}
+                disabled={voice.state !== "idle"}
+                className="h-9 min-w-0 flex-1 border border-line bg-bg px-2 text-fg outline-none disabled:opacity-50 sm:max-w-[320px]"
+              >
+                {voice.devices.map((device, index) => (
+                  <option key={device.deviceId} value={device.deviceId}>
+                    {device.label || `${strings.capture.microphone} ${index + 1}`}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+
+            {voice.state !== "idle" ? (
+              <span className="text-muted">
+                {voice.state === "active" ? strings.capture.listening : strings.capture.starting}
+              </span>
+            ) : null}
+            {voice.error ? <span>{voice.error}</span> : null}
+          </div>
+
           <div className="mb-2 flex items-center justify-between gap-4 font-mono text-[11px] text-muted">
             <span>
               {formatCount(strings.peers.online, peers.length + 1)}

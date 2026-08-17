@@ -15,12 +15,12 @@ const schema = z.object({
 export async function POST(request: Request, { params }: Params) {
   const { token } = await params;
   const page = getPageByToken(token);
-  if (!page || page.kind !== "capture" || !page.lang) {
+  if (!page || !page.lang || (page.kind !== "input" && page.kind !== "capture")) {
     return Response.json({ error: "음성 수집 페이지를 찾을 수 없습니다" }, { status: 404 });
   }
 
   const meeting = getMeeting(page.meetingId);
-  if (!meeting || meeting.inputMode !== "realtime") {
+  if (!meeting || (page.kind === "capture" && meeting.inputMode !== "realtime")) {
     return Response.json({ error: "AI 전사 세션을 찾을 수 없습니다" }, { status: 404 });
   }
   if (meeting.status === "closed") {

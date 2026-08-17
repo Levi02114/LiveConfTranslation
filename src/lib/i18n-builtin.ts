@@ -28,6 +28,8 @@ export type UiStrings = {
     hint: string;
   };
   capture: {
+    toggle: string;
+    keyRequired: string;
     microphone: string;
     start: string;
     starting: string;
@@ -73,6 +75,8 @@ const ko: UiStrings = {
     hint: "Enter 로 전송 · Shift+Enter 로 줄바꿈",
   },
   capture: {
+    toggle: "음성 입력 사용",
+    keyRequired: "OpenAI API 키가 등록되지 않았습니다",
     microphone: "마이크",
     start: "전사 시작",
     starting: "시작하는 중",
@@ -126,6 +130,8 @@ const vi: UiStrings = {
     hint: "Enter để gửi · Shift+Enter để xuống dòng",
   },
   capture: {
+    toggle: "Sử dụng nhập liệu bằng giọng nói",
+    keyRequired: "Chưa đăng ký khóa API OpenAI",
     microphone: "Micrô",
     start: "Bắt đầu phiên âm",
     starting: "Đang bắt đầu",
@@ -183,6 +189,8 @@ const th: UiStrings = {
     hint: "กด Enter เพื่อส่ง · Shift+Enter เพื่อขึ้นบรรทัดใหม่",
   },
   capture: {
+    toggle: "ใช้การป้อนข้อมูลด้วยเสียง",
+    keyRequired: "ยังไม่ได้ลงทะเบียนคีย์ OpenAI API",
     microphone: "ไมโครโฟน",
     start: "เริ่มถอดเสียง",
     starting: "กำลังเริ่ม",
@@ -236,6 +244,8 @@ const si: UiStrings = {
     hint: "යැවීමට Enter · නව පේළියකට Shift+Enter",
   },
   capture: {
+    toggle: "හඬ ආදානය භාවිත කරන්න",
+    keyRequired: "OpenAI API යතුර ලියාපදිංචි කර නැත",
     microphone: "මයික්‍රෆෝනය",
     start: "පිටපත් කිරීම අරඹන්න",
     starting: "අරඹමින්",
@@ -316,9 +326,6 @@ export type AdminStrings = {
     fallbackEngine: string;
     noFallback: string;
     engineNoKey: string;
-    inputMode: string;
-    humanMode: string;
-    realtimeMode: string;
     /** OpenAI 를 골랐을 때만 나오는 언어모델 선택 라벨 */
     model: string;
     create: string;
@@ -440,9 +447,6 @@ const adminKo: AdminStrings = {
     fallbackEngine: "폴백 엔진",
     noFallback: "사용 안 함",
     engineNoKey: "키 없음",
-    inputMode: "입력 방식",
-    humanMode: "속기사 입력",
-    realtimeMode: "AI 실시간 전사",
     model: "언어모델",
     create: "세션 만들기",
     creating: "만드는 중",
@@ -569,9 +573,6 @@ const adminVi: AdminStrings = {
     fallbackEngine: "Công cụ dự phòng",
     noFallback: "Không dùng",
     engineNoKey: "chưa có khóa",
-    inputMode: "Phương thức nhập",
-    humanMode: "Người ghi tốc ký",
-    realtimeMode: "Phiên âm AI trực tiếp",
     model: "Mô hình ngôn ngữ",
     create: "Tạo phiên",
     creating: "Đang tạo",
@@ -698,9 +699,6 @@ const adminTh: AdminStrings = {
     fallbackEngine: "เครื่องมือสำรอง",
     noFallback: "ไม่ใช้",
     engineNoKey: "ไม่มีคีย์",
-    inputMode: "วิธีป้อนข้อมูล",
-    humanMode: "นักชวเลข",
-    realtimeMode: "ถอดเสียง AI แบบเรียลไทม์",
     model: "โมเดลภาษา",
     create: "สร้างเซสชัน",
     creating: "กำลังสร้าง",
@@ -827,9 +825,6 @@ const adminSi: AdminStrings = {
     fallbackEngine: "විකල්ප එන්ජිම",
     noFallback: "භාවිත නොකරන්න",
     engineNoKey: "යතුරක් නැත",
-    inputMode: "ඇතුළත් කිරීමේ ක්‍රමය",
-    humanMode: "කෙටි සටහන්කරු",
-    realtimeMode: "AI තත්‍ය කාලීන පිටපත් කිරීම",
     model: "භාෂා ආකෘතිය",
     create: "සැසියක් සාදන්න",
     creating: "සාදමින්",

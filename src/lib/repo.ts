@@ -149,7 +149,6 @@ export function createMeeting(input: {
   langs: readonly LanguageCode[];
   engine: EngineId;
   fallbackEngine?: EngineId | null;
-  inputMode?: InputMode;
 }): Meeting {
   const now = Date.now();
   const id = newId();
@@ -163,7 +162,7 @@ export function createMeeting(input: {
       input.title,
       input.engine,
       input.fallbackEngine ?? null,
-      input.inputMode ?? "human",
+      "human",
       now,
     );
 
@@ -177,11 +176,7 @@ export function createMeeting(input: {
 
     input.langs.forEach((lang, position) => {
       insertLang.run(id, lang, position);
-      if ((input.inputMode ?? "human") === "human") {
-        insertPage.run(newId(), id, "input", lang, newPageToken(), now);
-      } else {
-        insertPage.run(newId(), id, "capture", lang, newPageToken(), now);
-      }
+      insertPage.run(newId(), id, "input", lang, newPageToken(), now);
       insertPage.run(newId(), id, "output", lang, newPageToken(), now);
     });
 
@@ -194,7 +189,7 @@ export function createMeeting(input: {
       status: "open" as const,
       engine: input.engine,
       fallbackEngine: input.fallbackEngine ?? null,
-      inputMode: input.inputMode ?? "human",
+      inputMode: "human",
       createdAt: now,
       closedAt: null,
     };

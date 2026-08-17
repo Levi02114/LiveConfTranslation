@@ -8,7 +8,7 @@ import { useSetAdminLang } from "@/hooks/use-admin-lang";
 import type { AdminStrings, UiStrings } from "@/lib/i18n-builtin";
 import type { Language, LanguageCode } from "@/lib/languages";
 import { formatTimestamp } from "@/lib/log-format";
-import type { InputMode, Meeting } from "@/lib/repo";
+import type { Meeting } from "@/lib/repo";
 import type { EngineId } from "@/lib/translate/types";
 
 import { AdminBusyOverlay } from "./admin-busy-overlay";
@@ -55,7 +55,6 @@ export function MeetingList({
   const [langs, setLangs] = useState<LanguageCode[]>(defaultLangs);
   const [engine, setEngine] = useState<EngineId>(defaultEngine);
   const [fallbackEngine, setFallbackEngine] = useState<EngineId | null>(null);
-  const [inputMode, setInputMode] = useState<InputMode>("human");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [closing, setClosing] = useState<string | null>(null);
@@ -147,7 +146,6 @@ export function MeetingList({
           langs,
           engine,
           fallbackEngine,
-          inputMode,
         }),
       });
       const payload = (await response.json()) as { meeting?: Meeting; error?: string };
@@ -333,24 +331,6 @@ export function MeetingList({
                 </span>
               );
             })}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3.5">
-          <div className="font-mono text-[11px] text-muted">{strings.list.inputMode}</div>
-          <div className="flex border border-line">
-            {(["human", "realtime"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setInputMode(mode)}
-                className={`cursor-pointer px-3 py-1.5 font-mono text-[12px] transition-colors ${
-                  inputMode === mode ? "bg-fg text-bg" : "text-muted hover:text-fg"
-                }`}
-              >
-                {mode === "human" ? strings.list.humanMode : strings.list.realtimeMode}
-              </button>
-            ))}
           </div>
         </div>
 

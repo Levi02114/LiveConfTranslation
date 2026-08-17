@@ -3,7 +3,6 @@ import { z } from "zod";
 
 import { requireAdmin } from "@/lib/auth";
 import type { LanguageCode } from "@/lib/languages";
-import { engineKey } from "@/lib/secrets";
 import {
   createMeeting,
   hasLanguage,
@@ -27,7 +26,6 @@ const createSchema = z.object({
   fallbackEngine: z
     .union([z.string().refine(isEngineId, "지원하지 않는 폴백 엔진입니다"), z.null()])
     .optional(),
-  inputMode: z.enum(["human", "realtime"]).optional(),
 });
 
 export async function GET() {
@@ -49,19 +47,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const { title, langs, engine, fallbackEngine = null, inputMode = "human" } = parsed.data;
+  const { title, langs, engine, fallbackEngine = null } = parsed.data;
 
   // 같은 언어를 두 번 고르면 페이지가 중복 생성되므로 걸러 낸다.
   const requestedLangs = langs ?? listLanguages().map((row) => row.code);
   const unique = [...new Set(requestedLangs)] as LanguageCode[];
   if (unique.length < 2) {
     return Response.json({ error: "서로 다른 언어를 두 개 이상 골라 주세요" }, { status: 400 });
-  }
-
-  if (inputMode === "realtime") {
-    if (!engineKey("openai")) {
-      return Response.json({ error: "AI 실시간 전사에는 OpenAI API 키가 필요합니다" }, { status: 409 });
-    }
   }
 
   const requested = engine ?? "google";
@@ -83,7 +75,6 @@ export async function POST(request: Request) {
     langs: unique,
     engine: requested,
     fallbackEngine,
-    inputMode,
   });
   touchEngineSetting(requested);
   revalidatePath("/admin");

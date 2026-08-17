@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { getStrings } from "@/lib/i18n";
 import { getLanguage } from "@/lib/languages";
 import { getMeeting, getMeetingLangs, getPageByToken, getRecentCombined } from "@/lib/repo";
+import { engineKey } from "@/lib/secrets";
 
 import { InputView } from "./input-view";
 
@@ -52,6 +53,7 @@ export default async function InputPage({
       meetingTitle={meeting.title}
       history={getRecentCombined(meeting.id)}
       initiallyClosed={meeting.status === "closed"}
+      voiceAvailable={Boolean(engineKey("openai"))}
     />
   );
 }
