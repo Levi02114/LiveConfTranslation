@@ -34,8 +34,14 @@ const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT ?? 3000);
 // 0.0.0.0 으로 열어야 같은 네트워크의 참석자 기기에서 접속할 수 있다.
 const hostname = process.env.HOSTNAME ?? "0.0.0.0";
+const appRoot =
+  (
+    globalThis as typeof globalThis & {
+      __liveConfTranslationAppRoot?: string;
+    }
+  ).__liveConfTranslationAppRoot ?? process.cwd();
 
-const app = next({ dev, hostname, port });
+const app = next({ dev, hostname, port, dir: appRoot });
 const handle = app.getRequestHandler();
 
 /** 이름을 안 준 속기사에게 붙일 순번. 사람이 서로를 구분할 수 있으면 충분하다. */

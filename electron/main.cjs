@@ -316,24 +316,26 @@ function applyNavigationPolicy(contents) {
   });
 }
 
-function createWindow() {
+function createWindow(loadAdmin = true) {
   const window = new BrowserWindow({
     width: 1280,
     height: 860,
     minWidth: 800,
     minHeight: 600,
-    show: false,
+    show: !loadAdmin,
     title: "Live Conference Translation",
     webPreferences: secureWebPreferences,
   });
-  window.once("ready-to-show", () => window.show());
-  window.webContents.on("did-finish-load", syncPublicOrigin);
+  if (loadAdmin) window.once("ready-to-show", () => window.show());
+  window.webContents.on("did-finish-load", () => {
+    if (isInternalAdminUrl(window.webContents.getURL())) syncPublicOrigin();
+  });
   window.on("close", (event) => {
     if (quitApproved) return;
     event.preventDefault();
     void requestQuit();
   });
-  void window.loadURL(`${adminOrigin}/admin`);
+  if (loadAdmin) void window.loadURL(`${adminOrigin}/admin`);
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
   });
@@ -342,10 +344,14 @@ function createWindow() {
 
 async function start() {
   const appRoot = app.getAppPath();
-  process.chdir(appRoot);
+  globalThis.__liveConfTranslationAppRoot = appRoot;
   process.env.NODE_ENV = "production";
   process.env.HOSTNAME = "0.0.0.0";
   process.env.PORT = String(PORT);
+
+  // 서버 준비와 첫 렌더링을 기다리는 동안에도 앱이 실행됐다는 것을 바로 보여 준다.
+  installApplicationMenu();
+  createWindow(false);
 
   const { state } = await probeServer();
   if (state === "occupied") throw new Error(`포트 ${PORT}을 다른 프로그램이 사용하고 있습니다.`);
@@ -357,8 +363,8 @@ async function start() {
   }
 
   adminOrigin = `http://${pickLanAddress(os.networkInterfaces())}:${PORT}`;
-  installApplicationMenu();
-  createWindow();
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  await mainWindow.loadURL(`${adminOrigin}/admin`);
 
   if (generatedPassword) {
     const result = await dialog.showMessageBox(mainWindow, {
