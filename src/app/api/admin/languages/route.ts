@@ -17,7 +17,7 @@ import {
   listLanguages,
 } from "@/lib/repo";
 import { ENGINE_IDS, getEngine, isEngineId, refreshEngineSupport } from "@/lib/translate";
-import { translateUiStrings } from "@/lib/ui-translate";
+import { translateLanguagePromptCue, translateUiStrings } from "@/lib/ui-translate";
 
 /**
  * 회의에 쓸 언어 목록 관리.
@@ -101,6 +101,14 @@ export async function POST(request: Request) {
    * 여기서 되돌려 버리면 왜 실패했는지 확인할 기회조차 사라진다.
    */
   const result = await translateUiStrings(code, engine);
+  try {
+    await translateLanguagePromptCue(code, engine);
+  } catch (error) {
+    console.warn(
+      `[languages] ${code} 문체 지시문을 번역하지 못했습니다:`,
+      error instanceof Error ? error.message : error,
+    );
+  }
 
   return Response.json({ language: describe(code, "ko"), ...result }, { status: 201 });
 }

@@ -13,7 +13,8 @@ test("선택한 폴백만 미지원 언어 번역을 대신한다", async () => 
   const originalFetch = globalThis.fetch;
   let languageCalls = 0;
   let openaiCalls = 0;
-  globalThis.fetch = async (input) => {
+  let openaiSystemPrompt = "";
+  globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.includes("/v2/languages?type=")) {
       languageCalls += 1;
@@ -21,6 +22,9 @@ test("선택한 폴백만 미지원 언어 번역을 대신한다", async () => 
     }
     if (url.includes("/chat/completions")) {
       openaiCalls += 1;
+      openaiSystemPrompt = (
+        JSON.parse(String(init?.body)) as { messages: { content: string }[] }
+      ).messages[0].content;
       return Response.json({ choices: [{ message: { content: "안녕하세요" } }] });
     }
     throw new Error(`예상하지 못한 요청: ${url}`);
@@ -53,6 +57,7 @@ test("선택한 폴백만 미지원 언어 번역을 대신한다", async () => 
     assert.equal(result.text, "안녕하세요");
     assert.equal(languageCalls, 2);
     assert.equal(openaiCalls, 1);
+    assert.match(openaiSystemPrompt, /실시간 세션에서 원어민이 실제로 말하듯/);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalDatabasePath === undefined) delete process.env.DATABASE_PATH;

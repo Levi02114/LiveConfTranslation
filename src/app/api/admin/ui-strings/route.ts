@@ -5,7 +5,7 @@ import { resolveEntries } from "@/lib/i18n";
 import { isLanguageCode } from "@/lib/languages";
 import { deleteUiString, hasLanguage, upsertUiStrings } from "@/lib/repo";
 import { isEngineId } from "@/lib/translate";
-import { translateUiStrings } from "@/lib/ui-translate";
+import { translateLanguagePromptCue, translateUiStrings } from "@/lib/ui-translate";
 
 /**
  * UI 문구 수정.
@@ -111,6 +111,14 @@ export async function POST(request: Request) {
   }
 
   const result = await translateUiStrings(lang, engine, { keepManual: true });
+  try {
+    await translateLanguagePromptCue(lang, engine);
+  } catch (error) {
+    console.warn(
+      `[ui-strings] ${lang} 문체 지시문을 번역하지 못했습니다:`,
+      error instanceof Error ? error.message : error,
+    );
+  }
 
   return Response.json({ lang, ...result, entries: resolveEntries(lang) });
 }

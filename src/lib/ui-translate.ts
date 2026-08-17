@@ -2,8 +2,10 @@ import "server-only";
 
 import { resolveEntries, sourceEntries } from "@/lib/i18n";
 import type { LanguageCode } from "@/lib/languages";
+import { refreshLanguagePromptCue } from "@/lib/prompt-cue";
 import { getUiStrings, upsertUiStrings } from "@/lib/repo";
 import { translateBatch } from "@/lib/translate";
+import { STYLE_CUE_SOURCE } from "@/lib/translate/prompt";
 import type { EngineId } from "@/lib/translate/types";
 
 /**
@@ -42,6 +44,21 @@ export type UiTranslationOptions = {
   /** 코드 업데이트 뒤 새로 생겨 한국어로 폴백 중인 키만 채운다. */
   missingOnly?: boolean;
 };
+
+export async function translateLanguagePromptCue(
+  lang: LanguageCode,
+  engine: EngineId,
+): Promise<string> {
+  return refreshLanguagePromptCue(lang, engine, async () => {
+    const [text] = await translateBatch(engine, {
+      texts: [STYLE_CUE_SOURCE],
+      from: "en",
+      to: lang,
+      kind: "prompt",
+    });
+    return text ?? "";
+  });
+}
 
 export async function translateUiStrings(
   lang: LanguageCode,

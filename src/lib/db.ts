@@ -106,6 +106,13 @@ CREATE TABLE IF NOT EXISTS ui_strings (
   PRIMARY KEY (lang, key)
 );
 
+CREATE TABLE IF NOT EXISTS language_prompt_cues (
+  lang        TEXT PRIMARY KEY REFERENCES languages(code) ON DELETE CASCADE,
+  text        TEXT NOT NULL,
+  engine      TEXT NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS engine_settings (
   engine      TEXT PRIMARY KEY,               -- 'google' | 'deepl' | 'openai'
   model       TEXT,                           -- OpenAI 언어모델. NULL 이면 내장 기본값

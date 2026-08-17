@@ -1,6 +1,7 @@
 import "server-only";
 
 import { openaiBaseUrl } from "@/lib/env";
+import { ensureLanguagePromptCue } from "@/lib/prompt-cue";
 import { engineKey, resolveOpenaiModel } from "@/lib/secrets";
 import { type LanguageCode, languageLogName } from "@/lib/languages";
 
@@ -11,7 +12,7 @@ import {
   type TranslationEngine,
 } from "./types";
 import { hasHangulLeak } from "./quality";
-import { targetLanguageRules } from "./prompt";
+import { STYLE_CUE_SOURCE, targetLanguageRules } from "./prompt";
 
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
@@ -39,7 +40,11 @@ function stripWrapper(text: string): string {
   return output;
 }
 
-function buildSystemPrompt(from: LanguageCode, to: LanguageCode): string {
+function buildSystemPrompt(
+  from: LanguageCode,
+  to: LanguageCode,
+  styleCue: string | null,
+): string {
   const source = { logName: languageLogName(from) };
   const target = { logName: languageLogName(to) };
 
@@ -53,9 +58,21 @@ function buildSystemPrompt(from: LanguageCode, to: LanguageCode): string {
     "- Keep numbers, dates, units, and proper nouns accurate.",
     "- When the languages use different scripts, transliterate names and unfamiliar text into the target script. Do not copy source-script characters.",
     "- The declared source language can be wrong. Translate the actual input text instead of copying text in an unexpected script.",
-    ...targetLanguageRules(to).map((rule) => `- ${rule}`),
+    ...targetLanguageRules(to, styleCue).map((rule) => `- ${rule}`),
     "- Earlier lines may be supplied as context. Use them only to resolve pronouns and keep terminology consistent — never translate them.",
     `- If the input is already in ${target.logName}, return it unchanged.`,
+  ].join("\n");
+}
+
+function buildPromptCueSystemPrompt(to: LanguageCode, count?: number): string {
+  const target = languageLogName(to);
+  return [
+    `Translate the supplied English instruction into ${target} for use inside a machine-translation system prompt.`,
+    "Preserve its exact requirements while using concise, natural wording in the target language.",
+    ...targetLanguageRules(to),
+    count
+      ? `Return ONLY JSON: {"items": [...]} with exactly ${count} strings, in the same order as the input.`
+      : `Return ONLY the ${target} translation. No preamble, notes, or quotation marks around the whole output.`,
   ].join("\n");
 }
 
@@ -83,6 +100,68 @@ function buildUiSystemPrompt(to: LanguageCode, count: number): string {
   ].join("\n");
 }
 
+async function requestChat(
+  messages: ChatMessage[],
+  signal?: AbortSignal,
+  json = false,
+): Promise<string> {
+  const key = engineKey("openai");
+  if (!key) {
+    throw new TranslationError("OpenAI API 키가 등록되지 않았습니다", "openai");
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${openaiBaseUrl()}/chat/completions`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${key}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: resolveOpenaiModel(),
+        messages,
+        ...(json ? { response_format: { type: "json_object" } } : {}),
+      }),
+      signal,
+    });
+  } catch (cause) {
+    throw new TranslationError("OpenAI 에 연결하지 못했습니다", "openai", cause);
+  }
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    const hint = response.status === 429 ? " (요청 한도 초과)" : "";
+    throw new TranslationError(
+      `OpenAI 가 ${response.status} 를 반환했습니다${hint}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
+      "openai",
+    );
+  }
+
+  const payload = (await response.json()) as {
+    choices?: { message?: { content?: string } }[];
+  };
+  const content = payload.choices?.[0]?.message?.content;
+  if (typeof content !== "string" || !content.trim()) {
+    throw new TranslationError("OpenAI 응답에 번역문이 없습니다", "openai");
+  }
+  return content;
+}
+
+async function meetingStyleCue(to: LanguageCode, signal?: AbortSignal) {
+  return ensureLanguagePromptCue(to, async () =>
+    stripWrapper(
+      await requestChat(
+        [
+          { role: "system", content: buildPromptCueSystemPrompt(to) },
+          { role: "user", content: STYLE_CUE_SOURCE },
+        ],
+        signal,
+      ),
+    ),
+  );
+}
+
 export const openaiEngine: TranslationEngine = {
   id: "openai",
   label: "OpenAI (LLM)",
@@ -97,66 +176,31 @@ export const openaiEngine: TranslationEngine = {
   },
 
   async translate({ text, from, to, context, signal }: TranslateInput) {
-    const key = engineKey("openai");
-    if (!key) {
-      throw new TranslationError("OpenAI API 키가 등록되지 않았습니다", "openai");
-    }
-
     const userContent = context?.length
       ? `<context_do_not_translate>\n${context.join("\n")}\n</context_do_not_translate>\n\n<translate>\n${text}\n</translate>`
       : text;
 
-    const request = async (messages: ChatMessage[]): Promise<string> => {
-      let response: Response;
-      try {
-        response = await fetch(`${openaiBaseUrl()}/chat/completions`, {
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${key}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ model: resolveOpenaiModel(), messages }),
-          signal,
-        });
-      } catch (cause) {
-        throw new TranslationError("OpenAI 에 연결하지 못했습니다", "openai", cause);
-      }
-
-      if (!response.ok) {
-        const detail = await response.text().catch(() => "");
-        const hint = response.status === 429 ? " (요청 한도 초과)" : "";
-        throw new TranslationError(
-          `OpenAI 가 ${response.status} 를 반환했습니다${hint}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
-          "openai",
-        );
-      }
-
-      const payload = (await response.json()) as {
-        choices?: { message?: { content?: string } }[];
-      };
-      const content = payload.choices?.[0]?.message?.content;
-      if (typeof content !== "string" || !content.trim()) {
-        throw new TranslationError("OpenAI 응답에 번역문이 없습니다", "openai");
-      }
-
-      return stripWrapper(content);
-    };
-
+    const styleCue = await meetingStyleCue(to, signal);
     const messages: ChatMessage[] = [
-      { role: "system", content: buildSystemPrompt(from, to) },
+      { role: "system", content: buildSystemPrompt(from, to, styleCue) },
       { role: "user", content: userContent },
     ];
-    const first = await request(messages);
+    const first = stripWrapper(await requestChat(messages, signal));
     if (!hasHangulLeak(first, to)) return first;
 
-    const corrected = await request([
-      ...messages,
-      { role: "assistant", content: first },
-      {
-        role: "user",
-        content: `Your answer violated the zero-Hangul constraint. Rewrite the original input entirely in ${languageLogName(to)} using its target writing system. Translate every Korean span; transliterate names if needed. Return only the corrected translation with zero Hangul characters.`,
-      },
-    ]);
+    const corrected = stripWrapper(
+      await requestChat(
+        [
+          ...messages,
+          { role: "assistant", content: first },
+          {
+            role: "user",
+            content: `Your answer violated the zero-Hangul constraint. Rewrite the original input entirely in ${languageLogName(to)} using its target writing system. Translate every Korean span; transliterate names if needed. Return only the corrected translation with zero Hangul characters.`,
+          },
+        ],
+        signal,
+      ),
+    );
 
     if (hasHangulLeak(corrected, to)) {
       throw new TranslationError("OpenAI 번역에 한국어 원문이 남았습니다", "openai");
@@ -173,56 +217,22 @@ export const openaiEngine: TranslationEngine = {
   async translateBatch({ texts, from, to, kind, signal }: BatchTranslateInput) {
     if (texts.length === 0) return [];
 
-    const key = engineKey("openai");
-    if (!key) {
-      throw new TranslationError("OpenAI API 키가 등록되지 않았습니다", "openai");
-    }
-
     const system =
       kind === "ui"
         ? buildUiSystemPrompt(to, texts.length)
-        : `${buildSystemPrompt(from, to)}\n\nReturn ONLY JSON: {"items": [...]} with exactly ${texts.length} strings, same order as the input.`;
+        : kind === "prompt"
+          ? buildPromptCueSystemPrompt(to, texts.length)
+          : `${buildSystemPrompt(from, to, await meetingStyleCue(to, signal))}\n\nReturn ONLY JSON: {"items": [...]} with exactly ${texts.length} strings, same order as the input.`;
 
-    let response: Response;
-    try {
-      response = await fetch(`${openaiBaseUrl()}/chat/completions`, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${key}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model: resolveOpenaiModel(),
-          // 개수와 순서를 지켜야 하므로 자유 서술을 막고 JSON 으로 못 박는다.
-          response_format: { type: "json_object" },
-          messages: [
-            { role: "system", content: system },
-            { role: "user", content: JSON.stringify({ items: texts }) },
-          ],
-        }),
-        signal,
-      });
-    } catch (cause) {
-      throw new TranslationError("OpenAI 에 연결하지 못했습니다", "openai", cause);
-    }
-
-    if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      const hint = response.status === 429 ? " (요청 한도 초과)" : "";
-      throw new TranslationError(
-        `OpenAI 가 ${response.status} 를 반환했습니다${hint}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
-        "openai",
-      );
-    }
-
-    const payload = (await response.json()) as {
-      choices?: { message?: { content?: string } }[];
-    };
-
-    const content = payload.choices?.[0]?.message?.content;
-    if (typeof content !== "string") {
-      throw new TranslationError("OpenAI 응답에 번역문이 없습니다", "openai");
-    }
+    // 개수와 순서를 지켜야 하므로 자유 서술을 막고 JSON 으로 못 박는다.
+    const content = await requestChat(
+      [
+        { role: "system", content: system },
+        { role: "user", content: JSON.stringify({ items: texts }) },
+      ],
+      signal,
+      true,
+    );
 
     let items: unknown;
     try {

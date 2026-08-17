@@ -853,6 +853,41 @@ export function deleteUiString(lang: LanguageCode, key: string): void {
   getDb().prepare(`DELETE FROM ui_strings WHERE lang = ? AND key = ?`).run(lang, key);
 }
 
+// ---------------------------------------------------------- 번역 프롬프트 문체 지시문
+
+export type LanguagePromptCue = {
+  text: string;
+  engine: EngineId;
+  updatedAt: number;
+};
+
+export function getLanguagePromptCue(lang: LanguageCode): LanguagePromptCue | null {
+  const row = getDb()
+    .prepare(`SELECT text, engine, updated_at FROM language_prompt_cues WHERE lang = ?`)
+    .get(lang) as unknown as
+    | { text: string; engine: EngineId; updated_at: number }
+    | undefined;
+
+  return row ? { text: row.text, engine: row.engine, updatedAt: row.updated_at } : null;
+}
+
+export function upsertLanguagePromptCue(
+  lang: LanguageCode,
+  text: string,
+  engine: EngineId,
+): void {
+  getDb()
+    .prepare(
+      `INSERT INTO language_prompt_cues (lang, text, engine, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT (lang) DO UPDATE SET
+         text = excluded.text,
+         engine = excluded.engine,
+         updated_at = excluded.updated_at`,
+    )
+    .run(lang, text, engine, Date.now());
+}
+
 // ---------------------------------------------------------- 엔진 설정
 
 export type EngineSetting = {

@@ -36,9 +36,10 @@ export type BatchTranslateInput = {
    * 무엇을 번역하는지.
    *
    * `ui` 는 버튼·라벨이라 짧게 유지해야 하고 존댓말 문장으로 늘어나면 안 된다.
+   * `prompt` 는 대상 언어 문체 지시문 자체를 번역하므로 그 지시문을 재귀 적용하지 않는다.
    * 프롬프트를 쓰는 LLM 엔진만 이 값을 본다.
    */
-  kind?: "meeting" | "ui";
+  kind?: "meeting" | "ui" | "prompt";
   signal?: AbortSignal;
 };
 
