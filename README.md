@@ -664,6 +664,9 @@ Windows에서는 보통 `%APPDATA%\Live Conference Translation\` 아래입니다
 - 게스트 Wi-Fi의 클라이언트 격리 확인
 - Windows 방화벽 개인 네트워크 허용 확인
 - `localhost`나 `127.0.0.1` 대신 관리자 컴퓨터의 LAN 주소 사용
+- ZeroTier로 접속한다면 Electron의 **설정 → 기본 공유 주소**에서
+  `VPN/가상 · ZeroTier · 해당 IP`를 선택하고, 생성된 URL도 그 IP인지 확인
+- 서버 연결만 확인하려면 참가자 기기에서 `http://해당-IP:3000/api/health`를 열기
 
 ### 모바일 마이크 권한이 나오지 않음
 

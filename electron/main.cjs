@@ -13,7 +13,6 @@ const {
   listLanAddresses,
   parseHealth,
   pickLanAddress,
-  toLoopbackBrowserUrl,
 } = require("./network.cjs");
 
 const PORT = 3000;
@@ -145,14 +144,7 @@ function isInternalAdminUrl(value) {
 function openInBrowser(value) {
   try {
     const url = new URL(value);
-    if (url.protocol === "http:" || url.protocol === "https:") {
-      const target = toLoopbackBrowserUrl(
-        url.href,
-        lanAddresses.map((item) => item.address),
-        PORT,
-      );
-      void shell.openExternal(target);
-    }
+    if (url.protocol === "http:" || url.protocol === "https:") void shell.openExternal(url.href);
   } catch {
     // 잘못된 URL 은 열지 않는다.
   }
@@ -330,7 +322,7 @@ function installApplicationMenu() {
     ? lanAddresses.map((item) => {
         const origin = lanOrigin(item.address);
         return {
-          label: `${item.virtual ? "가상" : "실제"} · ${item.name} · ${item.address}`,
+          label: `${item.virtual ? "VPN/가상" : "실제"} · ${item.name} · ${item.address}`,
           type: "radio",
           checked: shareOrigin === origin,
           click: () => selectShareOrigin(origin),
