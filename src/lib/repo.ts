@@ -853,6 +853,84 @@ export function deleteUiString(lang: LanguageCode, key: string): void {
   getDb().prepare(`DELETE FROM ui_strings WHERE lang = ? AND key = ?`).run(lang, key);
 }
 
+// ---------------------------------------------------------- 단어집
+
+export type GlossaryEntry = {
+  id: string;
+  terms: Record<LanguageCode, string>;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type GlossaryPair = { source: string; target: string };
+
+export function listGlossaryEntries(): GlossaryEntry[] {
+  const entries = getDb()
+    .prepare(`SELECT id, created_at, updated_at FROM glossary_entries ORDER BY created_at, id`)
+    .all() as unknown as { id: string; created_at: number; updated_at: number }[];
+  const terms = getDb()
+    .prepare(`SELECT entry_id, lang, term FROM glossary_terms ORDER BY entry_id, lang`)
+    .all() as unknown as { entry_id: string; lang: string; term: string }[];
+  const byEntry = new Map<string, Record<LanguageCode, string>>();
+
+  for (const row of terms) {
+    const current = byEntry.get(row.entry_id) ?? {};
+    current[row.lang] = row.term;
+    byEntry.set(row.entry_id, current);
+  }
+
+  return entries.map((entry) => ({
+    id: entry.id,
+    terms: byEntry.get(entry.id) ?? {},
+    createdAt: entry.created_at,
+    updatedAt: entry.updated_at,
+  }));
+}
+
+/** 관리 화면에서 보낸 전체 단어집을 한 번에 교체한다. */
+export function replaceGlossaryEntries(
+  entries: readonly { id?: string; terms: Readonly<Record<LanguageCode, string>> }[],
+): GlossaryEntry[] {
+  const db = getDb();
+  const existing = new Map(listGlossaryEntries().map((entry) => [entry.id, entry]));
+  const insertEntry = db.prepare(
+    `INSERT INTO glossary_entries (id, created_at, updated_at) VALUES (?, ?, ?)`,
+  );
+  const insertTerm = db.prepare(
+    `INSERT INTO glossary_terms (entry_id, lang, term) VALUES (?, ?, ?)`,
+  );
+  const now = Date.now();
+
+  transaction(() => {
+    db.prepare(`DELETE FROM glossary_entries`).run();
+    for (const entry of entries) {
+      const id = entry.id && existing.has(entry.id) ? entry.id : newId();
+      insertEntry.run(id, existing.get(id)?.createdAt ?? now, now);
+      for (const [lang, term] of Object.entries(entry.terms)) {
+        insertTerm.run(id, lang, term.trim());
+      }
+    }
+  });
+
+  return listGlossaryEntries();
+}
+
+/** 회의 번역에서 현재 원문/대상 언어에 해당하는 용어쌍만 꺼낸다. */
+export function listGlossaryPairs(from: LanguageCode, to: LanguageCode): GlossaryPair[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT source.term AS source, target.term AS target
+       FROM glossary_terms source
+       JOIN glossary_terms target ON target.entry_id = source.entry_id
+       JOIN glossary_entries entry ON entry.id = source.entry_id
+       WHERE source.lang = ? AND target.lang = ?
+       ORDER BY entry.created_at, entry.id`,
+    )
+    .all(from, to) as unknown as GlossaryPair[];
+
+  return rows.filter((row) => row.source.trim() && row.target.trim());
+}
+
 // ---------------------------------------------------------- 번역 프롬프트 문체 지시문
 
 export type LanguagePromptCue = {

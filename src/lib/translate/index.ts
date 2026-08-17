@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { LanguageCode } from "@/lib/languages";
+import { listGlossaryPairs } from "@/lib/repo";
 
 import { deeplEngine } from "./deepl";
 import { googleEngine } from "./google";
@@ -79,24 +80,25 @@ export async function translateText(
   fallback: EngineId | null = null,
 ): Promise<TranslateResult> {
   const engine = ENGINES[preferred];
+  const enriched = { ...input, glossary: listGlossaryPairs(input.from, input.to) };
 
-  const reason = await engineProblem(engine, input);
+  const reason = await engineProblem(engine, enriched);
   if (reason) {
     if (!fallback || fallback === preferred) {
       throw new TranslationError(reason, preferred);
     }
 
     const fallbackEngine = ENGINES[fallback];
-    const fallbackReason = await engineProblem(fallbackEngine, input);
+    const fallbackReason = await engineProblem(fallbackEngine, enriched);
     if (fallbackReason) {
       throw new TranslationError(`${reason}; 폴백 실패: ${fallbackReason}`, fallback);
     }
 
-    const text = await fallbackEngine.translate(input);
+    const text = await fallbackEngine.translate(enriched);
     return { text, engine: fallback, fallbackReason: reason };
   }
 
-  const text = await engine.translate(input);
+  const text = await engine.translate(enriched);
   return { text, engine: preferred };
 }
 

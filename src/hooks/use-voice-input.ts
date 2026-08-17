@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { newBrowserId } from "@/lib/browser-id";
+import { AudioTurnDetector } from "@/lib/audio-turn-detector";
 import type { UiStrings } from "@/lib/i18n-builtin";
 
 export type VoiceInputState = "idle" | "starting" | "active";
@@ -21,9 +22,7 @@ type TranscriptionEvent = {
   transcript?: string;
 };
 
-// ponytail: 현장 마이크마다 레벨이 다르다. 오탐이 생기면 이 두 값만 조정한다.
-const SPEECH_RMS = 0.025;
-const SILENCE_MS = 1_300;
+type CompletedTranscript = { contentIndex: number; body: string };
 
 export function useVoiceInput({
   token,
@@ -50,14 +49,23 @@ export function useVoiceInput({
   const audioContext = useRef<AudioContext | null>(null);
   const audioFrame = useRef<number | null>(null);
   const heartbeat = useRef<ReturnType<typeof setInterval> | null>(null);
+  const closingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const partials = useRef(new Map<string, string>());
+  const commitsSent = useRef(0);
+  const committedItems = useRef<string[]>([]);
+  const completedItems = useRef(new Map<string, CompletedTranscript>());
+  const nextSubmission = useRef(0);
+  const submissionChain = useRef(Promise.resolve());
+  const finalCommit = useRef<{ ordinal: number; release: boolean; itemId?: string } | null>(null);
 
   const endpoint = `/api/pages/${encodeURIComponent(token)}/realtime-session`;
 
-  const stop = useCallback(
+  const disconnect = useCallback(
     (release = true) => {
       if (heartbeat.current) clearInterval(heartbeat.current);
       heartbeat.current = null;
+      if (closingTimer.current) clearTimeout(closingTimer.current);
+      closingTimer.current = null;
       if (audioFrame.current !== null) cancelAnimationFrame(audioFrame.current);
       audioFrame.current = null;
       void audioContext.current?.close();
@@ -69,6 +77,12 @@ export function useVoiceInput({
       peer.current = null;
       stream.current = null;
       partials.current.clear();
+      commitsSent.current = 0;
+      committedItems.current = [];
+      completedItems.current.clear();
+      nextSubmission.current = 0;
+      submissionChain.current = Promise.resolve();
+      finalCommit.current = null;
       setPartial("");
       setState("idle");
 
@@ -80,7 +94,7 @@ export function useVoiceInput({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ leaseId: currentLease }),
           keepalive: true,
-        });
+        }).catch(() => undefined);
       }
     },
     [endpoint],
@@ -88,8 +102,8 @@ export function useVoiceInput({
 
   useEffect(() => {
     clientId.current = newBrowserId();
-    return () => stop();
-  }, [stop]);
+    return () => disconnect();
+  }, [disconnect]);
 
   const refreshDevices = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -131,22 +145,60 @@ export function useVoiceInput({
 
   const submitTranscript = useCallback(
     async (sessionLease: string, itemId: string, contentIndex: number, body: string) => {
-      const response = await fetch(`/api/pages/${encodeURIComponent(token)}/transcripts`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          leaseId: sessionLease,
-          ingestKey: `${clientId.current}:${itemId}:${contentIndex}`,
-          body,
-        }),
-      });
-      if (!response.ok) {
+      try {
+        const response = await fetch(`/api/pages/${encodeURIComponent(token)}/transcripts`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            leaseId: sessionLease,
+            ingestKey: `${clientId.current}:${itemId}:${contentIndex}`,
+            body,
+          }),
+        });
+        if (response.ok) return;
+      } catch {
+        // 아래의 연결 종료 경로에서 동일하게 처리한다.
+      }
+      if (leaseId.current) {
         setError(strings.lost);
-        stop(false);
+        disconnect(false);
       }
     },
-    [stop, strings.lost, token],
+    [disconnect, strings.lost, token],
   );
+
+  const flushTranscripts = useCallback(
+    (sessionLease: string) => {
+      while (nextSubmission.current < committedItems.current.length) {
+        const itemId = committedItems.current[nextSubmission.current];
+        const completed = completedItems.current.get(itemId);
+        if (!completed) break;
+
+        nextSubmission.current += 1;
+        completedItems.current.delete(itemId);
+        if (completed.body) {
+          submissionChain.current = submissionChain.current.then(() =>
+            submitTranscript(sessionLease, itemId, completed.contentIndex, completed.body),
+          );
+        }
+
+        const finishing = finalCommit.current;
+        if (finishing?.itemId === itemId) {
+          finalCommit.current = null;
+          void submissionChain.current.finally(() => disconnect(finishing.release));
+        }
+      }
+    },
+    [disconnect, submitTranscript],
+  );
+
+  const sendCommit = useCallback(() => {
+    const current = channel.current;
+    if (current?.readyState !== "open") return null;
+    current.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+    commitsSent.current += 1;
+    return commitsSent.current;
+  }, []);
 
   const handleEvent = useCallback(
     (raw: string, sessionLease: string) => {
@@ -158,6 +210,14 @@ export function useVoiceInput({
       }
 
       const itemId = event.item_id;
+      if (event.type === "input_audio_buffer.committed" && itemId) {
+        committedItems.current.push(itemId);
+        if (finalCommit.current?.ordinal === committedItems.current.length) {
+          finalCommit.current.itemId = itemId;
+        }
+        flushTranscripts(sessionLease);
+        return;
+      }
       if (!itemId) return;
       if (event.type === "conversation.item.input_audio_transcription.delta") {
         partials.current.set(itemId, (partials.current.get(itemId) ?? "") + (event.delta ?? ""));
@@ -165,47 +225,64 @@ export function useVoiceInput({
       } else if (event.type === "conversation.item.input_audio_transcription.completed") {
         partials.current.delete(itemId);
         setPartial([...partials.current.values()].join(" "));
-        const transcript = event.transcript?.trim();
-        if (transcript) void submitTranscript(sessionLease, itemId, event.content_index ?? 0, transcript);
+        completedItems.current.set(itemId, {
+          contentIndex: event.content_index ?? 0,
+          body: event.transcript?.trim() ?? "",
+        });
+        flushTranscripts(sessionLease);
       }
     },
-    [submitTranscript],
+    [flushTranscripts],
   );
 
-  const monitorSilence = useCallback((media: MediaStream) => {
-    const context = new AudioContext();
-    void context.resume();
-    const analyser = context.createAnalyser();
-    analyser.fftSize = 1024;
-    context.createMediaStreamSource(media).connect(analyser);
-    audioContext.current = context;
+  const monitorSilence = useCallback(
+    (media: MediaStream) => {
+      const context = new AudioContext();
+      void context.resume();
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 1024;
+      context.createMediaStreamSource(media).connect(analyser);
+      audioContext.current = context;
 
-    const samples = new Float32Array(analyser.fftSize);
-    let heardSpeech = false;
-    let silentSince = 0;
+      const samples = new Float32Array(analyser.fftSize);
+      const detector = new AudioTurnDetector();
+      const measure = () => {
+        analyser.getFloatTimeDomainData(samples);
+        let sum = 0;
+        for (const sample of samples) sum += sample * sample;
+        if (detector.update(Math.sqrt(sum / samples.length), performance.now())) sendCommit();
+        audioFrame.current = requestAnimationFrame(measure);
+      };
+      measure();
+    },
+    [sendCommit],
+  );
 
-    const measure = () => {
-      analyser.getFloatTimeDomainData(samples);
-      let sum = 0;
-      for (const sample of samples) sum += sample * sample;
-      const speaking = Math.sqrt(sum / samples.length) >= SPEECH_RMS;
-      const now = performance.now();
-
-      if (speaking) {
-        heardSpeech = true;
-        silentSince = 0;
-      } else if (heardSpeech) {
-        silentSince ||= now;
-        if (now - silentSince >= SILENCE_MS && channel.current?.readyState === "open") {
-          channel.current.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
-          heardSpeech = false;
-          silentSince = 0;
-        }
+  const stop = useCallback(
+    (flush = true) => {
+      if (!flush) {
+        disconnect();
+        return;
       }
-      audioFrame.current = requestAnimationFrame(measure);
-    };
-    measure();
-  }, []);
+      if (finalCommit.current) return;
+
+      if (audioFrame.current !== null) cancelAnimationFrame(audioFrame.current);
+      audioFrame.current = null;
+      void audioContext.current?.close();
+      audioContext.current = null;
+
+      const ordinal = sendCommit();
+      stream.current?.getTracks().forEach((track) => track.stop());
+      if (ordinal === null) {
+        disconnect();
+        return;
+      }
+
+      finalCommit.current = { ordinal, release: true };
+      closingTimer.current = setTimeout(() => disconnect(), 5_000);
+    },
+    [disconnect, sendCommit],
+  );
 
   const start = useCallback(async () => {
     if (state !== "idle" || closed) return;
@@ -253,7 +330,7 @@ export function useVoiceInput({
       connection.onconnectionstatechange = () => {
         if (connection.connectionState === "failed") {
           setError(strings.lost);
-          stop();
+          disconnect();
         }
       };
       for (const track of stream.current.getAudioTracks()) connection.addTrack(track, stream.current);
@@ -286,15 +363,15 @@ export function useVoiceInput({
         }).catch(() => null);
         if (!renewed?.ok) {
           setError(strings.lost);
-          stop(false);
+          disconnect(false);
         }
       }, 5_000);
       setState("active");
     } catch (cause) {
       setError(cause instanceof Error && cause.message ? cause.message : strings.permission);
-      stop();
+      disconnect();
     }
-  }, [closed, deviceId, endpoint, handleEvent, monitorSilence, refreshDevices, state, stop, strings]);
+  }, [closed, deviceId, disconnect, endpoint, handleEvent, monitorSilence, refreshDevices, state, strings]);
 
   return {
     state,

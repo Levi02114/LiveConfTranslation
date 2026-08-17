@@ -13,6 +13,7 @@ import type { EngineId } from "@/lib/translate/types";
 
 import { AdminBusyOverlay } from "./admin-busy-overlay";
 import { EngineKeysDialog, type EngineKeyStatus } from "./engine-keys-dialog";
+import { GlossaryDialog } from "./glossary-dialog";
 import { LanguageDialog } from "./language-dialog";
 import { OpenaiModelSelect } from "./openai-model-select";
 import { UiStringsDialog } from "./ui-strings-dialog";
@@ -297,6 +298,11 @@ export function MeetingList({
               engines={engines}
               defaultEngine={engine}
               onSaved={() => startNavigation(() => router.refresh())}
+            />
+            <GlossaryDialog
+              strings={strings.glossary}
+              languages={languages}
+              displayLang={lang}
             />
           </div>
           <div className="flex flex-wrap gap-2">

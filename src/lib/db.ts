@@ -113,6 +113,19 @@ CREATE TABLE IF NOT EXISTS language_prompt_cues (
   updated_at  INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS glossary_entries (
+  id          TEXT PRIMARY KEY,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS glossary_terms (
+  entry_id    TEXT NOT NULL REFERENCES glossary_entries(id) ON DELETE CASCADE,
+  lang        TEXT NOT NULL REFERENCES languages(code) ON DELETE CASCADE,
+  term        TEXT NOT NULL,
+  PRIMARY KEY (entry_id, lang)
+);
+
 CREATE TABLE IF NOT EXISTS engine_settings (
   engine      TEXT PRIMARY KEY,               -- 'google' | 'deepl' | 'openai'
   model       TEXT,                           -- OpenAI 언어모델. NULL 이면 내장 기본값
@@ -133,6 +146,7 @@ CREATE TABLE IF NOT EXISTS openai_models (
 CREATE INDEX IF NOT EXISTS idx_messages_meeting ON messages (meeting_id, id);
 CREATE INDEX IF NOT EXISTS idx_translations_message ON translations (message_id);
 CREATE INDEX IF NOT EXISTS idx_pages_meeting ON pages (meeting_id);
+CREATE INDEX IF NOT EXISTS idx_glossary_terms_lang ON glossary_terms (lang, entry_id);
 `;
 
 /**

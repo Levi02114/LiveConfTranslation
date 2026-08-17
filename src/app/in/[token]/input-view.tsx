@@ -37,6 +37,7 @@ export function InputView({
   const [peers, setPeers] = useState<Peer[]>([]);
   const [closed, setClosed] = useState(initiallyClosed);
   const [text, setText] = useState("");
+  const [voiceMode, setVoiceMode] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,7 +87,7 @@ export function InputView({
       setPeers(message.peers);
     } else if (message.t === "meeting-closed") {
       setClosed(true);
-      stopVoice();
+      stopVoice(false);
     }
   }, [stopVoice]);
 
@@ -199,6 +200,17 @@ export function InputView({
     }
   };
 
+  const selectVoiceMode = (enabled: boolean) => {
+    setVoiceMode(enabled);
+    if (enabled) {
+      setText("");
+      send({ t: "draft", text: "" });
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
+    } else if (voice.state !== "idle") {
+      voice.stop();
+    }
+  };
+
   const connText =
     state === "open"
       ? strings.connection.connected
@@ -296,11 +308,9 @@ export function InputView({
             >
               <input
                 type="checkbox"
-                checked={voice.state !== "idle"}
+                checked={voiceMode}
                 disabled={!voiceAvailable || closed}
-                onChange={(event) =>
-                  event.target.checked ? void voice.start() : voice.stop()
-                }
+                onChange={(event) => selectVoiceMode(event.target.checked)}
                 className="h-[15px] w-[15px] accent-[var(--fg)]"
               />
               <span>{strings.capture.toggle}</span>
@@ -310,7 +320,7 @@ export function InputView({
               <span className="text-muted">{strings.capture.keyRequired}</span>
             ) : null}
 
-            {voice.devices.length ? (
+            {voiceMode && voice.devices.length ? (
               <select
                 aria-label={strings.capture.microphone}
                 value={voice.deviceId}
@@ -326,7 +336,7 @@ export function InputView({
               </select>
             ) : null}
 
-            {voice.state !== "idle" ? (
+            {voiceMode && voice.state !== "idle" ? (
               <span className="text-muted">
                 {voice.state === "active" ? strings.capture.listening : strings.capture.starting}
               </span>
@@ -347,7 +357,7 @@ export function InputView({
               ref={textareaRef}
               rows={1}
               value={text}
-              disabled={closed}
+              disabled={closed || voiceMode}
               onChange={(event) => onChange(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -355,21 +365,38 @@ export function InputView({
                   void submit();
                 }
               }}
-              placeholder={strings.input.placeholder}
+              placeholder={voiceMode ? strings.capture.standby : strings.input.placeholder}
               className="app-text field-sizing-content max-h-[220px] min-h-11 w-full min-w-0 flex-1 resize-none border-none bg-transparent outline-none disabled:opacity-40"
             />
             <button
               type="button"
               onPointerDown={(event) => event.preventDefault()}
-              onClick={() => void submit()}
-              disabled={closed || sending || !text.trim()}
+              onClick={() => {
+                if (!voiceMode) void submit();
+                else if (voice.state === "idle") void voice.start();
+                else if (voice.state === "active") voice.stop();
+              }}
+              disabled={
+                closed ||
+                (voiceMode ? voice.state === "starting" : sending || !text.trim())
+              }
               className="min-h-11 w-full shrink-0 cursor-pointer border border-fg px-4 py-2.5 font-mono text-[14px] transition-colors hover:bg-fg hover:text-bg disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fg sm:w-auto sm:px-6"
             >
-              {sending ? strings.input.sending : strings.input.send}
+              {voiceMode
+                ? voice.state === "starting"
+                  ? strings.capture.starting
+                  : voice.state === "active"
+                    ? strings.capture.stop
+                    : strings.capture.start
+                : sending
+                  ? strings.input.sending
+                  : strings.input.send}
             </button>
           </div>
 
-          <div className="mt-2 font-mono text-[11px] text-muted">{strings.input.hint}</div>
+          <div className="mt-2 font-mono text-[11px] text-muted">
+            {voiceMode ? strings.capture.standby : strings.input.hint}
+          </div>
         </div>
       </div>
     </div>

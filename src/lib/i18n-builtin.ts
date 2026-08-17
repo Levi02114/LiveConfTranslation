@@ -420,6 +420,21 @@ export type AdminStrings = {
     close: string;
     empty: string;
   };
+  glossary: {
+    button: string;
+    title: string;
+    add: string;
+    source: string;
+    translation: string;
+    providerNote: string;
+    save: string;
+    saving: string;
+    saveFailed: string;
+    required: string;
+    remove: string;
+    close: string;
+    empty: string;
+  };
 };
 
 const adminKo: AdminStrings = {
@@ -545,6 +560,22 @@ const adminKo: AdminStrings = {
     manual: "수정됨",
     close: "닫기",
     empty: "문구가 없습니다",
+  },
+  glossary: {
+    button: "단어집",
+    title: "번역 단어집",
+    add: "단어 추가",
+    source: "원단어",
+    translation: "번역 단어",
+    providerNote:
+      "OpenAI에는 항상 적용됩니다. DeepL은 지원 언어쌍에 적용되며, 현재 Google API 키 방식은 단어집을 지원하지 않습니다.",
+    save: "저장",
+    saving: "저장 중",
+    saveFailed: "단어집을 저장하지 못했습니다",
+    required: "등록된 모든 언어의 단어를 입력해 주세요",
+    remove: "단어 삭제",
+    close: "닫기",
+    empty: "등록된 단어가 없습니다",
   },
 };
 
@@ -672,6 +703,22 @@ const adminVi: AdminStrings = {
     close: "Đóng",
     empty: "Không có văn bản",
   },
+  glossary: {
+    button: "Bảng thuật ngữ",
+    title: "Bảng thuật ngữ dịch",
+    add: "Thêm thuật ngữ",
+    source: "Thuật ngữ gốc",
+    translation: "Thuật ngữ dịch",
+    providerNote:
+      "Luôn áp dụng với OpenAI. DeepL áp dụng cho các cặp ngôn ngữ được hỗ trợ; chế độ khóa API Google hiện tại không hỗ trợ bảng thuật ngữ.",
+    save: "Lưu",
+    saving: "Đang lưu",
+    saveFailed: "Không lưu được bảng thuật ngữ",
+    required: "Hãy nhập thuật ngữ cho mọi ngôn ngữ đã đăng ký",
+    remove: "Xóa thuật ngữ",
+    close: "Đóng",
+    empty: "Chưa có thuật ngữ",
+  },
 };
 
 const adminTh: AdminStrings = {
@@ -798,6 +845,22 @@ const adminTh: AdminStrings = {
     close: "ปิด",
     empty: "ไม่มีข้อความ",
   },
+  glossary: {
+    button: "อภิธานศัพท์",
+    title: "อภิธานศัพท์การแปล",
+    add: "เพิ่มคำศัพท์",
+    source: "คำต้นฉบับ",
+    translation: "คำแปล",
+    providerNote:
+      "ใช้กับ OpenAI เสมอ ส่วน DeepL ใช้กับคู่ภาษาที่รองรับ และโหมดคีย์ API ของ Google ปัจจุบันไม่รองรับอภิธานศัพท์",
+    save: "บันทึก",
+    saving: "กำลังบันทึก",
+    saveFailed: "บันทึกอภิธานศัพท์ไม่สำเร็จ",
+    required: "กรุณากรอกคำศัพท์สำหรับทุกภาษาที่ลงทะเบียน",
+    remove: "ลบคำศัพท์",
+    close: "ปิด",
+    empty: "ยังไม่มีคำศัพท์",
+  },
 };
 
 const adminSi: AdminStrings = {
@@ -923,6 +986,22 @@ const adminSi: AdminStrings = {
     manual: "සංස්කරණය කළා",
     close: "වසන්න",
     empty: "පෙළ නැත",
+  },
+  glossary: {
+    button: "පද මාලාව",
+    title: "පරිවර්තන පද මාලාව",
+    add: "පදයක් එක් කරන්න",
+    source: "මුල් පදය",
+    translation: "පරිවර්තන පදය",
+    providerNote:
+      "OpenAI සඳහා සැමවිටම යෙදේ. DeepL සහය දක්වන භාෂා යුගල සඳහා යෙදෙන අතර වත්මන් Google API යතුරු ක්‍රමය පද මාලා සඳහා සහය නොදක්වයි.",
+    save: "සුරකින්න",
+    saving: "සුරකිමින්",
+    saveFailed: "පද මාලාව සුරැකිය නොහැකි විය",
+    required: "ලියාපදිංචි සියලු භාෂා සඳහා පද ඇතුළත් කරන්න",
+    remove: "පදය මකන්න",
+    close: "වසන්න",
+    empty: "ලියාපදිංචි පද නැත",
   },
 };
 

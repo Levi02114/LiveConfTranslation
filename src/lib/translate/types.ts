@@ -8,6 +8,8 @@ export function isEngineId(value: unknown): value is EngineId {
   return typeof value === "string" && (ENGINE_IDS as readonly string[]).includes(value);
 }
 
+export type GlossaryTermPair = { source: string; target: string };
+
 export type TranslateInput = {
   text: string;
   from: LanguageCode;
@@ -19,6 +21,8 @@ export type TranslateInput = {
    * 문장 단위로만 동작하므로 무시한다.
    */
   context?: readonly string[];
+  /** 관리자가 등록한 현재 원문/대상 언어의 단어집. */
+  glossary?: readonly GlossaryTermPair[];
   signal?: AbortSignal;
 };
 

@@ -57,7 +57,7 @@ export function CaptureView({
         );
       } else if (message.t === "meeting-closed") {
         setClosed(true);
-        stopVoice();
+        stopVoice(false);
       }
     },
     [language.code, stopVoice],
