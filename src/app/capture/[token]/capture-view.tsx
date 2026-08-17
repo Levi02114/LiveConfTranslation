@@ -29,7 +29,7 @@ type TranscriptionEvent = {
 
 // ponytail: 현장 마이크마다 레벨이 다르다. 오탐이 생기면 이 두 값만 조정한다.
 const SPEECH_RMS = 0.025;
-const SILENCE_MS = 700;
+const SILENCE_MS = 1_300;
 
 export function CaptureView({
   token,
@@ -168,6 +168,25 @@ export function CaptureView({
     if (!navigator.mediaDevices?.enumerateDevices) return;
     navigator.mediaDevices.addEventListener("devicechange", refreshDevices);
     return () => navigator.mediaDevices.removeEventListener("devicechange", refreshDevices);
+  }, [refreshDevices]);
+
+  useEffect(() => {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) return;
+    let cancelled = false;
+
+    void navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then(async (media) => {
+        media.getTracks().forEach((track) => track.stop());
+        if (!cancelled) await refreshDevices();
+      })
+      .catch(() => {
+        // 자동 권한 요청이 제한되면 전사 시작 버튼에서 다시 요청한다.
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [refreshDevices]);
 
   const submitTranscript = useCallback(

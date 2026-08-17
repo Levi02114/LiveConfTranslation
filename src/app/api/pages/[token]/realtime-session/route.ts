@@ -60,7 +60,9 @@ export async function POST(request: Request, { params }: Params) {
             transcription: {
               model: "gpt-live-transcribe",
               languages: [target.lang.toLowerCase()],
-              delay: "low",
+              delay: "medium",
+              prompt:
+                "A live meeting with multiple participants who take turns speaking. Transcribe only what is spoken in the expected language. Preserve wording, names, numbers, and terminology. Do not invent speaker names or labels; only add punctuation and spacing when clear.",
             },
             // gpt-live-transcribe 는 서버 VAD 를 지원하지 않는다. 브라우저가 무음을
             // 감지해 input_audio_buffer.commit 을 보내며 문장 경계를 확정한다.
