@@ -8,7 +8,7 @@ const path = require("node:path");
 
 const { app, BrowserWindow, clipboard, dialog, Menu, shell } = require("electron");
 
-const { extractQuickTunnelUrl, parseHealth, pickLanAddress } = require("./network.cjs");
+const { extractQuickTunnelUrl, listLanAddresses, parseHealth, pickLanAddress } = require("./network.cjs");
 
 const PORT = 3000;
 const LOOPBACK_ORIGIN = `http://127.0.0.1:${PORT}`;
@@ -18,8 +18,13 @@ const secureWebPreferences = {
   sandbox: true,
 };
 
-let adminOrigin = LOOPBACK_ORIGIN;
+const adminOrigin = LOOPBACK_ORIGIN;
 let mainWindow = null;
+let desktopSettings = null;
+let desktopSettingsPath = null;
+let lanAddresses = [];
+let preferredShareOrigin = null;
+let shareOrigin = LOOPBACK_ORIGIN;
 let tunnelProcess = null;
 let tunnelStarting = false;
 let tunnelStopping = false;
@@ -65,29 +70,61 @@ async function waitForServer() {
   throw new Error("로컬 서버가 10초 안에 시작되지 않았습니다.");
 }
 
+function loadDesktopSettings() {
+  if (!app.isPackaged) return;
+  const userData = app.getPath("userData");
+  desktopSettingsPath = path.join(userData, "desktop-settings.json");
+  mkdirSync(userData, { recursive: true });
+  if (!existsSync(desktopSettingsPath)) return;
+  desktopSettings = JSON.parse(readFileSync(desktopSettingsPath, "utf8"));
+  preferredShareOrigin = desktopSettings.preferredOrigin ?? null;
+}
+
+function writeDesktopSettings() {
+  if (!desktopSettingsPath || !desktopSettings) return;
+  writeFileSync(desktopSettingsPath, `${JSON.stringify(desktopSettings, null, 2)}\n`, { mode: 0o600 });
+}
+
 function createDesktopSettings() {
   if (!app.isPackaged) return null;
-
   const userData = app.getPath("userData");
-  const settingsPath = path.join(userData, "desktop-settings.json");
-  mkdirSync(userData, { recursive: true });
 
-  const created = !existsSync(settingsPath);
-  let settings;
-  if (!created) {
-    settings = JSON.parse(readFileSync(settingsPath, "utf8"));
-  } else {
-    settings = {
+  const created = !desktopSettings;
+  if (created) {
+    desktopSettings = {
       adminPassword: randomBytes(9).toString("base64url"),
       sessionSecret: randomBytes(32).toString("base64url"),
+      ...(preferredShareOrigin ? { preferredOrigin: preferredShareOrigin } : {}),
     };
-    writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });
+    writeDesktopSettings();
   }
 
-  process.env.ADMIN_PASSWORD ||= settings.adminPassword;
-  process.env.SESSION_SECRET ||= settings.sessionSecret;
+  process.env.ADMIN_PASSWORD ||= desktopSettings.adminPassword;
+  process.env.SESSION_SECRET ||= desktopSettings.sessionSecret;
   process.env.DATABASE_PATH ||= path.join(userData, "meetings.db");
-  return created ? settings.adminPassword : null;
+  return created ? desktopSettings.adminPassword : null;
+}
+
+function lanOrigin(address) {
+  return `http://${address}:${PORT}`;
+}
+
+function selectedLanOrigin() {
+  const available = new Set(lanAddresses.map((item) => lanOrigin(item.address)));
+  return available.has(preferredShareOrigin)
+    ? preferredShareOrigin
+    : lanOrigin(pickLanAddress(os.networkInterfaces()));
+}
+
+function selectShareOrigin(origin) {
+  preferredShareOrigin = origin;
+  shareOrigin = origin;
+  if (desktopSettings) {
+    desktopSettings.preferredOrigin = origin;
+    writeDesktopSettings();
+  }
+  syncPublicOrigin();
+  installApplicationMenu();
 }
 
 function isInternalAdminUrl(value) {
@@ -137,11 +174,13 @@ function updateTunnelMenu() {
 }
 
 function syncPublicOrigin() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  const value = JSON.stringify(tunnelUrl);
-  void mainWindow.webContents.executeJavaScript(
-    `${value} ? localStorage.setItem("lct_public_origin", ${value}) : localStorage.removeItem("lct_public_origin"); window.dispatchEvent(new Event("lct-public-origin"));`,
-  );
+  const value = JSON.stringify(shareOrigin);
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed() || !isInternalAdminUrl(window.webContents.getURL())) continue;
+    void window.webContents.executeJavaScript(
+      `localStorage.setItem("lct_public_origin", ${value}); window.dispatchEvent(new Event("lct-public-origin"));`,
+    );
+  }
 }
 
 function stopQuickTunnel() {
@@ -232,6 +271,7 @@ async function startQuickTunnel() {
         reject(error);
       });
       child.on("exit", (code) => {
+        const endedTunnelUrl = tunnelUrl;
         const unexpected = settled && !tunnelStopping && Boolean(tunnelUrl);
         if (!settled) {
           settled = true;
@@ -240,14 +280,17 @@ async function startQuickTunnel() {
         }
         tunnelProcess = null;
         tunnelUrl = null;
+        if (shareOrigin === endedTunnelUrl) shareOrigin = selectedLanOrigin();
         tunnelStopping = false;
         syncPublicOrigin();
-        updateTunnelMenu();
+        installApplicationMenu();
         if (unexpected) dialog.showErrorBox("Cloudflare Tunnel 종료", "공개 터널 연결이 예기치 않게 종료되었습니다.");
       });
     });
 
+    shareOrigin = tunnelUrl;
     syncPublicOrigin();
+    installApplicationMenu();
     const result = await dialog.showMessageBox(mainWindow, {
       type: "info",
       title: "Cloudflare 공개 URL",
@@ -270,11 +313,32 @@ async function startQuickTunnel() {
 }
 
 function installApplicationMenu() {
+  const addressItems = lanAddresses.length
+    ? lanAddresses.map((item) => {
+        const origin = lanOrigin(item.address);
+        return {
+          label: `${item.virtual ? "가상" : "실제"} · ${item.name} · ${item.address}`,
+          type: "radio",
+          checked: shareOrigin === origin,
+          click: () => selectShareOrigin(origin),
+        };
+      })
+    : [
+        {
+          label: `로컬 · 127.0.0.1`,
+          type: "radio",
+          checked: shareOrigin === LOOPBACK_ORIGIN,
+          click: () => selectShareOrigin(LOOPBACK_ORIGIN),
+        },
+      ];
+
   Menu.setApplicationMenu(
     Menu.buildFromTemplate([
       {
         label: "설정",
         submenu: [
+          { label: "기본 공유 주소", submenu: addressItems },
+          { type: "separator" },
           { id: "tunnel-status", label: "상태: 꺼짐", enabled: false },
           { type: "separator" },
           { id: "tunnel-start", label: "Cloudflare 공개 URL 만들기", click: () => void startQuickTunnel() },
@@ -298,6 +362,7 @@ function installApplicationMenu() {
       { role: "windowMenu" },
     ]),
   );
+  updateTunnelMenu();
 }
 
 function applyNavigationPolicy(contents) {
@@ -348,6 +413,9 @@ async function start() {
   process.env.NODE_ENV = "production";
   process.env.HOSTNAME = "0.0.0.0";
   process.env.PORT = String(PORT);
+  loadDesktopSettings();
+  lanAddresses = listLanAddresses(os.networkInterfaces());
+  shareOrigin = selectedLanOrigin();
 
   // 서버 준비와 첫 렌더링을 기다리는 동안에도 앱이 실행됐다는 것을 바로 보여 준다.
   installApplicationMenu();
@@ -362,7 +430,6 @@ async function start() {
     await waitForServer();
   }
 
-  adminOrigin = `http://${pickLanAddress(os.networkInterfaces())}:${PORT}`;
   if (!mainWindow || mainWindow.isDestroyed()) return;
   await mainWindow.loadURL(`${adminOrigin}/admin`);
 

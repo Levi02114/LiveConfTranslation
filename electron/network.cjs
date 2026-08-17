@@ -4,13 +4,41 @@ function isPrivate(address) {
   return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31);
 }
 
-function pickLanAddress(interfaces) {
-  const addresses = Object.values(interfaces)
-    .flat()
-    .filter((item) => item && (item.family === "IPv4" || item.family === 4) && !item.internal)
-    .map((item) => item.address);
+function isVirtualInterface(name) {
+  return /virtual|virtualbox|vbox|vmware|hyper-v|vethernet|wsl|docker|podman|tailscale|zerotier|local area connection\*|^(br-|veth|virbr|zt|tun\d|tap\d|wg\d)/i.test(
+    name,
+  );
+}
 
-  return addresses.find(isPrivate) ?? addresses[0] ?? "127.0.0.1";
+function listLanAddresses(interfaces) {
+  const seen = new Set();
+  return Object.entries(interfaces).flatMap(([name, items]) =>
+    (items ?? [])
+      .filter(
+        (item) =>
+          item &&
+          (item.family === "IPv4" || item.family === 4) &&
+          !item.internal &&
+          !item.address.startsWith("169.254.") &&
+          !seen.has(item.address),
+      )
+      .map((item) => {
+        seen.add(item.address);
+        return { name, address: item.address, virtual: isVirtualInterface(name) };
+      }),
+  );
+}
+
+function pickLanAddress(interfaces) {
+  const addresses = listLanAddresses(interfaces);
+
+  return (
+    addresses.find((item) => !item.virtual && isPrivate(item.address))?.address ??
+    addresses.find((item) => !item.virtual)?.address ??
+    addresses.find((item) => isPrivate(item.address))?.address ??
+    addresses[0]?.address ??
+    "127.0.0.1"
+  );
 }
 
 function extractQuickTunnelUrl(text) {
@@ -30,4 +58,4 @@ function parseHealth(text) {
   }
 }
 
-module.exports = { extractQuickTunnelUrl, parseHealth, pickLanAddress };
+module.exports = { extractQuickTunnelUrl, listLanAddresses, parseHealth, pickLanAddress };
