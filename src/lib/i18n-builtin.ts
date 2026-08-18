@@ -408,6 +408,7 @@ export type AdminStrings = {
     deleteFailed: string;
   };
   dashboard: {
+    backToAdmin: string;
     close: string;
     closedNotice: string;
     unsupportedEngine: string;
@@ -594,6 +595,7 @@ const adminKo: AdminStrings = {
     deleteFailed: "세션을 삭제하지 못했습니다",
   },
   dashboard: {
+    backToAdmin: "관리 페이지로 돌아가기",
     close: "세션 종료",
     closedNotice: "세션이 종료되었습니다",
     unsupportedEngine:
@@ -787,6 +789,7 @@ const adminVi: AdminStrings = {
     deleteFailed: "Không xóa được phiên",
   },
   dashboard: {
+    backToAdmin: "Quay lại trang quản trị",
     close: "Kết thúc phiên",
     closedNotice: "Phiên đã kết thúc",
     unsupportedEngine:
@@ -980,6 +983,7 @@ const adminTh: AdminStrings = {
     deleteFailed: "ลบเซสชันไม่สำเร็จ",
   },
   dashboard: {
+    backToAdmin: "กลับไปหน้าผู้ดูแล",
     close: "สิ้นสุดเซสชัน",
     closedNotice: "เซสชันสิ้นสุดแล้ว",
     unsupportedEngine:
@@ -1173,6 +1177,7 @@ const adminSi: AdminStrings = {
     deleteFailed: "සැසිය මකා දැමිය නොහැකි විය",
   },
   dashboard: {
+    backToAdmin: "පරිපාලක පිටුවට ආපසු යන්න",
     close: "සැසිය අවසන් කරන්න",
     closedNotice: "සැසිය අවසන් වී ඇත",
     unsupportedEngine:

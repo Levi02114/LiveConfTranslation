@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useCallback, useRef, useState, useSyncExternalStore, useTransition } from "react";
 
 import { AppearanceControls } from "@/components/appearance-controls";
@@ -222,6 +223,16 @@ export function DashboardView({
           onChange: (next) => startNavigation(() => setLang(next)),
         }}
       />
+
+      <Link
+        href="/admin"
+        prefetch={false}
+        aria-label={strings.dashboard.backToAdmin}
+        title={strings.dashboard.backToAdmin}
+        className="mb-6 inline-flex h-8 w-8 items-center justify-center font-mono text-[22px] text-muted transition-colors hover:text-fg"
+      >
+        ←
+      </Link>
 
       <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-baseline sm:justify-between sm:gap-5">
         <div className="min-w-0">
