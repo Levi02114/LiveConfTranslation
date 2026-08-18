@@ -37,6 +37,15 @@ export type Language = {
  */
 export const BUILTIN_LANGUAGES: readonly LanguageCode[] = ["ko", "vi", "th", "si"];
 
+// Electron은 일부 ICU 로케일(현재 si)을 싣지 않아 원어명도 영어로 폴백한다.
+// 기본 지원 언어만큼은 실행 환경과 무관하게 검수된 이름을 사용한다.
+const BUILTIN_NATIVE_NAMES: Readonly<Record<string, string>> = {
+  ko: "한국어",
+  vi: "Tiếng Việt",
+  th: "ไทย",
+  si: "සිංහල",
+};
+
 /** 회의를 새로 만들 때 기본으로 채워지는 언어 세트 */
 export const DEFAULT_LANGUAGES: readonly LanguageCode[] = BUILTIN_LANGUAGES;
 
@@ -110,7 +119,7 @@ export function getLanguage(code: LanguageCode, displayLang: LanguageCode = "ko"
   return {
     code,
     label: displayName(code, displayLang),
-    nativeName: displayName(code, code),
+    nativeName: BUILTIN_NATIVE_NAMES[code] ?? displayName(code, code),
     logName: displayName(code, "en"),
   };
 }

@@ -61,7 +61,7 @@ Windows 설치본은 Node.js나 개발 도구를 따로 설치하지 않아도 �
 
 ### 1. 설치 또는 포터블 실행
 
-[v0.9.10 릴리스 페이지](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.10)에서 다음 중
+[v0.9.11 릴리스 페이지](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.11)에서 다음 중
 하나를 내려받습니다.
 
 - `... Setup ... .exe`: Windows에 설치하는 버전
@@ -599,6 +599,10 @@ Cloudflare 터널이 연결된 동안에는 공개 주소가 자동으로 우선
 
 추가 언어의 화면 문구는 번역 엔진으로 생성됩니다. 번역이 실패한 개별 문구는 화면이
 비지 않도록 한국어 원문으로 대체됩니다.
+
+기본 지원 언어의 원어명은 Electron의 로케일 포함 여부와 관계없이 한국어, Tiếng Việt,
+ไทย, සිංහල로 동일하게 표시됩니다. 추가 언어 이름은 실행 환경의 국제화 데이터에서
+자동으로 가져옵니다.
 
 ### 문구 직접 수정
 
