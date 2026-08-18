@@ -164,7 +164,7 @@ export function InputView({
       const container = scrollRef.current;
       if (container) container.scrollTop = container.scrollHeight;
     });
-  }, [text]);
+  }, [text, voice.partial]);
 
   const onChange = (value: string) => {
     setText(value);
@@ -229,6 +229,9 @@ export function InputView({
       : voice.state === "active"
         ? strings.capture.stop
         : strings.capture.start;
+  const inputText = voice.partial
+    ? appendTranscriptDraft(voiceMode ? "" : text, voice.partial)
+    : text;
 
   // 자기 자신은 서버가 이미 빼고 보낸다.
   const typing = peers.filter((peer) => peer.typing && peer.draft.trim());
@@ -293,17 +296,6 @@ export function InputView({
                 </p>
               </div>
             ))}
-
-            {voice.partial ? (
-              <div className="grid grid-cols-1 gap-1 border-t border-line py-3 opacity-50 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-4">
-                <span className="whitespace-nowrap font-mono text-[12px] text-muted sm:pt-[0.4em]">
-                  {strings.capture.partial}
-                </span>
-                <p className="app-text min-w-0 whitespace-pre-wrap italic [text-wrap:pretty]">
-                  {voice.partial}<span aria-hidden>▍</span>
-                </p>
-              </div>
-            ) : null}
 
             <div className="h-12" aria-hidden />
           </div>
@@ -370,8 +362,8 @@ export function InputView({
             <textarea
               ref={textareaRef}
               rows={1}
-              value={text}
               disabled={closed || voiceMode || voice.state !== "idle"}
+              value={inputText}
               onChange={(event) => onChange(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -380,7 +372,7 @@ export function InputView({
                 }
               }}
               placeholder={voiceMode ? strings.capture.standby : strings.input.placeholder}
-              className={`app-text field-sizing-content max-h-[220px] min-h-11 w-full min-w-0 flex-1 resize-none border-none bg-transparent outline-none ${voiceMode ? "opacity-40" : ""}`}
+              className={`app-text field-sizing-content max-h-[220px] min-h-11 w-full min-w-0 flex-1 resize-none border-none bg-transparent outline-none ${voiceMode && !voice.partial ? "opacity-40" : ""}`}
             />
             <div className="flex shrink-0 gap-2 sm:w-auto">
               {!voiceMode && voiceAvailable ? (

@@ -9,7 +9,7 @@ import {
   renewCapture,
 } from "@/lib/realtime/capture-lease";
 import { getLanguage } from "@/lib/languages";
-import { getMeeting, getPageByToken } from "@/lib/repo";
+import { getMeeting, getPageByToken, listGlossaryEntries } from "@/lib/repo";
 import { engineKey } from "@/lib/secrets";
 
 type Params = { params: Promise<{ token: string }> };
@@ -46,6 +46,13 @@ export async function POST(request: Request, { params }: Params) {
 
   const language = getLanguage(target.lang).logName;
   const title = target.meeting.title.replace(/\s+/g, " ").trim().slice(0, 160);
+  const keywords = listGlossaryEntries()
+    .map((entry) => entry.terms[target.lang]?.trim())
+    .filter(
+      (term): term is string =>
+        typeof term === "string" && term.length > 0 && !/[\r\n<>]/.test(term),
+    )
+    .slice(0, 100);
 
   const response = await fetch(`${openaiBaseUrl()}/realtime/client_secrets`, {
     method: "POST",
@@ -60,14 +67,15 @@ export async function POST(request: Request, { params }: Params) {
         audio: {
           input: {
             format: { type: "audio/pcm", rate: 24000 },
-            noise_reduction: { type: "far_field" },
+            noise_reduction: { type: target.page.kind === "capture" ? "far_field" : "near_field" },
             transcription: {
-              model: "gpt-transcribe",
+              model: "gpt-live-transcribe",
               languages: [target.lang.toLowerCase()],
+              keywords,
+              delay: "high",
               prompt: `Live meeting title/context: "${title}". Transcribe every intelligible spoken word in ${language} (${target.lang}), including brief acknowledgements and hesitations. Preserve wording, names, numbers, and terminology. Never summarize, translate, answer, invent speaker labels, or add unspoken text.`,
             },
-            // gpt-transcribe 는 서버 VAD 를 지원하지 않는다. 브라우저가 무음을
-            // 감지해 input_audio_buffer.commit 을 보내며 문장 경계를 확정한다.
+            // 이 전사 모델은 현재 서버 VAD를 거부하므로 브라우저가 무음을 감지해 확정한다.
             turn_detection: null,
           },
         },

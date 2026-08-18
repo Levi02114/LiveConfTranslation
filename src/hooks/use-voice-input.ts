@@ -227,6 +227,12 @@ export function useVoiceInput({
         flushTranscripts(sessionLease);
         return;
       }
+      if (event.type === "error" && finalCommit.current) {
+        const finishing = finalCommit.current;
+        finalCommit.current = null;
+        void submissionChain.current.finally(() => disconnect(finishing.release));
+        return;
+      }
       if (!itemId) return;
       if (event.type === "conversation.item.input_audio_transcription.delta") {
         partials.current.set(itemId, (partials.current.get(itemId) ?? "") + (event.delta ?? ""));
@@ -241,25 +247,27 @@ export function useVoiceInput({
         flushTranscripts(sessionLease);
       }
     },
-    [flushTranscripts],
+    [disconnect, flushTranscripts],
   );
 
   const monitorSilence = useCallback(
-    (media: MediaStream) => {
+    async (media: MediaStream) => {
       const context = new AudioContext();
-      void context.resume();
+      audioContext.current = context;
+      if (context.state !== "running") await context.resume();
+
       const analyser = context.createAnalyser();
       analyser.fftSize = 1024;
       context.createMediaStreamSource(media).connect(analyser);
-      audioContext.current = context;
-
       const samples = new Float32Array(analyser.fftSize);
       const detector = new AudioTurnDetector();
       const measure = () => {
         analyser.getFloatTimeDomainData(samples);
         let sum = 0;
         for (const sample of samples) sum += sample * sample;
-        if (detector.update(Math.sqrt(sum / samples.length), performance.now())) sendCommit();
+        const level = Math.sqrt(sum / samples.length);
+        if (channel.current?.readyState !== "open") detector.calibrate(level);
+        else if (detector.update(level, performance.now())) sendCommit();
         audioFrame.current = requestAnimationFrame(measure);
       };
       measure();
@@ -302,6 +310,14 @@ export function useVoiceInput({
 
     setState("starting");
     setError(null);
+    const sessionRequest = fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clientId: clientId.current }),
+    }).then(async (response) => ({
+      response,
+      session: (await response.json().catch(() => null)) as RealtimeSession | null,
+    }));
     try {
       try {
         stream.current = await navigator.mediaDevices.getUserMedia({
@@ -315,14 +331,10 @@ export function useVoiceInput({
       } catch {
         throw new Error(strings.permission);
       }
-      await refreshDevices();
+      void refreshDevices();
+      await monitorSilence(stream.current);
 
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ clientId: clientId.current }),
-      });
-      const session = (await response.json().catch(() => null)) as RealtimeSession | null;
+      const { response, session } = await sessionRequest;
       if (!response.ok || !session?.leaseId || !session.clientSecret) {
         throw new Error(
           response.status === 409
@@ -360,7 +372,6 @@ export function useVoiceInput({
       });
       if (!answer.ok) throw new Error(strings.lost);
       await connection.setRemoteDescription({ type: "answer", sdp: await answer.text() });
-      monitorSilence(stream.current);
 
       heartbeat.current = setInterval(async () => {
         const currentLease = leaseId.current;
@@ -377,6 +388,18 @@ export function useVoiceInput({
       }, 5_000);
       setState("active");
     } catch (cause) {
+      if (!leaseId.current) {
+        void sessionRequest
+          .then(({ session }) => {
+            if (!session?.leaseId) return;
+            return fetch(endpoint, {
+              method: "DELETE",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ leaseId: session.leaseId }),
+            });
+          })
+          .catch(() => undefined);
+      }
       setError(cause instanceof Error && cause.message ? cause.message : strings.permission);
       disconnect();
     }

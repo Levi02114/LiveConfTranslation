@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-/** 한 언어 수집 페이지에서 같은 음원을 두 번 전사하지 않게 하는 짧은 활성권. */
+/** 브라우저별 전사 세션이 완료 이벤트를 제출할 수 있게 하는 짧은 활성권. */
 const TTL_MS = 20_000;
 
 type Lease = {
@@ -11,49 +11,59 @@ type Lease = {
   expiresAt: number;
 };
 
-type LeaseState = { leases: Map<string, Lease> };
+type LeaseState = { leases: Map<string, Lease>; clients: Map<string, string> };
 
 const shared = globalThis as unknown as { __captureLeases?: LeaseState };
 
 function state(): LeaseState {
-  return (shared.__captureLeases ??= { leases: new Map() });
+  return (shared.__captureLeases ??= { leases: new Map(), clients: new Map() });
 }
+
+const clientKey = (pageId: string, clientId: string) => `${pageId}:${clientId}`;
 
 export function claimCapture(meetingId: string, pageId: string, clientId: string): Lease | null {
   const now = Date.now();
-  const current = state().leases.get(pageId);
-  if (current && current.expiresAt > now && current.clientId !== clientId) return null;
+  const key = clientKey(pageId, clientId);
+  const currentId = state().clients.get(key);
+  const current = currentId ? state().leases.get(currentId) : undefined;
+  if (current && current.expiresAt <= now) state().leases.delete(current.leaseId);
 
   const lease: Lease = {
     meetingId,
     pageId,
     clientId,
-    leaseId: current?.clientId === clientId ? current.leaseId : randomUUID(),
+    leaseId: current?.expiresAt && current.expiresAt > now ? current.leaseId : randomUUID(),
     expiresAt: now + TTL_MS,
   };
-  state().leases.set(pageId, lease);
+  state().leases.set(lease.leaseId, lease);
+  state().clients.set(key, lease.leaseId);
   return lease;
 }
 
 export function renewCapture(pageId: string, leaseId: string): Lease | null {
-  const current = state().leases.get(pageId);
-  if (!current || current.leaseId !== leaseId || current.expiresAt <= Date.now()) return null;
+  const current = state().leases.get(leaseId);
+  if (!current || current.pageId !== pageId || current.expiresAt <= Date.now()) return null;
   current.expiresAt = Date.now() + TTL_MS;
   return current;
 }
 
 export function ownsCapture(pageId: string, leaseId: string): boolean {
-  const current = state().leases.get(pageId);
-  return Boolean(current && current.leaseId === leaseId && current.expiresAt > Date.now());
+  const current = state().leases.get(leaseId);
+  return Boolean(current && current.pageId === pageId && current.expiresAt > Date.now());
 }
 
 export function releaseCapture(pageId: string, leaseId?: string): void {
-  const current = state().leases.get(pageId);
-  if (current && (!leaseId || current.leaseId === leaseId)) state().leases.delete(pageId);
+  if (!leaseId) return;
+  const current = state().leases.get(leaseId);
+  if (!current || current.pageId !== pageId) return;
+  state().leases.delete(leaseId);
+  state().clients.delete(clientKey(pageId, current.clientId));
 }
 
 export function releaseMeetingCaptures(meetingId: string): void {
-  for (const [pageId, lease] of state().leases) {
-    if (lease.meetingId === meetingId) state().leases.delete(pageId);
+  for (const [leaseId, lease] of state().leases) {
+    if (lease.meetingId !== meetingId) continue;
+    state().leases.delete(leaseId);
+    state().clients.delete(clientKey(lease.pageId, lease.clientId));
   }
 }

@@ -1,8 +1,8 @@
-// ponytail: 현장 마이크 편차를 흡수하되, 오탐이 보이면 이 다섯 값만 조정한다.
-const MIN_START_RMS = 0.003;
-const MIN_CONTINUE_RMS = 0.002;
-const SILENCE_MS = 800;
-const MAX_TURN_MS = 20_000;
+// ponytail: 현장 마이크 편차가 크므로 오탐이 보이면 이 다섯 값만 조정한다.
+const MIN_START_RMS = 0.0025;
+const MIN_CONTINUE_RMS = 0.0015;
+const SILENCE_MS = 1_100;
+const MAX_TURN_MS = 15_000;
 const INITIAL_NOISE_FLOOR = 0.003;
 
 export class AudioTurnDetector {
@@ -11,18 +11,23 @@ export class AudioTurnDetector {
   private silentSince: number | null = null;
   private turnStartedAt: number | null = null;
 
+  calibrate(rms: number): void {
+    const level = Number.isFinite(rms) && rms > 0 ? rms : 0;
+    this.noiseFloor += (level - this.noiseFloor) * 0.08;
+  }
+
   update(rms: number, now: number): boolean {
     const level = Number.isFinite(rms) && rms > 0 ? rms : 0;
     if (!this.heardSpeech) {
       this.noiseFloor +=
-        (level - this.noiseFloor) * (level < this.noiseFloor ? 0.08 : 0.001);
+        (level - this.noiseFloor) * (level < this.noiseFloor ? 0.08 : 0.01);
     }
 
     const speaking =
       level >=
       Math.max(
         this.heardSpeech ? MIN_CONTINUE_RMS : MIN_START_RMS,
-        this.noiseFloor * (this.heardSpeech ? 1.8 : 3),
+        this.noiseFloor * 1.6,
       );
 
     if (speaking) {
