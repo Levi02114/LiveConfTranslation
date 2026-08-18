@@ -10,6 +10,7 @@ import type { UiStrings } from "@/lib/i18n-builtin";
 import { type Language, textDirection } from "@/lib/languages";
 import type { Peer, ServerMessage } from "@/lib/realtime/protocol";
 import type { CombinedEntry } from "@/lib/repo";
+import { appendTranscriptDraft } from "@/lib/transcript-draft";
 
 /** 초안은 타자마다 오간다. 글자당 한 번씩 보내지 않도록 묶어서 보낸다. */
 const DRAFT_INTERVAL_MS = 180;
@@ -44,7 +45,16 @@ export function InputView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const voice = useVoiceInput({ token, strings: strings.capture, closed });
+  const appendTranscript = useCallback((body: string) => {
+    setText((current) => appendTranscriptDraft(current, body));
+  }, []);
+  const voice = useVoiceInput({
+    token,
+    strings: strings.capture,
+    closed,
+    autoSubmit: voiceMode,
+    onTranscript: appendTranscript,
+  });
   const { stop: stopVoice } = voice;
 
   const onMessage = useCallback((message: ServerMessage) => {
@@ -144,19 +154,20 @@ export function InputView({
     };
   }, []);
 
+  useEffect(() => {
+    const area = textareaRef.current;
+    if (!area) return;
+    // 자동 높이. 먼저 줄여야 내용이 짧아졌을 때도 따라 줄어든다.
+    area.style.height = "auto";
+    area.style.height = `${Math.min(area.scrollHeight, 220)}px`;
+    requestAnimationFrame(() => {
+      const container = scrollRef.current;
+      if (container) container.scrollTop = container.scrollHeight;
+    });
+  }, [text]);
+
   const onChange = (value: string) => {
     setText(value);
-
-    const area = textareaRef.current;
-    if (area) {
-      // 자동 높이. 먼저 줄여야 내용이 짧아졌을 때도 따라 줄어든다.
-      area.style.height = "auto";
-      area.style.height = `${Math.min(area.scrollHeight, 220)}px`;
-      requestAnimationFrame(() => {
-        const container = scrollRef.current;
-        if (container) container.scrollTop = container.scrollHeight;
-      });
-    }
 
     if (draftTimer.current) return;
     draftTimer.current = setTimeout(() => {
@@ -201,14 +212,9 @@ export function InputView({
   };
 
   const selectVoiceMode = (enabled: boolean) => {
+    if (voice.state !== "idle") return;
     setVoiceMode(enabled);
-    if (enabled) {
-      setText("");
-      send({ t: "draft", text: "" });
-      if (textareaRef.current) textareaRef.current.style.height = "auto";
-    } else if (voice.state !== "idle") {
-      voice.stop();
-    }
+    send({ t: "draft", text: enabled ? "" : text });
   };
 
   const connText =
@@ -217,6 +223,12 @@ export function InputView({
       : state === "connecting"
         ? strings.connection.reconnecting
         : strings.connection.disconnected;
+  const voiceActionText =
+    voice.state === "starting"
+      ? strings.capture.starting
+      : voice.state === "active"
+        ? strings.capture.stop
+        : strings.capture.start;
 
   // 자기 자신은 서버가 이미 빼고 보낸다.
   const typing = peers.filter((peer) => peer.typing && peer.draft.trim());
@@ -303,13 +315,15 @@ export function InputView({
           <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line pb-3 font-mono text-[11px]">
             <label
               className={`flex items-center gap-2 ${
-                voiceAvailable && !closed ? "cursor-pointer" : "cursor-not-allowed opacity-40"
+                voiceAvailable && !closed && voice.state === "idle"
+                  ? "cursor-pointer"
+                  : "cursor-not-allowed opacity-40"
               }`}
             >
               <input
                 type="checkbox"
                 checked={voiceMode}
-                disabled={!voiceAvailable || closed}
+                disabled={!voiceAvailable || closed || voice.state !== "idle"}
                 onChange={(event) => selectVoiceMode(event.target.checked)}
                 className="h-[15px] w-[15px] accent-[var(--fg)]"
               />
@@ -320,7 +334,7 @@ export function InputView({
               <span className="text-muted">{strings.capture.keyRequired}</span>
             ) : null}
 
-            {voiceMode && voice.devices.length ? (
+            {voiceAvailable && voice.devices.length ? (
               <select
                 aria-label={strings.capture.microphone}
                 value={voice.deviceId}
@@ -336,7 +350,7 @@ export function InputView({
               </select>
             ) : null}
 
-            {voiceMode && voice.state !== "idle" ? (
+            {voice.state !== "idle" ? (
               <span className="text-muted">
                 {voice.state === "active" ? strings.capture.listening : strings.capture.starting}
               </span>
@@ -357,7 +371,7 @@ export function InputView({
               ref={textareaRef}
               rows={1}
               value={text}
-              disabled={closed || voiceMode}
+              disabled={closed || voiceMode || voice.state !== "idle"}
               onChange={(event) => onChange(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -366,32 +380,60 @@ export function InputView({
                 }
               }}
               placeholder={voiceMode ? strings.capture.standby : strings.input.placeholder}
-              className="app-text field-sizing-content max-h-[220px] min-h-11 w-full min-w-0 flex-1 resize-none border-none bg-transparent outline-none disabled:opacity-40"
+              className={`app-text field-sizing-content max-h-[220px] min-h-11 w-full min-w-0 flex-1 resize-none border-none bg-transparent outline-none ${voiceMode ? "opacity-40" : ""}`}
             />
-            <button
-              type="button"
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={() => {
-                if (!voiceMode) void submit();
-                else if (voice.state === "idle") void voice.start();
-                else if (voice.state === "active") voice.stop();
-              }}
-              disabled={
-                closed ||
-                (voiceMode ? voice.state === "starting" : sending || !text.trim())
-              }
-              className="min-h-11 w-full shrink-0 cursor-pointer border border-fg px-4 py-2.5 font-mono text-[14px] transition-colors hover:bg-fg hover:text-bg disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fg sm:w-auto sm:px-6"
-            >
-              {voiceMode
-                ? voice.state === "starting"
-                  ? strings.capture.starting
-                  : voice.state === "active"
-                    ? strings.capture.stop
-                    : strings.capture.start
-                : sending
-                  ? strings.input.sending
-                  : strings.input.send}
-            </button>
+            <div className="flex shrink-0 gap-2 sm:w-auto">
+              {!voiceMode && voiceAvailable ? (
+                <button
+                  type="button"
+                  aria-label={voiceActionText}
+                  title={voiceActionText}
+                  onClick={() =>
+                    voice.state === "active" ? voice.stop() : void voice.start()
+                  }
+                  disabled={closed || voice.state === "starting"}
+                  className={`flex min-h-11 min-w-11 cursor-pointer items-center justify-center border border-fg transition-colors disabled:cursor-default disabled:opacity-30 ${
+                    voice.state === "active"
+                      ? "bg-fg text-bg"
+                      : "hover:bg-fg hover:text-bg"
+                  }`}
+                >
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <rect x="9" y="3" width="6" height="11" rx="3" />
+                    <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M9 21h6" />
+                  </svg>
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  if (!voiceMode) void submit();
+                  else if (voice.state === "idle") void voice.start();
+                  else if (voice.state === "active") voice.stop();
+                }}
+                disabled={
+                  closed ||
+                  (voiceMode
+                    ? voice.state === "starting"
+                    : voice.state !== "idle" || sending || !text.trim())
+                }
+                className="min-h-11 min-w-0 flex-1 cursor-pointer border border-fg px-4 py-2.5 font-mono text-[14px] transition-colors hover:bg-fg hover:text-bg disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fg sm:flex-none sm:px-6"
+              >
+                {voiceMode
+                  ? voiceActionText
+                  : sending
+                    ? strings.input.sending
+                    : strings.input.send}
+              </button>
+            </div>
           </div>
 
           <div className="mt-2 font-mono text-[11px] text-muted">

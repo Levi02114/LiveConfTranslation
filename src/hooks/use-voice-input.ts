@@ -28,11 +28,15 @@ export function useVoiceInput({
   token,
   strings,
   closed,
+  autoSubmit = true,
+  onTranscript,
   requestPermissionOnMount = false,
 }: {
   token: string;
   strings: UiStrings["capture"];
   closed: boolean;
+  autoSubmit?: boolean;
+  onTranscript?: (body: string) => void;
   requestPermissionOnMount?: boolean;
 }) {
   const [state, setState] = useState<VoiceInputState>("idle");
@@ -143,8 +147,13 @@ export function useVoiceInput({
     };
   }, [refreshDevices, requestPermissionOnMount]);
 
-  const submitTranscript = useCallback(
+  const deliverTranscript = useCallback(
     async (sessionLease: string, itemId: string, contentIndex: number, body: string) => {
+      if (!autoSubmit) {
+        onTranscript?.(body);
+        return;
+      }
+
       try {
         const response = await fetch(`/api/pages/${encodeURIComponent(token)}/transcripts`, {
           method: "POST",
@@ -164,7 +173,7 @@ export function useVoiceInput({
         disconnect(false);
       }
     },
-    [disconnect, strings.lost, token],
+    [autoSubmit, disconnect, onTranscript, strings.lost, token],
   );
 
   const flushTranscripts = useCallback(
@@ -178,7 +187,7 @@ export function useVoiceInput({
         completedItems.current.delete(itemId);
         if (completed.body) {
           submissionChain.current = submissionChain.current.then(() =>
-            submitTranscript(sessionLease, itemId, completed.contentIndex, completed.body),
+            deliverTranscript(sessionLease, itemId, completed.contentIndex, completed.body),
           );
         }
 
@@ -189,7 +198,7 @@ export function useVoiceInput({
         }
       }
     },
-    [disconnect, submitTranscript],
+    [deliverTranscript, disconnect],
   );
 
   const sendCommit = useCallback(() => {

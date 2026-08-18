@@ -75,7 +75,7 @@ const ko: UiStrings = {
     hint: "Enter 로 전송 · Shift+Enter 로 줄바꿈",
   },
   capture: {
-    toggle: "음성 입력 사용",
+    toggle: "자동 음성 입력 사용",
     keyRequired: "OpenAI API 키가 등록되지 않았습니다",
     microphone: "마이크",
     start: "전사 시작",
@@ -130,7 +130,7 @@ const vi: UiStrings = {
     hint: "Enter để gửi · Shift+Enter để xuống dòng",
   },
   capture: {
-    toggle: "Sử dụng nhập liệu bằng giọng nói",
+    toggle: "Sử dụng nhập liệu bằng giọng nói tự động",
     keyRequired: "Chưa đăng ký khóa API OpenAI",
     microphone: "Micrô",
     start: "Bắt đầu phiên âm",
@@ -189,7 +189,7 @@ const th: UiStrings = {
     hint: "กด Enter เพื่อส่ง · Shift+Enter เพื่อขึ้นบรรทัดใหม่",
   },
   capture: {
-    toggle: "ใช้การป้อนข้อมูลด้วยเสียง",
+    toggle: "ใช้การป้อนข้อมูลด้วยเสียงอัตโนมัติ",
     keyRequired: "ยังไม่ได้ลงทะเบียนคีย์ OpenAI API",
     microphone: "ไมโครโฟน",
     start: "เริ่มถอดเสียง",
@@ -244,7 +244,7 @@ const si: UiStrings = {
     hint: "යැවීමට Enter · නව පේළියකට Shift+Enter",
   },
   capture: {
-    toggle: "හඬ ආදානය භාවිත කරන්න",
+    toggle: "ස්වයංක්‍රීය හඬ ආදානය භාවිත කරන්න",
     keyRequired: "OpenAI API යතුර ලියාපදිංචි කර නැත",
     microphone: "මයික්‍රෆෝනය",
     start: "පිටපත් කිරීම අරඹන්න",
