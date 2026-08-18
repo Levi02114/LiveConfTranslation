@@ -3,7 +3,13 @@ import { notFound } from "next/navigation";
 
 import { getStrings } from "@/lib/i18n";
 import { getLanguage } from "@/lib/languages";
-import { getMeeting, getMeetingLangs, getPageByToken, getRecentCombined } from "@/lib/repo";
+import {
+  getMeeting,
+  getMeetingActiveLangs,
+  getPageByToken,
+  getRecentCombined,
+  isPageEnabled,
+} from "@/lib/repo";
 import { engineKey } from "@/lib/secrets";
 
 import { InputView } from "./input-view";
@@ -38,7 +44,7 @@ export default async function InputPage({
   const { token } = await params;
 
   const page = getPageByToken(token);
-  if (!page || page.kind !== "input" || !page.lang) notFound();
+  if (!page || page.kind !== "input" || !page.lang || !isPageEnabled(page)) notFound();
   const pageLang = page.lang;
 
   const meeting = getMeeting(page.meetingId);
@@ -48,12 +54,13 @@ export default async function InputPage({
     <InputView
       token={token}
       language={getLanguage(pageLang)}
-      languages={getMeetingLangs(meeting.id).map((code) => getLanguage(code, pageLang))}
+      languages={getMeetingActiveLangs(meeting.id).map((code) => getLanguage(code, pageLang))}
       strings={getStrings(pageLang)}
       meetingTitle={meeting.title}
       history={getRecentCombined(meeting.id)}
       initiallyClosed={meeting.status === "closed"}
       voiceAvailable={Boolean(engineKey("openai"))}
+      speakerLabels={meeting.speakerLabels}
     />
   );
 }

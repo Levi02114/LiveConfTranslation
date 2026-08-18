@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { getStrings } from "@/lib/i18n";
 import { getLanguage } from "@/lib/languages";
-import { getMeeting, getPageByToken, getRecentMessages } from "@/lib/repo";
+import { getMeeting, getPageByToken, getRecentMessages, isPageEnabled } from "@/lib/repo";
 
 import { CaptureView } from "./capture-view";
 
@@ -29,7 +29,7 @@ export default async function CapturePage({
 }) {
   const { token } = await params;
   const page = getPageByToken(token);
-  if (!page || page.kind !== "capture" || !page.lang) notFound();
+  if (!page || page.kind !== "capture" || !page.lang || !isPageEnabled(page)) notFound();
 
   const meeting = getMeeting(page.meetingId);
   if (!meeting || meeting.inputMode !== "realtime") notFound();

@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS meetings (
   fallback_engine TEXT,                       -- 선택 폴백 엔진. NULL 이면 폴백 없음
   input_mode  TEXT NOT NULL DEFAULT 'human',  -- 'human' | 'realtime'
   source_lang TEXT,                           -- 이전 단일 원음 모드 호환용(신규 데이터는 NULL)
+  speaker_labels INTEGER NOT NULL DEFAULT 0,  -- 입력자 닉네임을 확정 기록에 남길지
   created_at  INTEGER NOT NULL,
   closed_at   INTEGER
 );
@@ -46,6 +47,8 @@ CREATE TABLE IF NOT EXISTS meeting_langs (
   meeting_id  TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
   lang        TEXT NOT NULL,
   position    INTEGER NOT NULL,
+  input_enabled INTEGER NOT NULL DEFAULT 1,
+  output_enabled INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (meeting_id, lang)
 );
 
@@ -65,6 +68,7 @@ CREATE TABLE IF NOT EXISTS messages (
   page_id     TEXT REFERENCES pages(id) ON DELETE SET NULL,
   lang        TEXT NOT NULL,                  -- 원문 언어
   body        TEXT NOT NULL,
+  speaker_name TEXT,                          -- 닉네임 기능을 쓰지 않으면 NULL
   ingest_key  TEXT,                           -- AI 전사 재전송 멱등 키
   created_at  INTEGER NOT NULL
 );
@@ -129,6 +133,14 @@ CREATE TABLE IF NOT EXISTS glossary_terms (
 CREATE TABLE IF NOT EXISTS engine_settings (
   engine      TEXT PRIMARY KEY,               -- 'google' | 'deepl' | 'openai'
   model       TEXT,                           -- OpenAI 언어모델. NULL 이면 내장 기본값
+  updated_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_presets (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  config_json TEXT NOT NULL,
+  created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );
 
@@ -211,6 +223,10 @@ function open(): DatabaseSync {
   ensureColumn(db, "meetings", "fallback_engine", "TEXT");
   ensureColumn(db, "meetings", "input_mode", "TEXT NOT NULL DEFAULT 'human'");
   ensureColumn(db, "meetings", "source_lang", "TEXT");
+  ensureColumn(db, "meetings", "speaker_labels", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "meeting_langs", "input_enabled", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumn(db, "meeting_langs", "output_enabled", "INTEGER NOT NULL DEFAULT 1");
+  ensureColumn(db, "messages", "speaker_name", "TEXT");
   ensureColumn(db, "messages", "ingest_key", "TEXT");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_ingest_key ON messages (ingest_key)");
   seedLanguages(db);

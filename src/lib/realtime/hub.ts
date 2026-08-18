@@ -10,6 +10,7 @@
  */
 
 import type { LanguageCode } from "@/lib/languages";
+import type { MeetingLanguageConfig } from "@/lib/repo";
 
 import type { Peer, ServerMessage } from "./protocol";
 
@@ -22,8 +23,10 @@ export type Connection = {
   /** input/output 페이지의 언어. combined·dashboard 는 없다. */
   lang: LanguageCode | null;
   name: string;
+  nameClaimed: boolean;
   draft: string;
   send: (message: ServerMessage) => void;
+  close?: () => void;
 };
 
 type HubState = { rooms: Map<string, Set<Connection>> };
@@ -91,6 +94,26 @@ export function leave(connection: Connection): void {
   if (connections.size === 0) state().rooms.delete(connection.meetingId);
 }
 
+/** 같은 세션의 다른 입력자가 쓰지 않는 닉네임이면 이 연결에 예약한다. */
+export function claimInputName(connection: Connection, name: string): boolean {
+  const candidate = name.trim();
+  if (!candidate || connection.kind !== "input") return false;
+
+  const normalized = candidate.normalize("NFKC").toLocaleLowerCase();
+  const duplicate = [...(state().rooms.get(connection.meetingId) ?? [])].some(
+    (peer) =>
+      peer !== connection &&
+      peer.kind === "input" &&
+      peer.nameClaimed &&
+      peer.name.normalize("NFKC").toLocaleLowerCase() === normalized,
+  );
+  if (duplicate) return false;
+
+  connection.name = candidate;
+  connection.nameClaimed = true;
+  return true;
+}
+
 /** 회의에 붙어 있는 모든 연결에 규칙대로 배포한다. */
 export function publish(meetingId: string, message: ServerMessage): void {
   for (const connection of state().rooms.get(meetingId) ?? []) {
@@ -139,4 +162,29 @@ export function broadcastPresence(meetingId: string, lang: LanguageCode): void {
 /** 지금 이 입력 페이지에 몇 명이 붙어 있는지 (대시보드 표시에 쓴다) */
 export function countInputPeers(meetingId: string, lang: LanguageCode): number {
   return inputPeers(meetingId, lang).length;
+}
+
+/** 설정에서 꺼진 입력·출력 페이지의 기존 연결도 즉시 끊는다. */
+export function disconnectDisabledPages(
+  meetingId: string,
+  configs: readonly MeetingLanguageConfig[],
+): void {
+  const byLanguage = new Map(configs.map((config) => [config.lang, config]));
+  for (const connection of state().rooms.get(meetingId) ?? []) {
+    if (!connection.lang || connection.kind === "dashboard" || connection.kind === "combined") {
+      continue;
+    }
+    const config = byLanguage.get(connection.lang);
+    const enabled = connection.kind === "output" ? config?.outputEnabled : config?.inputEnabled;
+    if (!enabled) connection.close?.();
+  }
+}
+
+/** 비밀번호 변경 전 관리자 대시보드 연결을 모두 끊어 이전 세션의 재사용을 막는다. */
+export function disconnectAdminConnections(): void {
+  for (const connections of state().rooms.values()) {
+    for (const connection of connections) {
+      if (connection.kind === "dashboard") connection.close?.();
+    }
+  }
 }

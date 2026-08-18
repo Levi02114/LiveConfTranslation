@@ -24,6 +24,7 @@ export function InputView({
   history,
   initiallyClosed,
   voiceAvailable,
+  speakerLabels,
 }: {
   token: string;
   language: Language;
@@ -33,6 +34,7 @@ export function InputView({
   history: CombinedEntry[];
   initiallyClosed: boolean;
   voiceAvailable: boolean;
+  speakerLabels: boolean;
 }) {
   const [entries, setEntries] = useState<CombinedEntry[]>(history);
   const [peers, setPeers] = useState<Peer[]>([]);
@@ -41,6 +43,12 @@ export function InputView({
   const [voiceMode, setVoiceMode] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [speakerName, setSpeakerName] = useState("");
+  const [speakerDraft, setSpeakerDraft] = useState("");
+  const [speakerLoaded, setSpeakerLoaded] = useState(!speakerLabels);
+  const [speakerPromptOpen, setSpeakerPromptOpen] = useState(false);
+  const [speakerClaimed, setSpeakerClaimed] = useState(!speakerLabels);
+  const [speakerError, setSpeakerError] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -53,12 +61,38 @@ export function InputView({
     strings: strings.capture,
     closed,
     autoSubmit: voiceMode,
+    speakerName: speakerName.trim() || null,
     onTranscript: appendTranscript,
   });
   const { stop: stopVoice } = voice;
 
   const onMessage = useCallback((message: ServerMessage) => {
-    if (message.t === "message") {
+    if (message.t === "hello") {
+      setSpeakerClaimed(false);
+    } else if (message.t === "name-result") {
+      if (message.ok) {
+        setSpeakerName(message.name);
+        setSpeakerDraft(message.name);
+        setSpeakerClaimed(true);
+        setSpeakerPromptOpen(false);
+        setSpeakerError(null);
+        try {
+          localStorage.setItem(`lct.speaker.${token}`, message.name);
+        } catch {
+          // 저장소를 막은 브라우저에서는 현재 탭에서만 이름을 유지한다.
+        }
+      } else {
+        setSpeakerName("");
+        setSpeakerClaimed(false);
+        setSpeakerPromptOpen(true);
+        setSpeakerError(strings.speaker.duplicate);
+        try {
+          localStorage.removeItem(`lct.speaker.${token}`);
+        } catch {
+          // 위와 같다.
+        }
+      }
+    } else if (message.t === "message") {
       setEntries((prev) =>
         prev.some((entry) => entry.messageId === message.messageId)
           ? prev
@@ -68,6 +102,7 @@ export function InputView({
                 messageId: message.messageId,
                 sourceLang: message.lang,
                 sourceBody: message.body,
+                speakerName: message.speakerName,
                 createdAt: message.createdAt,
                 translations: [],
               },
@@ -99,9 +134,41 @@ export function InputView({
       setClosed(true);
       stopVoice(false);
     }
-  }, [stopVoice]);
+  }, [stopVoice, strings.speaker.duplicate, token]);
 
   const { state, send } = useRealtime(`token=${encodeURIComponent(token)}`, onMessage);
+  const speakerReady = !speakerLabels || (speakerClaimed && Boolean(speakerName.trim()));
+
+  useEffect(() => {
+    if (!speakerLabels) return;
+    const frame = requestAnimationFrame(() => {
+      let saved = "";
+      try {
+        saved = localStorage.getItem(`lct.speaker.${token}`)?.trim() ?? "";
+      } catch {
+        // 저장소를 막은 브라우저에서는 현재 탭에서만 이름을 유지한다.
+      }
+      setSpeakerName(saved);
+      setSpeakerDraft(saved);
+      setSpeakerLoaded(true);
+      setSpeakerPromptOpen(!saved);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [speakerLabels, token]);
+
+  const saveSpeakerName = () => {
+    const name = speakerDraft.trim();
+    if (!name || state !== "open") return;
+    setSpeakerError(null);
+    setSpeakerClaimed(false);
+    setSpeakerName(name);
+  };
+
+  useEffect(() => {
+    const name = speakerName.trim();
+    if (!speakerLabels || state !== "open" || !name) return;
+    send({ t: "name", name });
+  }, [send, speakerLabels, speakerName, state]);
 
   const flowSize = entries.reduce(
     (count, entry) =>
@@ -178,7 +245,7 @@ export function InputView({
 
   const submit = async () => {
     const body = text.trim();
-    if (!body || sending || closed) return;
+    if (!body || sending || closed || !speakerReady) return;
 
     // 전송 버튼을 눌러도 iOS 가 키보드를 닫지 않도록 입력 포커스를 유지한다.
     textareaRef.current?.focus({ preventScroll: true });
@@ -188,7 +255,7 @@ export function InputView({
       const response = await fetch(`/api/pages/${encodeURIComponent(token)}/messages`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ body }),
+        body: JSON.stringify({ body, speakerName: speakerLabels ? speakerName.trim() : undefined }),
       });
 
       if (response.status === 409) {
@@ -249,6 +316,59 @@ export function InputView({
     >
       <AppearanceControls strings={strings.appearance} />
 
+      {speakerLabels && speakerLoaded && speakerPromptOpen && !closed ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="speaker-prompt-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-bg/80 px-4 backdrop-blur-sm"
+        >
+          <form
+            className="w-full max-w-[360px] border border-line bg-bg p-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveSpeakerName();
+            }}
+          >
+            <h2 id="speaker-prompt-title" className="text-[18px] font-medium">
+              {strings.speaker.label}
+            </h2>
+            <p className="mt-2 font-mono text-[12px] leading-5 text-muted">
+              {strings.speaker.prompt}
+            </p>
+            <input
+              autoFocus
+              value={speakerDraft}
+              maxLength={40}
+              aria-invalid={Boolean(speakerError)}
+              aria-describedby={speakerError ? "speaker-prompt-error" : undefined}
+              onChange={(event) => {
+                setSpeakerDraft(event.target.value);
+                setSpeakerError(null);
+              }}
+              placeholder={strings.speaker.placeholder}
+              className={`mt-5 h-11 w-full border bg-bg px-3 text-fg outline-none ${speakerError ? "border-error" : "border-line focus:border-fg"}`}
+            />
+            {speakerError ? (
+              <p id="speaker-prompt-error" role="alert" className="mt-2 font-mono text-[12px] text-error">
+                {speakerError}
+              </p>
+            ) : null}
+            <button
+              type="submit"
+              disabled={
+                !speakerDraft.trim() ||
+                state !== "open" ||
+                (Boolean(speakerName) && !speakerClaimed)
+              }
+              className="mt-3 h-11 w-full cursor-pointer border border-fg bg-fg text-bg disabled:cursor-default disabled:opacity-30"
+            >
+              {strings.speaker.confirm}
+            </button>
+          </form>
+        </div>
+      ) : null}
+
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-8">
         <div className="mx-auto flex min-h-full max-w-[920px] flex-col pt-14">
           <header className="border-b border-line pb-5">
@@ -307,7 +427,7 @@ export function InputView({
           <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line pb-3 font-mono text-[11px]">
             <label
               className={`flex items-center gap-2 ${
-                voiceAvailable && !closed && voice.state === "idle"
+                voiceAvailable && !closed && speakerReady && voice.state === "idle"
                   ? "cursor-pointer"
                   : "cursor-not-allowed opacity-40"
               }`}
@@ -315,7 +435,7 @@ export function InputView({
               <input
                 type="checkbox"
                 checked={voiceMode}
-                disabled={!voiceAvailable || closed || voice.state !== "idle"}
+                disabled={!voiceAvailable || closed || !speakerReady || voice.state !== "idle"}
                 onChange={(event) => selectVoiceMode(event.target.checked)}
                 className="h-[15px] w-[15px] accent-[var(--fg)]"
               />
@@ -355,15 +475,17 @@ export function InputView({
               {formatCount(strings.peers.online, peers.length + 1)}
               {typing.length ? ` · ${formatCount(strings.peers.typing, typing.length)}` : ""}
             </span>
-            {error ? <span className="text-fg">{error}</span> : null}
+            <span className="text-fg">
+              {!speakerReady ? strings.speaker.required : error}
+            </span>
           </div>
 
           <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end sm:gap-4">
             <textarea
               ref={textareaRef}
               rows={1}
-              disabled={closed || voiceMode || voice.state !== "idle"}
               value={inputText}
+              disabled={closed || !speakerReady || voiceMode || voice.state !== "idle"}
               onChange={(event) => onChange(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -383,7 +505,7 @@ export function InputView({
                   onClick={() =>
                     voice.state === "active" ? voice.stop() : void voice.start()
                   }
-                  disabled={closed || voice.state === "starting"}
+                  disabled={closed || !speakerReady || voice.state === "starting"}
                   className={`flex min-h-11 min-w-11 cursor-pointer items-center justify-center border border-fg transition-colors disabled:cursor-default disabled:opacity-30 ${
                     voice.state === "active"
                       ? "bg-fg text-bg"
@@ -413,6 +535,7 @@ export function InputView({
                 }}
                 disabled={
                   closed ||
+                  !speakerReady ||
                   (voiceMode
                     ? voice.state === "starting"
                     : voice.state !== "idle" || sending || !text.trim())

@@ -11,9 +11,16 @@ import type { AdminStrings, UiStrings } from "@/lib/i18n-builtin";
 import type { Language, LanguageCode } from "@/lib/languages";
 import { formatClock, formatTimestamp } from "@/lib/log-format";
 import type { ServerMessage } from "@/lib/realtime/protocol";
-import type { CombinedEntry, Meeting, Page } from "@/lib/repo";
+import type {
+  CombinedEntry,
+  Meeting,
+  MeetingLanguageConfig,
+  Page,
+  SessionPreset,
+} from "@/lib/repo";
 
 import { AdminBusyOverlay } from "../../admin-busy-overlay";
+import { SessionSettings } from "./session-settings";
 
 /** 실시간 번역에 남겨 둘 줄 수. 대시보드는 기록이 아니라 감시용이다. */
 const FLOW_LIMIT = 60;
@@ -42,6 +49,9 @@ export function DashboardView({
   meeting,
   languages,
   pages,
+  languageConfigs,
+  presets,
+  configLocked: initiallyConfigLocked,
   history,
   coverage,
   fallbackCoverage,
@@ -53,6 +63,9 @@ export function DashboardView({
   meeting: Meeting;
   languages: Language[];
   pages: Page[];
+  languageConfigs: MeetingLanguageConfig[];
+  presets: SessionPreset[];
+  configLocked: boolean;
   history: CombinedEntry[];
   coverage: { engine: string; label: string; configured: boolean; unsupported: LanguageCode[] };
   fallbackCoverage: {
@@ -74,6 +87,7 @@ export function DashboardView({
   const [qrError, setQrError] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
+  const [configLocked, setConfigLocked] = useState(initiallyConfigLocked);
   const qrDialogRef = useRef<HTMLDialogElement>(null);
   const setLang = useSetAdminLang();
   const [navigating, startNavigation] = useTransition();
@@ -92,12 +106,13 @@ export function DashboardView({
   const onMessage = useCallback(
     (message: ServerMessage) => {
       if (message.t === "message") {
+        setConfigLocked(true);
         setFlows((prev) =>
           push(prev, {
             key: `m${message.messageId}`,
             at: message.createdAt,
             route: nameOf(message.lang),
-            body: message.body,
+            body: withSpeaker(message.body, message.speakerName),
             status: "source",
           }),
         );
@@ -107,7 +122,10 @@ export function DashboardView({
             key: `t${message.messageId}-${message.lang}`,
             at: message.createdAt,
             route: `→ ${nameOf(message.lang)}`,
-            body: message.status === "ok" ? message.body : ui.status.failed,
+            body: withSpeaker(
+              message.status === "ok" ? message.body : ui.status.failed,
+              message.speakerName,
+            ),
             status: message.status === "ok" ? "done" : "failed",
           }),
         );
@@ -184,6 +202,8 @@ export function DashboardView({
   const capturePages = new Map(
     pages.filter((page) => page.kind === "capture" && page.lang).map((page) => [page.lang, page]),
   );
+  const configByLanguage = new Map(languageConfigs.map((row) => [row.lang, row]));
+  const hasOutput = languageConfigs.some((row) => row.outputEnabled);
 
   const copyBtn =
     "min-h-9 shrink-0 cursor-pointer whitespace-nowrap border border-line px-2 py-1 font-mono text-[11px] text-muted transition-colors hover:bg-fg hover:text-bg sm:min-h-0";
@@ -241,6 +261,16 @@ export function DashboardView({
 
       {closeError ? <div className="mt-4 font-mono text-[12px]">{closeError}</div> : null}
 
+      <SessionSettings
+        meetingId={meeting.id}
+        initialLanguages={languageConfigs}
+        initialSpeakerLabels={meeting.speakerLabels}
+        initialPresets={presets}
+        availableLanguages={displayLanguages}
+        locked={configLocked}
+        strings={strings}
+      />
+
       {coverage.unsupported.length ? (
         <div className="mt-4 border border-line px-4 py-3 font-mono text-[12px] text-muted">
           {strings.dashboard.unsupportedEngine
@@ -262,15 +292,16 @@ export function DashboardView({
         >
           <div>{strings.list.languages}</div>
           <div>
-            {meeting.inputMode === "human" ? strings.dashboard.input : strings.dashboard.capture}
+            {meeting.inputMode === "human" ? strings.settings.input : strings.dashboard.capture}
           </div>
-          <div>{strings.dashboard.output}</div>
+          <div>{strings.settings.output}</div>
         </div>
 
         {languages.map((language) => {
           const input = inputPages.get(language.code);
           const capture = capturePages.get(language.code);
           const output = outputPages.get(language.code);
+          const config = configByLanguage.get(language.code);
           return (
             <div
               key={language.code}
@@ -281,17 +312,17 @@ export function DashboardView({
               <div className="text-[15px]">{language.label}</div>
               {meeting.inputMode === "human" ? (
                 <UrlCell
-                  url={input ? `${origin}/in/${input.token}` : ""}
+                  url={config?.inputEnabled && input ? `${origin}/in/${input.token}` : ""}
                   copied={copied?.key === `in-${language.code}` ? copied : null}
                   onCopy={(url) => void copy(`in-${language.code}`, url)}
                   className={copyBtn}
                   strings={strings.dashboard}
-                  label={strings.dashboard.input}
+                  label={strings.settings.input}
                   onQr={(url) => void showQr(`input-${language.code}`, url)}
                 />
               ) : (
                 <UrlCell
-                  url={capture ? `${origin}/capture/${capture.token}` : ""}
+                  url={config?.inputEnabled && capture ? `${origin}/capture/${capture.token}` : ""}
                   copied={copied?.key === `capture-${language.code}` ? copied : null}
                   onCopy={(url) => void copy(`capture-${language.code}`, url)}
                   className={copyBtn}
@@ -301,12 +332,12 @@ export function DashboardView({
                 />
               )}
               <UrlCell
-                url={output ? `${origin}/out/${output.token}` : ""}
+                url={config?.outputEnabled && output ? `${origin}/out/${output.token}` : ""}
                 copied={copied?.key === `out-${language.code}` ? copied : null}
                 onCopy={(url) => void copy(`out-${language.code}`, url)}
                 className={copyBtn}
                 strings={strings.dashboard}
-                label={strings.dashboard.output}
+                label={strings.settings.output}
                 onQr={(url) => void showQr(`output-${language.code}`, url)}
               />
             </div>
@@ -326,17 +357,19 @@ export function DashboardView({
                 onQr={(url) => void showQr("combined", url)}
               />
             </div>
-            <div className="grid grid-cols-1 gap-3 border-b border-line py-4 sm:grid-cols-[110px_1fr] sm:items-center sm:gap-x-5 sm:py-3.5">
-              <div className="text-[15px]">{strings.dashboard.participantGuide}</div>
-              <UrlCell
-                url={`${origin}/join/${combined.token}`}
-                copied={copied?.key === "join" ? copied : null}
-                onCopy={(url) => void copy("join", url)}
-                className={copyBtn}
-                strings={strings.dashboard}
-                onQr={(url) => void showQr("participant-guide", url)}
-              />
-            </div>
+            {hasOutput ? (
+              <div className="grid grid-cols-1 gap-3 border-b border-line py-4 sm:grid-cols-[110px_1fr] sm:items-center sm:gap-x-5 sm:py-3.5">
+                <div className="text-[15px]">{strings.dashboard.participantGuide}</div>
+                <UrlCell
+                  url={`${origin}/join/${combined.token}`}
+                  copied={copied?.key === "join" ? copied : null}
+                  onCopy={(url) => void copy("join", url)}
+                  className={copyBtn}
+                  strings={strings.dashboard}
+                  onQr={(url) => void showQr("participant-guide", url)}
+                />
+              </div>
+            ) : null}
           </>
         ) : null}
       </section>
@@ -495,7 +528,7 @@ function seedFlows(history: CombinedEntry[], languages: Language[], failedText: 
       key: `m${entry.messageId}`,
       at: entry.createdAt,
       route: nameOf(entry.sourceLang),
-      body: entry.sourceBody,
+      body: withSpeaker(entry.sourceBody, entry.speakerName),
       status: "source",
     });
     for (const translation of entry.translations) {
@@ -503,10 +536,17 @@ function seedFlows(history: CombinedEntry[], languages: Language[], failedText: 
         key: `t${entry.messageId}-${translation.lang}`,
         at: entry.createdAt,
         route: `→ ${nameOf(translation.lang)}`,
-        body: translation.status === "ok" ? translation.body : failedText,
+        body: withSpeaker(
+          translation.status === "ok" ? translation.body : failedText,
+          entry.speakerName,
+        ),
         status: translation.status === "ok" ? "done" : "failed",
       });
     }
   }
   return flows.slice(-FLOW_LIMIT).reverse();
+}
+
+function withSpeaker(body: string, speakerName: string | null): string {
+  return speakerName ? `(${speakerName}) ${body}` : body;
 }

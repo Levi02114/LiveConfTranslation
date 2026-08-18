@@ -1,12 +1,13 @@
 import { z } from "zod";
 
-import { getMeeting, getPageByToken } from "@/lib/repo";
+import { getMeeting, getPageByToken, isPageEnabled } from "@/lib/repo";
 import { acceptMessage, translateMessage } from "@/lib/pipeline";
 
 type Params = { params: Promise<{ token: string }> };
 
 const schema = z.object({
   body: z.string().trim().min(1, "내용을 입력해 주세요").max(5000),
+  speakerName: z.string().trim().min(1).max(40).regex(/^[^\r\n]+$/).optional(),
 });
 
 /**
@@ -24,7 +25,7 @@ export async function POST(request: Request, { params }: Params) {
 
   const page = getPageByToken(token);
   // 입력 페이지에만 언어가 있다. 통합 보기·출력 페이지로는 글을 보낼 수 없다.
-  if (!page || page.kind !== "input" || !page.lang) {
+  if (!page || page.kind !== "input" || !page.lang || !isPageEnabled(page)) {
     return Response.json({ error: "입력 페이지를 찾을 수 없습니다" }, { status: 404 });
   }
   const pageLang = page.lang;
@@ -45,12 +46,16 @@ export async function POST(request: Request, { params }: Params) {
       { status: 400 },
     );
   }
+  if (meeting.speakerLabels && !parsed.data.speakerName) {
+    return Response.json({ error: "닉네임을 입력해 주세요" }, { status: 400 });
+  }
 
   const message = acceptMessage({
     meeting,
     pageId: page.id,
     lang: pageLang,
     body: parsed.data.body,
+    speakerName: meeting.speakerLabels ? parsed.data.speakerName : null,
   });
 
   void translateMessage({
@@ -58,6 +63,7 @@ export async function POST(request: Request, { params }: Params) {
     messageId: message.id,
     sourceLang: pageLang,
     body: message.body,
+    speakerName: message.speakerName,
   }).catch((error: unknown) => {
     // 개별 언어 실패는 파이프라인 안에서 이미 저장·배포된다.
     // 여기까지 올라온 건 예상 못 한 오류라 서버 로그에만 남긴다.

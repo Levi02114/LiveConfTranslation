@@ -8,9 +8,13 @@ import { getAdminStrings, getStrings } from "@/lib/i18n";
 import { getLanguage } from "@/lib/languages";
 import {
   getMeeting,
+  getMeetingActiveLangs,
+  getMeetingActivity,
+  getMeetingLanguageConfigs,
   getMeetingLangs,
   getMeetingPages,
   getRecentCombined,
+  listSessionPresets,
   listLanguages,
 } from "@/lib/repo";
 import { engineCoverage, refreshEngineSupport } from "@/lib/translate";
@@ -44,6 +48,7 @@ export default async function DashboardPage({
   if (!meeting) notFound();
 
   const langs = getMeetingLangs(id);
+  const activeLangs = getMeetingActiveLangs(id);
   const registered = listLanguages().map((row) => row.code);
   const lang = toAdminLang((await cookies()).get(ADMIN_LANG_COOKIE)?.value, registered);
 
@@ -57,10 +62,13 @@ export default async function DashboardPage({
       meeting={meeting}
       languages={langs.map((code) => getLanguage(code, lang))}
       pages={getMeetingPages(id)}
+      languageConfigs={getMeetingLanguageConfigs(id)}
+      presets={listSessionPresets()}
+      configLocked={getMeetingActivity(id).messageCount > 0 || meeting.status === "closed"}
       history={getRecentCombined(id, 40)}
-      coverage={engineCoverage(meeting.engine, langs)}
+      coverage={engineCoverage(meeting.engine, activeLangs)}
       fallbackCoverage={
-        meeting.fallbackEngine ? engineCoverage(meeting.fallbackEngine, langs) : null
+        meeting.fallbackEngine ? engineCoverage(meeting.fallbackEngine, activeLangs) : null
       }
     />
   );

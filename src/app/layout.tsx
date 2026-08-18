@@ -60,7 +60,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ko" className={`${FONT_VARIABLES} h-full`}>
+    <html lang="ko" className={`${FONT_VARIABLES} h-full`} suppressHydrationWarning>
       <head>
         {/*
           React 가 붙기 전에 테마를 <html> 에 찍어 첫 페인트 깜빡임을 막는다.

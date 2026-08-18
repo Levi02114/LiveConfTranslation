@@ -33,16 +33,21 @@ export function formatTimestamp(epochMs: number): string {
   );
 }
 
-export function formatSourceLine(at: number, body: string): string {
-  return `[${formatTimestamp(at)}] (${body})`;
+function speakerPrefix(speakerName?: string | null): string {
+  return speakerName ? `(${speakerName}) ` : "";
+}
+
+export function formatSourceLine(at: number, body: string, speakerName?: string | null): string {
+  return `[${formatTimestamp(at)}] ${speakerPrefix(speakerName)}(${body})`;
 }
 
 export function formatTranslationLine(
   at: number,
   lang: LanguageCode,
   body: string,
+  speakerName?: string | null,
 ): string {
-  return `[${formatTimestamp(at)}] (Translated: ${languageLogName(lang)}) (${body})`;
+  return `[${formatTimestamp(at)}] ${speakerPrefix(speakerName)}(Translated: ${languageLogName(lang)}) (${body})`;
 }
 
 /** 로그 줄들을 `.txt` 본문으로 합친다. */

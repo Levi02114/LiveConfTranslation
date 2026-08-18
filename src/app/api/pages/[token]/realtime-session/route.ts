@@ -9,7 +9,12 @@ import {
   renewCapture,
 } from "@/lib/realtime/capture-lease";
 import { getLanguage } from "@/lib/languages";
-import { getMeeting, getPageByToken, listGlossaryEntries } from "@/lib/repo";
+import {
+  getMeeting,
+  getPageByToken,
+  isPageEnabled,
+  listGlossaryEntries,
+} from "@/lib/repo";
 import { engineKey } from "@/lib/secrets";
 
 type Params = { params: Promise<{ token: string }> };
@@ -19,7 +24,12 @@ const leaseSchema = z.object({ leaseId: z.string().uuid() });
 
 function resolveVoicePage(token: string) {
   const page = getPageByToken(token);
-  if (!page || !page.lang || (page.kind !== "input" && page.kind !== "capture")) return null;
+  if (
+    !page ||
+    !page.lang ||
+    !isPageEnabled(page) ||
+    (page.kind !== "input" && page.kind !== "capture")
+  ) return null;
   const meeting = getMeeting(page.meetingId);
   if (!meeting || (page.kind === "capture" && meeting.inputMode !== "realtime")) return null;
   return { page, meeting, lang: page.lang };

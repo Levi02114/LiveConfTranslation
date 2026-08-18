@@ -23,19 +23,21 @@ export function TranslationEntry({
   return (
     <section className="border-b border-line py-5">
       <div className="grid grid-cols-1 gap-1 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-[18px]">
-        <span className="whitespace-nowrap font-mono text-[12px] text-muted sm:pt-[0.35em]">
-          {formatClock(entry.createdAt)}
-        </span>
+        <div className="whitespace-nowrap font-mono text-[12px] text-muted">
+          {entry.speakerName || showSourceLanguage ? (
+            <div className="mb-1 text-[11px]">
+              {entry.speakerName ? `(${entry.speakerName})` : null}
+              {entry.speakerName && showSourceLanguage ? " " : null}
+              {showSourceLanguage ? `(${source?.nativeName ?? entry.sourceLang})` : null}
+            </div>
+          ) : null}
+          <time>{formatClock(entry.createdAt)}</time>
+        </div>
         <p
           lang={entry.sourceLang}
           dir={textDirection(entry.sourceLang)}
           className="app-text whitespace-pre-wrap [text-wrap:pretty]"
         >
-          {showSourceLanguage ? (
-            <span className="me-2 font-mono text-[0.55em] text-muted">
-              ({source?.nativeName ?? entry.sourceLang})
-            </span>
-          ) : null}
           {entry.sourceBody}
         </p>
       </div>

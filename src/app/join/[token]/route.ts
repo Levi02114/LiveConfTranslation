@@ -5,7 +5,7 @@ import { getStrings } from "@/lib/i18n";
 import { getLanguage, textDirection } from "@/lib/languages";
 import {
   getMeeting,
-  getMeetingLangs,
+  getMeetingLanguageConfigs,
   getMeetingPages,
   getPageByToken,
   listLanguages,
@@ -35,7 +35,11 @@ export async function GET(_request: Request, { params }: Params) {
       .filter((page) => page.kind === "output" && page.lang)
       .map((page) => [page.lang!, page]),
   );
-  const cards = getMeetingLangs(meeting.id)
+  const outputLanguages = getMeetingLanguageConfigs(meeting.id)
+    .filter((row) => row.outputEnabled)
+    .map((row) => row.lang);
+  if (outputLanguages.length === 0) return new Response("Not Found", { status: 404 });
+  const cards = outputLanguages
     .map((code) => {
       const page = outputPages.get(code);
       if (!page) return "";

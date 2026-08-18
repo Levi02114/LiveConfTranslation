@@ -3,10 +3,11 @@ import { getLanguage } from "@/lib/languages";
 import {
   getMeeting,
   getMeetingActivity,
-  getMeetingLangs,
+  getMeetingActiveLangs,
   getPageByToken,
   getRecentCombined,
   getRecentOutput,
+  isPageEnabled,
 } from "@/lib/repo";
 
 type Params = { params: Promise<{ token: string }> };
@@ -25,7 +26,7 @@ export async function GET(_request: Request, { params }: Params) {
   const { token } = await params;
 
   const page = getPageByToken(token);
-  if (!page) {
+  if (!page || !isPageEnabled(page)) {
     return Response.json({ error: "페이지를 찾을 수 없습니다" }, { status: 404 });
   }
 
@@ -34,7 +35,7 @@ export async function GET(_request: Request, { params }: Params) {
     return Response.json({ error: "세션을 찾을 수 없습니다" }, { status: 404 });
   }
 
-  const langs = getMeetingLangs(meeting.id);
+  const langs = getMeetingActiveLangs(meeting.id);
 
   // 통합 보기는 특정 언어에 속하지 않는다. 운영자가 보는 화면이라 한국어로 낸다.
   const uiLang = page.lang ?? "ko";

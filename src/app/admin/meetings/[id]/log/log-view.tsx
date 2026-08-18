@@ -52,7 +52,7 @@ export function LogView({
           at: message.createdAt,
           lang: message.lang,
           kind: "source",
-          text: formatSourceLine(message.createdAt, message.body),
+          text: formatSourceLine(message.createdAt, message.body, message.speakerName),
         },
       ]);
     } else if (message.t === "translation" && message.status === "ok") {
@@ -63,7 +63,12 @@ export function LogView({
           at: message.createdAt,
           lang: message.lang,
           kind: "translation",
-          text: formatTranslationLine(message.createdAt, message.lang, message.body),
+          text: formatTranslationLine(
+            message.createdAt,
+            message.lang,
+            message.body,
+            message.speakerName,
+          ),
         },
       ]);
     }

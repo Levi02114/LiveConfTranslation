@@ -51,6 +51,7 @@ export function CaptureView({
                   pageId: null,
                   lang: message.lang,
                   body: message.body,
+                  speakerName: message.speakerName,
                   createdAt: message.createdAt,
                 },
               ],
@@ -128,7 +129,9 @@ export function CaptureView({
                 <time className="whitespace-nowrap font-mono text-[12px] text-muted sm:pt-[0.4em]">
                   {formatClock(message.createdAt)}
                 </time>
-                <p className="app-text min-w-0 whitespace-pre-wrap [text-wrap:pretty]">{message.body}</p>
+                <p className="app-text min-w-0 whitespace-pre-wrap [text-wrap:pretty]">
+                  {message.speakerName ? `(${message.speakerName}) ` : ""}{message.body}
+                </p>
               </div>
             ))}
             {voice.partial ? (

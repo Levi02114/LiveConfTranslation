@@ -20,12 +20,16 @@ export type Peer = {
 export type ServerMessage =
   /** 연결 직후 1회. 클라이언트가 자기 식별자를 알게 된다. */
   | { t: "hello"; clientId: string; name: string }
+  /** 표시 이름 등록 결과 */
+  | { t: "name-result"; ok: true; name: string }
+  | { t: "name-result"; ok: false; reason: "duplicate" }
   /** 원문이 들어왔다 */
   | {
       t: "message";
       messageId: number;
       lang: LanguageCode;
       body: string;
+      speakerName: string | null;
       createdAt: number;
     }
   /** 번역이 나왔다 */
@@ -35,6 +39,7 @@ export type ServerMessage =
       sourceLang: LanguageCode;
       lang: LanguageCode;
       body: string;
+      speakerName: string | null;
       engine: string;
       status: "ok" | "error";
       error?: string;

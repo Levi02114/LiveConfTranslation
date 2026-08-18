@@ -23,12 +23,13 @@ import { isAdminFromCookieHeader } from "@/lib/auth-core";
 import type { LanguageCode } from "@/lib/languages";
 import {
   broadcastPresence,
+  claimInputName,
   type Connection,
   join,
   leave,
 } from "@/lib/realtime/hub";
 import { parseClientMessage, type ServerMessage } from "@/lib/realtime/protocol";
-import { getMeeting, getPageByToken, listMeetings } from "@/lib/repo";
+import { getMeeting, getPageByToken, isPageEnabled, listMeetings } from "@/lib/repo";
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT ?? 3000);
@@ -116,7 +117,7 @@ function resolveConnectionTarget(url: URL, cookie: string | undefined): Target |
   if (!token) return null;
 
   const page = getPageByToken(token);
-  if (!page) return null;
+  if (!page || !isPageEnabled(page)) return null;
   if (!getMeeting(page.meetingId)) return null;
 
   return { meetingId: page.meetingId, kind: page.kind, lang: page.lang };
@@ -127,7 +128,7 @@ function attach(ws: WebSocket, target: Target) {
 
   // 이름은 입력 페이지에서만 쓰인다(서로를 구분해야 하므로). 보기 전용 연결에는
   // 번호를 붙이지 않는다 — 참석자에게 "입력자 3" 이라는 이름이 생기면 혼란스럽다.
-  const name = target.kind === "input" ? `입력자 ${(anonymousCounter += 1)}` : "";
+  const name = target.kind === "input" ? `#${(anonymousCounter += 1)}` : "";
 
   const connection: Connection = {
     clientId,
@@ -135,10 +136,12 @@ function attach(ws: WebSocket, target: Target) {
     kind: target.kind,
     lang: target.lang,
     name,
+    nameClaimed: false,
     draft: "",
     send: (message: ServerMessage) => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));
     },
+    close: () => ws.close(1008, "Page disabled"),
   };
 
   join(connection);
@@ -156,7 +159,14 @@ function attach(ws: WebSocket, target: Target) {
     if (connection.kind !== "input" || !connection.lang) return;
 
     if (message.t === "draft") connection.draft = message.text;
-    if (message.t === "name") connection.name = message.name.trim() || connection.name;
+    if (message.t === "name") {
+      const claimed = claimInputName(connection, message.name);
+      connection.send(
+        claimed
+          ? { t: "name-result", ok: true, name: connection.name }
+          : { t: "name-result", ok: false, reason: "duplicate" },
+      );
+    }
 
     broadcastPresence(connection.meetingId, connection.lang);
   });

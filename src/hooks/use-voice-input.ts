@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { newBrowserId } from "@/lib/browser-id";
 import { AudioTurnDetector } from "@/lib/audio-turn-detector";
+import { newBrowserId } from "@/lib/browser-id";
 import type { UiStrings } from "@/lib/i18n-builtin";
 
 export type VoiceInputState = "idle" | "starting" | "active";
@@ -29,6 +29,7 @@ export function useVoiceInput({
   strings,
   closed,
   autoSubmit = true,
+  speakerName,
   onTranscript,
   requestPermissionOnMount = false,
 }: {
@@ -36,6 +37,7 @@ export function useVoiceInput({
   strings: UiStrings["capture"];
   closed: boolean;
   autoSubmit?: boolean;
+  speakerName?: string | null;
   onTranscript?: (body: string) => void;
   requestPermissionOnMount?: boolean;
 }) {
@@ -162,6 +164,7 @@ export function useVoiceInput({
             leaseId: sessionLease,
             ingestKey: `${clientId.current}:${itemId}:${contentIndex}`,
             body,
+            speakerName: speakerName || undefined,
           }),
         });
         if (response.ok) return;
@@ -173,7 +176,7 @@ export function useVoiceInput({
         disconnect(false);
       }
     },
-    [autoSubmit, disconnect, onTranscript, strings.lost, token],
+    [autoSubmit, disconnect, onTranscript, speakerName, strings.lost, token],
   );
 
   const flushTranscripts = useCallback(

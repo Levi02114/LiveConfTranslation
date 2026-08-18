@@ -44,6 +44,7 @@ export type Meeting = {
   engine: EngineId;
   fallbackEngine: EngineId | null;
   inputMode: InputMode;
+  speakerLabels: boolean;
   createdAt: number;
   closedAt: number | null;
 };
@@ -64,7 +65,26 @@ export type Message = {
   pageId: string | null;
   lang: LanguageCode;
   body: string;
+  speakerName: string | null;
   createdAt: number;
+};
+
+export type MeetingLanguageConfig = {
+  lang: LanguageCode;
+  inputEnabled: boolean;
+  outputEnabled: boolean;
+};
+
+export type SessionPresetConfig = {
+  languages: MeetingLanguageConfig[];
+  speakerLabels: boolean;
+};
+
+export type SessionPreset = SessionPresetConfig & {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
 };
 
 export type Translation = {
@@ -99,6 +119,7 @@ type MeetingRow = {
   engine: string;
   fallback_engine: string | null;
   input_mode: string;
+  speaker_labels: number;
   created_at: number;
   closed_at: number | null;
 };
@@ -111,6 +132,7 @@ function toMeeting(row: MeetingRow): Meeting {
     engine: row.engine as EngineId,
     fallbackEngine: row.fallback_engine as EngineId | null,
     inputMode: (row.input_mode || "human") as InputMode,
+    speakerLabels: Boolean(row.speaker_labels),
     createdAt: row.created_at,
     closedAt: row.closed_at,
   };
@@ -155,8 +177,9 @@ export function createMeeting(input: {
 
   return transaction(() => {
     getDb().prepare(
-      `INSERT INTO meetings (id, title, status, engine, fallback_engine, input_mode, created_at)
-       VALUES (?, ?, 'open', ?, ?, ?, ?)`,
+      `INSERT INTO meetings
+         (id, title, status, engine, fallback_engine, input_mode, speaker_labels, created_at)
+       VALUES (?, ?, 'open', ?, ?, ?, 1, ?)`,
     ).run(
       id,
       input.title,
@@ -167,7 +190,9 @@ export function createMeeting(input: {
     );
 
     const insertLang = getDb().prepare(
-      `INSERT INTO meeting_langs (meeting_id, lang, position) VALUES (?, ?, ?)`,
+      `INSERT INTO meeting_langs
+         (meeting_id, lang, position, input_enabled, output_enabled)
+       VALUES (?, ?, ?, 1, 0)`,
     );
     const insertPage = getDb().prepare(
       `INSERT INTO pages (id, meeting_id, kind, lang, token, created_at)
@@ -190,6 +215,7 @@ export function createMeeting(input: {
       engine: input.engine,
       fallbackEngine: input.fallbackEngine ?? null,
       inputMode: "human",
+      speakerLabels: true,
       createdAt: now,
       closedAt: null,
     };
@@ -217,11 +243,180 @@ export function getMeetingLangs(meetingId: string): LanguageCode[] {
   return rows.map((row) => row.lang as LanguageCode);
 }
 
+export function getMeetingLanguageConfigs(meetingId: string): MeetingLanguageConfig[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT lang, input_enabled, output_enabled FROM meeting_langs
+       WHERE meeting_id = ? ORDER BY position`,
+    )
+    .all(meetingId) as unknown as {
+    lang: string;
+    input_enabled: number;
+    output_enabled: number;
+  }[];
+  return rows.map((row) => ({
+    lang: row.lang as LanguageCode,
+    inputEnabled: Boolean(row.input_enabled),
+    outputEnabled: Boolean(row.output_enabled),
+  }));
+}
+
+/** 입력자 또는 일반 출력 이용자가 실제로 쓰는 언어만 번역 대상으로 삼는다. */
+export function getMeetingActiveLangs(meetingId: string): LanguageCode[] {
+  return getMeetingLanguageConfigs(meetingId)
+    .filter((row) => row.inputEnabled || row.outputEnabled)
+    .map((row) => row.lang);
+}
+
+export function isPageEnabled(page: Page): boolean {
+  if (page.kind === "combined") return true;
+  if (!page.lang) return false;
+  const config = getMeetingLanguageConfigs(page.meetingId).find(
+    (row) => row.lang === page.lang,
+  );
+  if (!config) return false;
+  return page.kind === "output" ? config.outputEnabled : config.inputEnabled;
+}
+
 export function closeMeeting(id: string): void {
   getDb().prepare(`UPDATE meetings SET status = 'closed', closed_at = ? WHERE id = ?`).run(
     Date.now(),
     id,
   );
+}
+
+export type MeetingConfigUpdateResult =
+  | { ok: true; meeting: Meeting }
+  | { ok: false; reason: "not-found" | "closed" | "locked" };
+
+/** 첫 확정 입력 전까지만 언어별 페이지 역할과 닉네임 사용 여부를 바꾼다. */
+export function updateMeetingConfig(
+  meetingId: string,
+  languages: readonly MeetingLanguageConfig[],
+  speakerLabels: boolean,
+): MeetingConfigUpdateResult {
+  return transaction(() => {
+    const meeting = getMeeting(meetingId);
+    if (!meeting) return { ok: false, reason: "not-found" };
+    if (meeting.status !== "open") return { ok: false, reason: "closed" };
+
+    const activity = getDb()
+      .prepare(`SELECT 1 FROM messages WHERE meeting_id = ? LIMIT 1`)
+      .get(meetingId);
+    if (activity) return { ok: false, reason: "locked" };
+
+    const current = new Set(getMeetingLangs(meetingId));
+    const requested = new Set(languages.map((row) => row.lang));
+
+    const deletePages = getDb().prepare(
+      `DELETE FROM pages
+       WHERE meeting_id = ? AND lang = ? AND kind IN ('input', 'output', 'capture')`,
+    );
+    const deleteLang = getDb().prepare(
+      `DELETE FROM meeting_langs WHERE meeting_id = ? AND lang = ?`,
+    );
+    for (const lang of current) {
+      if (requested.has(lang)) continue;
+      deletePages.run(meetingId, lang);
+      deleteLang.run(meetingId, lang);
+    }
+
+    const updateLang = getDb().prepare(
+      `UPDATE meeting_langs SET position = ?, input_enabled = ?, output_enabled = ?
+       WHERE meeting_id = ? AND lang = ?`,
+    );
+    const insertLang = getDb().prepare(
+      `INSERT INTO meeting_langs
+         (meeting_id, lang, position, input_enabled, output_enabled)
+       VALUES (?, ?, ?, ?, ?)`,
+    );
+    const insertPage = getDb().prepare(
+      `INSERT INTO pages (id, meeting_id, kind, lang, token, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    const now = Date.now();
+
+    languages.forEach((row, position) => {
+      if (current.has(row.lang)) {
+        updateLang.run(
+          position,
+          Number(row.inputEnabled),
+          Number(row.outputEnabled),
+          meetingId,
+          row.lang,
+        );
+        return;
+      }
+      insertLang.run(
+        meetingId,
+        row.lang,
+        position,
+        Number(row.inputEnabled),
+        Number(row.outputEnabled),
+      );
+      insertPage.run(newId(), meetingId, "input", row.lang, newPageToken(), now);
+      insertPage.run(newId(), meetingId, "output", row.lang, newPageToken(), now);
+      if (meeting.inputMode === "realtime") {
+        insertPage.run(newId(), meetingId, "capture", row.lang, newPageToken(), now);
+      }
+    });
+
+    getDb()
+      .prepare(`UPDATE meetings SET speaker_labels = ? WHERE id = ?`)
+      .run(Number(speakerLabels), meetingId);
+    return { ok: true, meeting: getMeeting(meetingId)! };
+  });
+}
+
+export function listSessionPresets(): SessionPreset[] {
+  const rows = getDb()
+    .prepare(`SELECT * FROM session_presets ORDER BY updated_at DESC, name`)
+    .all() as unknown as {
+    id: string;
+    name: string;
+    config_json: string;
+    created_at: number;
+    updated_at: number;
+  }[];
+  return rows.flatMap((row) => {
+    try {
+      const config = JSON.parse(row.config_json) as SessionPresetConfig;
+      return [{
+        id: row.id,
+        name: row.name,
+        languages: config.languages,
+        speakerLabels: config.speakerLabels,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }];
+    } catch {
+      return [];
+    }
+  });
+}
+
+export function upsertSessionPreset(input: {
+  id?: string;
+  name: string;
+  config: SessionPresetConfig;
+}): SessionPreset {
+  const now = Date.now();
+  const id = input.id ?? newId();
+  getDb()
+    .prepare(
+      `INSERT INTO session_presets (id, name, config_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET
+         name = excluded.name,
+         config_json = excluded.config_json,
+         updated_at = excluded.updated_at`,
+    )
+    .run(id, input.name, JSON.stringify(input.config), now, now);
+  return listSessionPresets().find((row) => row.id === id)!;
+}
+
+export function deleteSessionPreset(id: string): boolean {
+  return getDb().prepare(`DELETE FROM session_presets WHERE id = ?`).run(id).changes > 0;
 }
 
 /** 종료된 세션과 그 하위 페이지·원문·번역을 실제로 삭제한다. */
@@ -263,6 +458,7 @@ export function insertMessage(input: {
   pageId: string | null;
   lang: LanguageCode;
   body: string;
+  speakerName?: string | null;
 }): Message {
   return insertMessageOnce(input).message;
 }
@@ -273,15 +469,25 @@ export function insertMessageOnce(input: {
   pageId: string | null;
   lang: LanguageCode;
   body: string;
+  speakerName?: string | null;
   ingestKey?: string;
 }): { message: Message; inserted: boolean } {
   const now = Date.now();
   const result = getDb()
     .prepare(
-      `INSERT OR IGNORE INTO messages (meeting_id, page_id, lang, body, ingest_key, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO messages
+         (meeting_id, page_id, lang, body, speaker_name, ingest_key, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(input.meetingId, input.pageId, input.lang, input.body, input.ingestKey ?? null, now);
+    .run(
+      input.meetingId,
+      input.pageId,
+      input.lang,
+      input.body,
+      input.speakerName ?? null,
+      input.ingestKey ?? null,
+      now,
+    );
 
   if (result.changes === 0 && input.ingestKey) {
     const existing = getDb()
@@ -292,6 +498,7 @@ export function insertMessageOnce(input: {
       page_id: string | null;
       lang: string;
       body: string;
+      speaker_name: string | null;
       created_at: number;
     };
     return {
@@ -302,6 +509,7 @@ export function insertMessageOnce(input: {
         pageId: existing.page_id,
         lang: existing.lang as LanguageCode,
         body: existing.body,
+        speakerName: existing.speaker_name,
         createdAt: existing.created_at,
       },
     };
@@ -315,6 +523,7 @@ export function insertMessageOnce(input: {
       pageId: input.pageId,
       lang: input.lang,
       body: input.body,
+      speakerName: input.speakerName ?? null,
       createdAt: now,
     },
   };
@@ -323,6 +532,7 @@ export function insertMessageOnce(input: {
 export type OutputEntry = {
   messageId: number;
   body: string;
+  speakerName: string | null;
   status: "ok" | "error";
   createdAt: number;
 };
@@ -335,11 +545,11 @@ export function getRecentOutput(
 ): OutputEntry[] {
   const rows = getDb()
     .prepare(
-      `SELECT message_id, body, status, created_at FROM (
-         SELECT m.id AS message_id, m.body, 'ok' AS status, m.created_at
+      `SELECT message_id, body, speaker_name, status, created_at FROM (
+         SELECT m.id AS message_id, m.body, m.speaker_name, 'ok' AS status, m.created_at
          FROM messages m WHERE m.meeting_id = ? AND m.lang = ?
          UNION ALL
-         SELECT t.message_id, t.body, t.status, t.created_at
+         SELECT t.message_id, t.body, m.speaker_name, t.status, t.created_at
          FROM translations t
          JOIN messages m ON m.id = t.message_id
          WHERE m.meeting_id = ? AND t.lang = ?
@@ -348,6 +558,7 @@ export function getRecentOutput(
     .all(meetingId, lang, meetingId, lang, limit) as unknown as {
     message_id: number;
     body: string;
+    speaker_name: string | null;
     status: string;
     created_at: number;
   }[];
@@ -355,6 +566,7 @@ export function getRecentOutput(
   return rows.reverse().map((row) => ({
     messageId: row.message_id,
     body: row.body,
+    speakerName: row.speaker_name,
     status: row.status as "ok" | "error",
     createdAt: row.created_at,
   }));
@@ -408,6 +620,7 @@ export function getRecentMessages(meetingId: string, limit: number | null = 200)
     page_id: string | null;
     lang: string;
     body: string;
+    speaker_name: string | null;
     created_at: number;
   }[];
 
@@ -419,6 +632,7 @@ export function getRecentMessages(meetingId: string, limit: number | null = 200)
     pageId: row.page_id,
     lang: row.lang as LanguageCode,
     body: row.body,
+    speakerName: row.speaker_name,
     createdAt: row.created_at,
   }));
 }
@@ -433,10 +647,10 @@ export function getRecentTranslations(
   meetingId: string,
   lang: LanguageCode,
   limit = 200,
-): (Translation & { sourceLang: LanguageCode; sourceBody: string })[] {
+): (Translation & { sourceLang: LanguageCode; sourceBody: string; speakerName: string | null })[] {
   const rows = getDb()
     .prepare(
-      `SELECT t.*, m.lang AS source_lang, m.body AS source_body
+      `SELECT t.*, m.lang AS source_lang, m.body AS source_body, m.speaker_name
        FROM translations t
        JOIN messages m ON m.id = t.message_id
        WHERE m.meeting_id = ? AND t.lang = ?
@@ -454,6 +668,7 @@ export function getRecentTranslations(
     created_at: number;
     source_lang: string;
     source_body: string;
+    speaker_name: string | null;
   }[];
 
   return rows.reverse().map((row) => ({
@@ -467,6 +682,7 @@ export function getRecentTranslations(
     createdAt: row.created_at,
     sourceLang: row.source_lang as LanguageCode,
     sourceBody: row.source_body,
+    speakerName: row.speaker_name,
   }));
 }
 
@@ -524,13 +740,14 @@ export function getLogLines(
 ): LogLine[] {
   const messages = getDb()
     .prepare(
-      `SELECT id, lang, body, created_at FROM messages
+      `SELECT id, lang, body, speaker_name, created_at FROM messages
        WHERE meeting_id = ? ORDER BY id`,
     )
     .all(meetingId) as unknown as {
     id: number;
     lang: string;
     body: string;
+    speaker_name: string | null;
     created_at: number;
   }[];
 
@@ -567,7 +784,7 @@ export function getLogLines(
         at: message.created_at,
         lang: sourceLang,
         kind: "source",
-        text: formatSourceLine(message.created_at, message.body),
+        text: formatSourceLine(message.created_at, message.body, message.speaker_name),
       });
     }
 
@@ -578,7 +795,12 @@ export function getLogLines(
         at: translation.created_at,
         lang,
         kind: "translation",
-        text: formatTranslationLine(translation.created_at, lang, translation.body),
+        text: formatTranslationLine(
+          translation.created_at,
+          lang,
+          translation.body,
+          message.speaker_name,
+        ),
       });
     }
   }
@@ -613,6 +835,7 @@ export type CombinedEntry = {
   messageId: number;
   sourceLang: LanguageCode;
   sourceBody: string;
+  speakerName: string | null;
   createdAt: number;
   translations: {
     lang: LanguageCode;
@@ -659,6 +882,7 @@ export function getRecentCombined(meetingId: string, limit: number | null = null
     messageId: message.id,
     sourceLang: message.lang,
     sourceBody: message.body,
+    speakerName: message.speakerName,
     createdAt: message.createdAt,
     translations: byMessage.get(message.id) ?? [],
   }));
@@ -789,7 +1013,9 @@ export function deleteLanguage(code: LanguageCode): void {
  */
 export function isLanguageUsed(code: LanguageCode): boolean {
   const row = getDb().prepare(`SELECT 1 FROM meeting_langs WHERE lang = ? LIMIT 1`).get(code);
-  return Boolean(row);
+  return Boolean(row) || listSessionPresets().some((preset) =>
+    preset.languages.some((language) => language.lang === code),
+  );
 }
 
 // ---------------------------------------------------------- UI 문구

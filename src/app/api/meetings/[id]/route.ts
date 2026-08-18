@@ -7,7 +7,9 @@ import {
   closeMeeting,
   deleteClosedMeeting,
   getMeeting,
+  getMeetingActiveLangs,
   getMeetingActivity,
+  getMeetingLanguageConfigs,
   getMeetingLangs,
   getMeetingPages,
   getRecentMessages,
@@ -29,15 +31,17 @@ export async function GET(_request: Request, { params }: Params) {
   }
 
   const langs = getMeetingLangs(id);
+  const activeLangs = getMeetingActiveLangs(id);
 
   return Response.json({
     meeting,
     langs,
+    languageConfigs: getMeetingLanguageConfigs(id),
     pages: getMeetingPages(id),
     activity: getMeetingActivity(id),
     messages: getRecentMessages(id),
     // 어떤 엔진이 어떤 언어를 못 하는지 관리자가 미리 알 수 있게 함께 내려 준다.
-    engines: listEngines().map((engine) => engineCoverage(engine.id, langs)),
+    engines: listEngines().map((engine) => engineCoverage(engine.id, activeLangs)),
   });
 }
 

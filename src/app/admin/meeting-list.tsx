@@ -16,6 +16,7 @@ import { EngineKeysDialog, type EngineKeyStatus } from "./engine-keys-dialog";
 import { GlossaryDialog } from "./glossary-dialog";
 import { LanguageDialog } from "./language-dialog";
 import { OpenaiModelSelect } from "./openai-model-select";
+import { PasswordChangeDialog } from "./password-change-dialog";
 import { UiStringsDialog } from "./ui-strings-dialog";
 
 type Row = Meeting & { langs: LanguageCode[] };
@@ -264,13 +265,16 @@ export function MeetingList({
         <div className="font-mono text-[12px] tracking-[0.04em] text-muted">
           {strings.list.heading}
         </div>
-        <button
-          type="button"
-          onClick={() => void logout()}
-          className="cursor-pointer font-mono text-[11px] text-muted hover:text-fg"
-        >
-          {strings.list.logout}
-        </button>
+        <div className="flex items-center gap-3">
+          <PasswordChangeDialog strings={strings.passwordChange} />
+          <button
+            type="button"
+            onClick={() => void logout()}
+            className="cursor-pointer font-mono text-[11px] text-muted hover:text-fg"
+          >
+            {strings.list.logout}
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-6 border-b border-line pt-6 pb-9">

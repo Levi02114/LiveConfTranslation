@@ -10,13 +10,14 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { adminPassword, sessionSecret } from "@/lib/env";
+import { adminCredentialRevision, verifyAdminPassword } from "@/lib/admin-password";
+import { sessionSecret } from "@/lib/env";
 
 export const SESSION_COOKIE = "lct_admin";
 
 export function signExpiry(expiresAt: number): string {
   return createHmac("sha256", sessionSecret())
-    .update(String(expiresAt))
+    .update(`${expiresAt}.${adminCredentialRevision()}`)
     .digest("base64url");
 }
 
@@ -29,7 +30,7 @@ function safeEquals(a: string, b: string): boolean {
 }
 
 export function verifyPassword(candidate: string): boolean {
-  return safeEquals(candidate, adminPassword());
+  return verifyAdminPassword(candidate);
 }
 
 /** 쿠키 값 하나가 유효한 관리자 세션인지. 서명과 만료를 함께 본다. */
@@ -43,7 +44,12 @@ export function verifySessionValue(raw: string | undefined): boolean {
   const signature = raw.slice(separator + 1);
   if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) return false;
 
-  return safeEquals(signature, signExpiry(expiresAt));
+  try {
+    return safeEquals(signature, signExpiry(expiresAt));
+  } catch {
+    // 손상된 인증 파일에서 초기 비밀번호로 폴백하면 변경 전 계정이 다시 살아난다.
+    return false;
+  }
 }
 
 /**

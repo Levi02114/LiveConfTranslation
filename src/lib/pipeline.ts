@@ -3,7 +3,7 @@ import "server-only";
 import type { LanguageCode } from "@/lib/languages";
 import { publish } from "@/lib/realtime/hub";
 import {
-  getMeetingLangs,
+  getMeetingActiveLangs,
   getRecentSourceBodies,
   insertMessage,
   insertMessageOnce,
@@ -25,12 +25,14 @@ export function acceptMessage(input: {
   pageId: string | null;
   lang: LanguageCode;
   body: string;
+  speakerName?: string | null;
 }) {
   const message = insertMessage({
     meetingId: input.meeting.id,
     pageId: input.pageId,
     lang: input.lang,
     body: input.body,
+    speakerName: input.speakerName,
   });
 
   publish(input.meeting.id, {
@@ -38,6 +40,7 @@ export function acceptMessage(input: {
     messageId: message.id,
     lang: message.lang,
     body: message.body,
+    speakerName: message.speakerName,
     createdAt: message.createdAt,
   });
 
@@ -51,12 +54,14 @@ export function acceptTranscript(input: {
   lang: LanguageCode;
   body: string;
   ingestKey: string;
+  speakerName?: string | null;
 }) {
   const result = insertMessageOnce({
     meetingId: input.meeting.id,
     pageId: input.pageId,
     lang: input.lang,
     body: input.body,
+    speakerName: input.speakerName,
     ingestKey: input.ingestKey,
   });
 
@@ -66,6 +71,7 @@ export function acceptTranscript(input: {
       messageId: result.message.id,
       lang: result.message.lang,
       body: result.message.body,
+      speakerName: result.message.speakerName,
       createdAt: result.message.createdAt,
     });
   }
@@ -85,8 +91,9 @@ export async function translateMessage(input: {
   messageId: number;
   sourceLang: LanguageCode;
   body: string;
+  speakerName?: string | null;
 }): Promise<void> {
-  const targets = getMeetingLangs(input.meeting.id).filter(
+  const targets = getMeetingActiveLangs(input.meeting.id).filter(
     (lang) => lang !== input.sourceLang,
   );
 
@@ -124,6 +131,7 @@ export async function translateMessage(input: {
           sourceLang: input.sourceLang,
           lang: target,
           body: result.text,
+          speakerName: input.speakerName ?? null,
           engine: result.engine,
           status: "ok",
           createdAt,
@@ -151,6 +159,7 @@ export async function translateMessage(input: {
           sourceLang: input.sourceLang,
           lang: target,
           body: "",
+          speakerName: input.speakerName ?? null,
           engine: input.meeting.engine,
           status: "error",
           error: reason,

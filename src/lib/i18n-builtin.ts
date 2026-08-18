@@ -52,6 +52,14 @@ export type UiStrings = {
     newMessages: string;
   };
   meeting: { closed: string };
+  speaker: {
+    label: string;
+    placeholder: string;
+    required: string;
+    prompt: string;
+    confirm: string;
+    duplicate: string;
+  };
   appearance: {
     language: string;
     theme: string;
@@ -99,6 +107,14 @@ const ko: UiStrings = {
     newMessages: "새 문장",
   },
   meeting: { closed: "종료된 세션입니다" },
+  speaker: {
+    label: "닉네임",
+    placeholder: "닉네임을 입력하세요",
+    required: "입력하려면 닉네임이 필요합니다",
+    prompt: "이 입력 페이지에서 사용할 닉네임을 입력해 주세요.",
+    confirm: "확인",
+    duplicate: "이미 사용 중인 닉네임입니다.",
+  },
   appearance: {
     language: "화면 언어",
     theme: "테마",
@@ -154,6 +170,14 @@ const vi: UiStrings = {
     newMessages: "Câu mới",
   },
   meeting: { closed: "Phiên đã kết thúc" },
+  speaker: {
+    label: "Tên hiển thị",
+    placeholder: "Nhập tên hiển thị",
+    required: "Cần tên hiển thị để nhập nội dung",
+    prompt: "Nhập tên hiển thị bạn sẽ dùng trên trang nhập liệu này.",
+    confirm: "Xác nhận",
+    duplicate: "Tên hiển thị này đang được sử dụng.",
+  },
   appearance: {
     language: "Ngôn ngữ hiển thị",
     theme: "Giao diện",
@@ -213,6 +237,14 @@ const th: UiStrings = {
     newMessages: "ข้อความใหม่",
   },
   meeting: { closed: "เซสชันสิ้นสุดแล้ว" },
+  speaker: {
+    label: "ชื่อที่แสดง",
+    placeholder: "กรอกชื่อที่แสดง",
+    required: "ต้องระบุชื่อก่อนป้อนข้อมูล",
+    prompt: "กรอกชื่อที่จะแสดงในหน้าป้อนข้อมูลนี้",
+    confirm: "ยืนยัน",
+    duplicate: "ชื่อที่แสดงนี้มีผู้ใช้อยู่แล้ว",
+  },
   appearance: {
     language: "ภาษาที่แสดง",
     theme: "ธีม",
@@ -268,6 +300,14 @@ const si: UiStrings = {
     newMessages: "නව වාක්‍ය",
   },
   meeting: { closed: "සැසිය අවසන් වී ඇත" },
+  speaker: {
+    label: "පෙන්වන නම",
+    placeholder: "පෙන්වන නම ඇතුළත් කරන්න",
+    required: "ඇතුළත් කිරීමට නමක් අවශ්‍යයි",
+    prompt: "මෙම ආදාන පිටුවේ භාවිත කරන පෙන්වන නම ඇතුළත් කරන්න.",
+    confirm: "තහවුරු කරන්න",
+    duplicate: "මෙම පෙන්වන නම දැනටමත් භාවිත වේ.",
+  },
   appearance: {
     language: "සංදර්ශන භාෂාව",
     theme: "තේමාව",
@@ -316,6 +356,25 @@ export type AdminStrings = {
     pending: string;
     wrongPassword: string;
     failed: string;
+  };
+  passwordChange: {
+    button: string;
+    title: string;
+    currentPassword: string;
+    newPassword: string;
+    confirmPassword: string;
+    minimum: string;
+    cancel: string;
+    save: string;
+    saving: string;
+    success: string;
+    invalidCurrent: string;
+    tooShort: string;
+    tooLong: string;
+    samePassword: string;
+    mismatch: string;
+    failed: string;
+    close: string;
   };
   list: {
     heading: string;
@@ -371,6 +430,34 @@ export type AdminStrings = {
     qrFailed: string;
     log: string;
     popup: string;
+  };
+  settings: {
+    heading: string;
+    preset: string;
+    meetingPreset: string;
+    assemblyPreset: string;
+    applyPreset: string;
+    languages: string;
+    addLanguage: string;
+    selectLanguage: string;
+    input: string;
+    output: string;
+    nickname: string;
+    nicknameNote: string;
+    save: string;
+    saving: string;
+    saved: string;
+    saveFailed: string;
+    locked: string;
+    needLanguages: string;
+    needInput: string;
+    presetName: string;
+    savePreset: string;
+    updatePreset: string;
+    deletePreset: string;
+    deletePresetConfirm: string;
+    presetSaved: string;
+    presetFailed: string;
   };
   log: { notice: string; title: string; download: string; empty: string };
   keys: {
@@ -457,6 +544,25 @@ const adminKo: AdminStrings = {
     wrongPassword: "비밀번호가 올바르지 않습니다",
     failed: "로그인에 실패했습니다",
   },
+  passwordChange: {
+    button: "비밀번호 변경",
+    title: "관리자 비밀번호 변경",
+    currentPassword: "현재 비밀번호",
+    newPassword: "새 비밀번호",
+    confirmPassword: "새 비밀번호 확인",
+    minimum: "12자 이상 입력해 주세요",
+    cancel: "취소",
+    save: "변경",
+    saving: "변경 중",
+    success: "비밀번호가 변경되었습니다",
+    invalidCurrent: "현재 비밀번호가 올바르지 않습니다",
+    tooShort: "새 비밀번호는 12자 이상이어야 합니다",
+    tooLong: "새 비밀번호는 128자 이하여야 합니다",
+    samePassword: "새 비밀번호는 현재 비밀번호와 달라야 합니다",
+    mismatch: "새 비밀번호 확인이 일치하지 않습니다",
+    failed: "비밀번호를 변경하지 못했습니다",
+    close: "닫기",
+  },
   list: {
     heading: "세션",
     logout: "로그아웃",
@@ -494,8 +600,8 @@ const adminKo: AdminStrings = {
       "{engine}은(는) {languages}을(를) 지원하지 않습니다 · 폴백 엔진: {fallback}",
     pages: "페이지 URL — 참석자에게 배포",
     participantGuide: "참가자 안내",
-    input: "입력 (속기사)",
-    output: "출력 (참석자)",
+    input: "입력",
+    output: "출력",
     capture: "음성 수집",
     live: "실시간 번역",
     source: "원문",
@@ -511,6 +617,34 @@ const adminKo: AdminStrings = {
     qrFailed: "QR을 만들지 못했습니다",
     log: "로그 보기 →",
     popup: "새 팝업 창",
+  },
+  settings: {
+    heading: "운영 설정",
+    preset: "프리셋",
+    meetingPreset: "회의",
+    assemblyPreset: "집회",
+    applyPreset: "적용",
+    languages: "언어별 페이지",
+    addLanguage: "언어 추가",
+    selectLanguage: "언어 선택",
+    input: "입력",
+    output: "출력",
+    nickname: "닉네임 사용",
+    nicknameNote: "입력자가 이름을 정하고 모든 원문·번역·로그에 화자를 표시합니다.",
+    save: "설정 저장",
+    saving: "저장 중",
+    saved: "설정이 저장되었습니다",
+    saveFailed: "설정을 저장하지 못했습니다",
+    locked: "첫 입력이 등록되어 운영 설정이 잠겼습니다.",
+    needLanguages: "활성 언어를 두 개 이상 설정해 주세요",
+    needInput: "입력 페이지를 하나 이상 켜 주세요",
+    presetName: "프리셋 이름",
+    savePreset: "새 프리셋 저장",
+    updatePreset: "프리셋 덮어쓰기",
+    deletePreset: "프리셋 삭제",
+    deletePresetConfirm: "이 프리셋을 삭제할까요?",
+    presetSaved: "프리셋이 저장되었습니다",
+    presetFailed: "프리셋을 처리하지 못했습니다",
   },
   log: {
     notice: "이 창은 로그 전용입니다 · 네비게이션 없음",
@@ -603,6 +737,25 @@ const adminVi: AdminStrings = {
     wrongPassword: "Mật khẩu không đúng",
     failed: "Đăng nhập thất bại",
   },
+  passwordChange: {
+    button: "Đổi mật khẩu",
+    title: "Đổi mật khẩu quản trị",
+    currentPassword: "Mật khẩu hiện tại",
+    newPassword: "Mật khẩu mới",
+    confirmPassword: "Xác nhận mật khẩu mới",
+    minimum: "Nhập ít nhất 12 ký tự",
+    cancel: "Hủy",
+    save: "Đổi",
+    saving: "Đang đổi",
+    success: "Mật khẩu đã được thay đổi",
+    invalidCurrent: "Mật khẩu hiện tại không đúng",
+    tooShort: "Mật khẩu mới phải có ít nhất 12 ký tự",
+    tooLong: "Mật khẩu mới không được quá 128 ký tự",
+    samePassword: "Mật khẩu mới phải khác mật khẩu hiện tại",
+    mismatch: "Xác nhận mật khẩu mới không khớp",
+    failed: "Không đổi được mật khẩu",
+    close: "Đóng",
+  },
   list: {
     heading: "Phiên",
     logout: "Đăng xuất",
@@ -640,8 +793,8 @@ const adminVi: AdminStrings = {
       "{engine} không hỗ trợ {languages} · Công cụ dự phòng: {fallback}",
     pages: "URL trang — gửi cho người tham dự",
     participantGuide: "Hướng dẫn người tham dự",
-    input: "Nhập liệu (người ghi tốc ký)",
-    output: "Bản dịch (người tham dự)",
+    input: "Nhập liệu",
+    output: "Bản dịch",
     capture: "Thu âm",
     live: "Dịch trực tiếp",
     source: "Nguồn",
@@ -657,6 +810,34 @@ const adminVi: AdminStrings = {
     qrFailed: "Không tạo được mã QR",
     log: "Xem nhật ký →",
     popup: "Cửa sổ bật lên mới",
+  },
+  settings: {
+    heading: "Cài đặt vận hành",
+    preset: "Mẫu cài đặt",
+    meetingPreset: "Cuộc họp",
+    assemblyPreset: "Hội nghị",
+    applyPreset: "Áp dụng",
+    languages: "Trang theo ngôn ngữ",
+    addLanguage: "Thêm ngôn ngữ",
+    selectLanguage: "Chọn ngôn ngữ",
+    input: "Nhập liệu",
+    output: "Bản dịch",
+    nickname: "Dùng tên hiển thị",
+    nicknameNote: "Người nhập đặt tên và tên người nói xuất hiện trong bản gốc, bản dịch và nhật ký.",
+    save: "Lưu cài đặt",
+    saving: "Đang lưu",
+    saved: "Đã lưu cài đặt",
+    saveFailed: "Không lưu được cài đặt",
+    locked: "Cài đặt đã khóa vì nội dung đầu tiên đã được gửi.",
+    needLanguages: "Hãy bật ít nhất hai ngôn ngữ",
+    needInput: "Hãy bật ít nhất một trang nhập liệu",
+    presetName: "Tên mẫu",
+    savePreset: "Lưu mẫu mới",
+    updatePreset: "Ghi đè mẫu",
+    deletePreset: "Xóa mẫu",
+    deletePresetConfirm: "Xóa mẫu này?",
+    presetSaved: "Đã lưu mẫu",
+    presetFailed: "Không xử lý được mẫu",
   },
   log: {
     notice: "Cửa sổ chỉ dành cho nhật ký · Không có điều hướng",
@@ -749,6 +930,25 @@ const adminTh: AdminStrings = {
     wrongPassword: "รหัสผ่านไม่ถูกต้อง",
     failed: "เข้าสู่ระบบไม่สำเร็จ",
   },
+  passwordChange: {
+    button: "เปลี่ยนรหัสผ่าน",
+    title: "เปลี่ยนรหัสผ่านผู้ดูแล",
+    currentPassword: "รหัสผ่านปัจจุบัน",
+    newPassword: "รหัสผ่านใหม่",
+    confirmPassword: "ยืนยันรหัสผ่านใหม่",
+    minimum: "กรุณากรอกอย่างน้อย 12 ตัวอักษร",
+    cancel: "ยกเลิก",
+    save: "เปลี่ยน",
+    saving: "กำลังเปลี่ยน",
+    success: "เปลี่ยนรหัสผ่านแล้ว",
+    invalidCurrent: "รหัสผ่านปัจจุบันไม่ถูกต้อง",
+    tooShort: "รหัสผ่านใหม่ต้องมีอย่างน้อย 12 ตัวอักษร",
+    tooLong: "รหัสผ่านใหม่ต้องไม่เกิน 128 ตัวอักษร",
+    samePassword: "รหัสผ่านใหม่ต้องต่างจากรหัสผ่านปัจจุบัน",
+    mismatch: "การยืนยันรหัสผ่านใหม่ไม่ตรงกัน",
+    failed: "เปลี่ยนรหัสผ่านไม่สำเร็จ",
+    close: "ปิด",
+  },
   list: {
     heading: "เซสชัน",
     logout: "ออกจากระบบ",
@@ -786,8 +986,8 @@ const adminTh: AdminStrings = {
       "{engine} ไม่รองรับ {languages} · เครื่องมือสำรอง: {fallback}",
     pages: "URL หน้า — แจกจ่ายให้ผู้เข้าร่วม",
     participantGuide: "คู่มือผู้เข้าร่วม",
-    input: "ป้อนข้อมูล (นักชวเลข)",
-    output: "คำแปล (ผู้เข้าร่วม)",
+    input: "ป้อนข้อมูล",
+    output: "คำแปล",
     capture: "รับเสียง",
     live: "การแปลแบบเรียลไทม์",
     source: "ต้นฉบับ",
@@ -803,6 +1003,34 @@ const adminTh: AdminStrings = {
     qrFailed: "สร้าง QR ไม่สำเร็จ",
     log: "ดูบันทึก →",
     popup: "หน้าต่างป๊อปอัปใหม่",
+  },
+  settings: {
+    heading: "การตั้งค่าการใช้งาน",
+    preset: "ค่าที่ตั้งไว้",
+    meetingPreset: "การประชุม",
+    assemblyPreset: "การชุมนุม",
+    applyPreset: "นำไปใช้",
+    languages: "หน้าตามภาษา",
+    addLanguage: "เพิ่มภาษา",
+    selectLanguage: "เลือกภาษา",
+    input: "ป้อนข้อมูล",
+    output: "คำแปล",
+    nickname: "ใช้ชื่อที่แสดง",
+    nicknameNote: "ผู้ป้อนข้อมูลกำหนดชื่อ และแสดงผู้พูดในต้นฉบับ คำแปล และบันทึกทั้งหมด",
+    save: "บันทึกการตั้งค่า",
+    saving: "กำลังบันทึก",
+    saved: "บันทึกการตั้งค่าแล้ว",
+    saveFailed: "บันทึกการตั้งค่าไม่สำเร็จ",
+    locked: "การตั้งค่าถูกล็อกหลังจากส่งข้อความแรกแล้ว",
+    needLanguages: "กรุณาเปิดใช้งานอย่างน้อยสองภาษา",
+    needInput: "กรุณาเปิดหน้าป้อนข้อมูลอย่างน้อยหนึ่งหน้า",
+    presetName: "ชื่อค่าที่ตั้งไว้",
+    savePreset: "บันทึกค่าใหม่",
+    updatePreset: "เขียนทับค่าที่ตั้งไว้",
+    deletePreset: "ลบค่าที่ตั้งไว้",
+    deletePresetConfirm: "ลบค่าที่ตั้งไว้นี้หรือไม่?",
+    presetSaved: "บันทึกค่าที่ตั้งไว้แล้ว",
+    presetFailed: "ดำเนินการกับค่าที่ตั้งไว้ไม่สำเร็จ",
   },
   log: {
     notice: "หน้าต่างนี้ใช้สำหรับบันทึกเท่านั้น · ไม่มีเมนูนำทาง",
@@ -895,6 +1123,25 @@ const adminSi: AdminStrings = {
     wrongPassword: "මුරපදය වැරදියි",
     failed: "පිවිසීම අසාර්ථකයි",
   },
+  passwordChange: {
+    button: "මුරපදය වෙනස් කරන්න",
+    title: "පරිපාලක මුරපදය වෙනස් කරන්න",
+    currentPassword: "වත්මන් මුරපදය",
+    newPassword: "නව මුරපදය",
+    confirmPassword: "නව මුරපදය තහවුරු කරන්න",
+    minimum: "අවම වශයෙන් අක්ෂර 12ක් ඇතුළත් කරන්න",
+    cancel: "අවලංගු කරන්න",
+    save: "වෙනස් කරන්න",
+    saving: "වෙනස් කරමින්",
+    success: "මුරපදය වෙනස් කරන ලදී",
+    invalidCurrent: "වත්මන් මුරපදය නිවැරදි නොවේ",
+    tooShort: "නව මුරපදය අවම වශයෙන් අක්ෂර 12ක් විය යුතුය",
+    tooLong: "නව මුරපදය අක්ෂර 128කට නොවැඩි විය යුතුය",
+    samePassword: "නව මුරපදය වත්මන් මුරපදයෙන් වෙනස් විය යුතුය",
+    mismatch: "නව මුරපද තහවුරු කිරීම නොගැළපේ",
+    failed: "මුරපදය වෙනස් කළ නොහැකි විය",
+    close: "වසන්න",
+  },
   list: {
     heading: "සැසි",
     logout: "පිටවන්න",
@@ -932,8 +1179,8 @@ const adminSi: AdminStrings = {
       "{engine} {languages} සඳහා සහය නොදක්වයි · විකල්ප එන්ජිම: {fallback}",
     pages: "පිටු URL — සහභාගිවන්නන්ට බෙදා දෙන්න",
     participantGuide: "සහභාගිවන්නන්ගේ මාර්ගෝපදේශය",
-    input: "ඇතුළත් කිරීම (කෙටි සටහන්කරු)",
-    output: "පරිවර්තනය (සහභාගිවන්නා)",
+    input: "ඇතුළත් කිරීම",
+    output: "පරිවර්තනය",
     capture: "හඬ ග්‍රහණය",
     live: "තත්‍ය කාලීන පරිවර්තනය",
     source: "මූලාශ්‍රය",
@@ -949,6 +1196,34 @@ const adminSi: AdminStrings = {
     qrFailed: "QR කේතය සෑදිය නොහැකි විය",
     log: "ලොගය බලන්න →",
     popup: "නව උත්පතන කවුළුව",
+  },
+  settings: {
+    heading: "මෙහෙයුම් සැකසුම්",
+    preset: "පෙරසැකසුම",
+    meetingPreset: "රැස්වීම",
+    assemblyPreset: "මහජන රැස්වීම",
+    applyPreset: "යොදන්න",
+    languages: "භාෂා අනුව පිටු",
+    addLanguage: "භාෂාවක් එක් කරන්න",
+    selectLanguage: "භාෂාව තෝරන්න",
+    input: "ඇතුළත් කිරීම",
+    output: "පරිවර්තනය",
+    nickname: "පෙන්වන නම භාවිත කරන්න",
+    nicknameNote: "ඇතුළත් කරන්නා නමක් තෝරන අතර සියලු මූලාශ්‍ර, පරිවර්තන සහ ලොග්වල කථිකයා පෙන්වයි.",
+    save: "සැකසුම් සුරකින්න",
+    saving: "සුරකිමින්",
+    saved: "සැකසුම් සුරැකිණි",
+    saveFailed: "සැකසුම් සුරැකිය නොහැකි විය",
+    locked: "පළමු පණිවිඩය යැවූ පසු සැකසුම් අගුළු දමා ඇත.",
+    needLanguages: "අවම වශයෙන් භාෂා දෙකක් සක්‍රිය කරන්න",
+    needInput: "අවම වශයෙන් එක් ඇතුළත් කිරීමේ පිටුවක් සක්‍රිය කරන්න",
+    presetName: "පෙරසැකසුම් නම",
+    savePreset: "නව පෙරසැකසුම සුරකින්න",
+    updatePreset: "පෙරසැකසුම නැවත ලියන්න",
+    deletePreset: "පෙරසැකසුම මකන්න",
+    deletePresetConfirm: "මෙම පෙරසැකසුම මකන්නද?",
+    presetSaved: "පෙරසැකසුම සුරැකිණි",
+    presetFailed: "පෙරසැකසුම සැකසිය නොහැකි විය",
   },
   log: {
     notice: "මෙම කවුළුව ලොගය සඳහා පමණි · සංචාලනය නැත",

@@ -1,7 +1,7 @@
 import { getStrings } from "@/lib/i18n";
 import { getLanguage, textDirection } from "@/lib/languages";
 import { formatClock } from "@/lib/log-format";
-import { getMeeting, getPageByToken, getRecentOutput } from "@/lib/repo";
+import { getMeeting, getPageByToken, getRecentOutput, isPageEnabled } from "@/lib/repo";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -12,7 +12,9 @@ type Params = { params: Promise<{ token: string }> };
 export async function GET(request: Request, { params }: Params) {
   const { token } = await params;
   const page = getPageByToken(token);
-  if (!page || page.kind !== "output" || !page.lang) return new Response("Not Found", { status: 404 });
+  if (!page || page.kind !== "output" || !page.lang || !isPageEnabled(page)) {
+    return new Response("Not Found", { status: 404 });
+  }
 
   const meeting = getMeeting(page.meetingId);
   if (!meeting) return new Response("Not Found", { status: 404 });
@@ -27,7 +29,7 @@ export async function GET(request: Request, { params }: Params) {
       {
         lines: history
           .filter((line) => line.messageId > after)
-          .map((line) => [line.messageId, line.body, line.status, line.createdAt]),
+          .map((line) => [line.messageId, line.body, line.status, line.createdAt, line.speakerName]),
         closed: meeting.status === "closed",
       },
       { headers: { "cache-control": "private, no-store" } },
@@ -56,7 +58,7 @@ export async function GET(request: Request, { params }: Params) {
     .map(
       (line) => `<div class="line" data-id="${line.messageId}">
         <time>${formatClock(line.createdAt)}</time>
-        <p${line.status === "error" ? ' class="failed"' : ""}>${html(line.status === "ok" ? line.body : strings.status.failed)}</p>
+        <p${line.status === "error" ? ' class="failed"' : ""}>${html(`${line.speakerName ? `(${line.speakerName}) ` : ""}${line.status === "ok" ? line.body : strings.status.failed}`)}</p>
       </div>`,
     )
     .join("");
@@ -119,8 +121,8 @@ const root=document.documentElement,scroll=document.getElementById('scroll'),lin
 const ids=new Set(DATA.ids),sizes=['sm','md','lg','xl','xxl'],labels=['80%','100%','125%','150%','200%'];let stick=true,pending=0,retry=0,timer,ended=DATA.closed,maxId=Math.max(0,...DATA.ids);
 function clock(at){const d=new Date(at),p=n=>String(n).padStart(2,'0');return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())}
 function follow(){scroll.scrollTop=scroll.scrollHeight}function followSoon(){requestAnimationFrame(()=>requestAnimationFrame(follow))}function refollow(){stick=true;pending=0;latest.hidden=true;followSoon()}
-function add(message){if(ids.has(message.messageId))return;ids.add(message.messageId);maxId=Math.max(maxId,message.messageId);waiting.hidden=true;const row=document.createElement('div');row.className='line';row.dataset.id=message.messageId;const time=document.createElement('time');time.textContent=clock(message.createdAt);const body=document.createElement('p');const ok=message.t==='message'||message.status==='ok';body.textContent=ok?message.body:DATA.strings.failed;if(!ok)body.className='failed';row.append(time,body);lines.append(row);if(stick)followSoon();else{pending++;latest.hidden=false;latest.lastElementChild.textContent=pending}}
-async function sync(){try{const response=await fetch(location.pathname+'?after='+maxId,{cache:'no-store'}),data=await response.json();for(const line of data.lines)add({t:'translation',messageId:line[0],body:line[1],status:line[2],createdAt:line[3]});if(data.closed){ended=true;closed.textContent=' · '+DATA.strings.closed}}catch(e){}}
+function add(message){if(ids.has(message.messageId))return;ids.add(message.messageId);maxId=Math.max(maxId,message.messageId);waiting.hidden=true;const row=document.createElement('div');row.className='line';row.dataset.id=message.messageId;const time=document.createElement('time');time.textContent=clock(message.createdAt);const body=document.createElement('p');const ok=message.t==='message'||message.status==='ok',speaker=message.speakerName?'('+message.speakerName+') ':'';body.textContent=speaker+(ok?message.body:DATA.strings.failed);if(!ok)body.className='failed';row.append(time,body);lines.append(row);if(stick)followSoon();else{pending++;latest.hidden=false;latest.lastElementChild.textContent=pending}}
+async function sync(){try{const response=await fetch(location.pathname+'?after='+maxId,{cache:'no-store'}),data=await response.json();for(const line of data.lines)add({t:'translation',messageId:line[0],body:line[1],status:line[2],createdAt:line[3],speakerName:line[4]});if(data.closed){ended=true;closed.textContent=' · '+DATA.strings.closed}}catch(e){}}
 function connect(){connection.textContent=DATA.strings.reconnecting;const scheme=location.protocol==='https:'?'wss':'ws',socket=new WebSocket(scheme+'://'+location.host+'/ws?token='+encodeURIComponent(DATA.token));socket.onopen=()=>{retry=0;connection.textContent=DATA.strings.connected;sync()};socket.onmessage=event=>{try{const message=JSON.parse(event.data);if(message.t==='message'||message.t==='translation')add(message);else if(message.t==='meeting-closed'){ended=true;closed.textContent=' · '+DATA.strings.closed;socket.close()}}catch(e){}};socket.onclose=()=>{connection.textContent=DATA.strings.disconnected;if(!ended)timer=setTimeout(connect,Math.min(10000,500*2**retry++))};socket.onerror=()=>socket.close()}
 scroll.addEventListener('scroll',()=>{stick=scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<=80;if(stick){pending=0;latest.hidden=true}},{passive:true});addEventListener('resize',refollow,{passive:true});window.visualViewport?.addEventListener('resize',refollow,{passive:true});latest.onclick=()=>{stick=true;pending=0;latest.hidden=true;follow()};
 function applyTheme(){const dark=root.dataset.theme==='dark'||(!root.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);theme.textContent=dark?DATA.strings.light:DATA.strings.dark}theme.onclick=()=>{const dark=root.dataset.theme==='dark'||(!root.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);root.dataset.theme=dark?'light':'dark';try{localStorage.setItem('lct.theme',root.dataset.theme)}catch(e){}applyTheme()};

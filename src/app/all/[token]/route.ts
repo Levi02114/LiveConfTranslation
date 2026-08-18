@@ -7,7 +7,7 @@ import { getLanguage, textDirection, type Language } from "@/lib/languages";
 import { formatClock } from "@/lib/log-format";
 import {
   getMeeting,
-  getMeetingLangs,
+  getMeetingActiveLangs,
   getPageByToken,
   getRecentCombined,
   listLanguages,
@@ -28,7 +28,7 @@ export async function GET(request: Request, { params }: Params) {
   const registered = listLanguages().map((row) => row.code);
   const lang = toAdminLang((await cookies()).get(ADMIN_LANG_COOKIE)?.value, registered);
   const strings = getStrings(lang);
-  const languages = getMeetingLangs(meeting.id).map((code) => getLanguage(code, lang));
+  const languages = getMeetingActiveLangs(meeting.id).map((code) => getLanguage(code, lang));
   const history = getRecentCombined(meeting.id);
   const afterParam = new URL(request.url).searchParams.get("after");
   const after = Number(afterParam);
@@ -108,6 +108,7 @@ function compact(entry: CombinedEntry) {
     entry.messageId,
     entry.sourceLang,
     entry.sourceBody,
+    entry.speakerName,
     entry.createdAt,
     entry.translations.map((row) => [row.lang, row.body, row.status]),
   ];
@@ -129,7 +130,7 @@ function renderEntry(entry: CombinedEntry, languages: Language[], strings: UiStr
     })
     .join("");
 
-  return `<section class="entry" data-id="${entry.messageId}"><div class="source"><time>${formatClock(entry.createdAt)}</time><p lang="${html(entry.sourceLang)}" dir="${textDirection(entry.sourceLang)}">${html(entry.sourceBody)}</p></div>${targets ? `<div class="translations">${targets}</div>` : ""}</section>`;
+  return `<section class="entry" data-id="${entry.messageId}"><div class="source"><time>${formatClock(entry.createdAt)}</time><p lang="${html(entry.sourceLang)}" dir="${textDirection(entry.sourceLang)}">${html(`${entry.speakerName ? `(${entry.speakerName}) ` : ""}${entry.sourceBody}`)}</p></div>${targets ? `<div class="translations">${targets}</div>` : ""}</section>`;
 }
 
 function html(value: string): string {
@@ -161,9 +162,9 @@ const CLIENT = String.raw`
 const root=document.documentElement,scroll=document.getElementById('scroll'),entriesNode=document.getElementById('entries'),empty=document.getElementById('empty'),connection=document.getElementById('connection'),closed=document.getElementById('closed'),latest=document.getElementById('latest'),theme=document.getElementById('theme'),size=document.getElementById('size'),language=document.getElementById('language');
 const entries=new Map(),sizes=['sm','md','lg','xl','xxl'],labels=['80%','100%','125%','150%','200%'];let stick=true,pending=0,retry=0,timer,ended=DATA.closed,maxId=Math.max(0,...DATA.ids);document.querySelectorAll('.entry').forEach(row=>entries.set(Number(row.dataset.id),row));
 function clock(at){const d=new Date(at),p=n=>String(n).padStart(2,'0');return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())}function lang(code){return DATA.languages.find(item=>item[0]===code)}function follow(){scroll.scrollTop=scroll.scrollHeight}function followSoon(){requestAnimationFrame(()=>requestAnimationFrame(follow))}function refollow(){stick=true;pending=0;latest.hidden=true;followSoon()}
-function addSource(message){if(entries.has(message.messageId))return entries.get(message.messageId);empty.hidden=true;const row=document.createElement('section');row.className='entry';row.dataset.id=message.messageId;const source=document.createElement('div');source.className='source';const time=document.createElement('time');time.textContent=clock(message.createdAt);const body=document.createElement('p');body.lang=message.lang;body.dir=(lang(message.lang)||[])[2]||'ltr';body.textContent=message.body;source.append(time,body);row.append(source);const targets=DATA.languages.filter(item=>item[0]!==message.lang);if(targets.length){const grid=document.createElement('div');grid.className='translations';for(const item of targets){const target=document.createElement('div');target.className='translation';target.dataset.lang=item[0];target.lang=item[0];target.dir=item[2];const label=document.createElement('div');label.className='label';label.textContent=item[1];const text=document.createElement('p');text.className='waiting';text.textContent=DATA.strings.waiting;target.append(label,text);grid.append(target)}row.append(grid)}entriesNode.append(row);entries.set(message.messageId,row);maxId=Math.max(maxId,message.messageId);if(stick)followSoon();else{pending++;latest.hidden=false;latest.lastElementChild.textContent=pending}return row}
+function addSource(message){if(entries.has(message.messageId))return entries.get(message.messageId);empty.hidden=true;const row=document.createElement('section');row.className='entry';row.dataset.id=message.messageId;const source=document.createElement('div');source.className='source';const time=document.createElement('time');time.textContent=clock(message.createdAt);const body=document.createElement('p');body.lang=message.lang;body.dir=(lang(message.lang)||[])[2]||'ltr';body.textContent=(message.speakerName?'('+message.speakerName+') ':'')+message.body;source.append(time,body);row.append(source);const targets=DATA.languages.filter(item=>item[0]!==message.lang);if(targets.length){const grid=document.createElement('div');grid.className='translations';for(const item of targets){const target=document.createElement('div');target.className='translation';target.dataset.lang=item[0];target.lang=item[0];target.dir=item[2];const label=document.createElement('div');label.className='label';label.textContent=item[1];const text=document.createElement('p');text.className='waiting';text.textContent=DATA.strings.waiting;target.append(label,text);grid.append(target)}row.append(grid)}entriesNode.append(row);entries.set(message.messageId,row);maxId=Math.max(maxId,message.messageId);if(stick)followSoon();else{pending++;latest.hidden=false;latest.lastElementChild.textContent=pending}return row}
 function addTranslation(message){const row=entries.get(message.messageId);if(!row)return;const target=[...row.querySelectorAll('.translation')].find(item=>item.dataset.lang===message.lang);if(!target)return;const body=target.querySelector('p'),ok=message.status==='ok';body.className=ok?'':'error';body.textContent=ok?message.body:DATA.strings.failed;if(stick)followSoon()}
-function merge(entry){addSource({messageId:entry[0],lang:entry[1],body:entry[2],createdAt:entry[3]});for(const item of entry[4])addTranslation({messageId:entry[0],lang:item[0],body:item[1],status:item[2]})}
+function merge(entry){addSource({messageId:entry[0],lang:entry[1],body:entry[2],speakerName:entry[3],createdAt:entry[4]});for(const item of entry[5])addTranslation({messageId:entry[0],lang:item[0],body:item[1],status:item[2]})}
 async function sync(){try{const response=await fetch(location.pathname+'?after='+maxId,{cache:'no-store'}),data=await response.json();for(const entry of data.entries)merge(entry);if(data.closed){ended=true;closed.textContent=' · '+DATA.strings.closed}}catch(e){}}
 function connect(){connection.textContent=DATA.strings.reconnecting;const scheme=location.protocol==='https:'?'wss':'ws',socket=new WebSocket(scheme+'://'+location.host+'/ws?token='+encodeURIComponent(DATA.token));socket.onopen=async()=>{retry=0;connection.textContent=DATA.strings.connected;await sync();if(ended)socket.close()};socket.onmessage=event=>{try{const message=JSON.parse(event.data);if(message.t==='message')addSource(message);else if(message.t==='translation')addTranslation(message);else if(message.t==='meeting-closed'){ended=true;closed.textContent=' · '+DATA.strings.closed;socket.close()}}catch(e){}};socket.onclose=()=>{connection.textContent=DATA.strings.disconnected;if(!ended)timer=setTimeout(connect,Math.min(10000,500*2**retry++))};socket.onerror=()=>socket.close()}
 scroll.addEventListener('scroll',()=>{stick=scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<=80;if(stick){pending=0;latest.hidden=true}},{passive:true});window.ResizeObserver&&new ResizeObserver(()=>{if(stick)followSoon()}).observe(entriesNode);addEventListener('resize',refollow,{passive:true});window.visualViewport?.addEventListener('resize',refollow,{passive:true});latest.onclick=()=>{stick=true;pending=0;latest.hidden=true;follow()};
