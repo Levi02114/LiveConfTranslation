@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-import { getMeeting, getPageByToken, isPageEnabled } from "@/lib/repo";
+import { detectTextLanguage } from "@/lib/detect-text-language";
+import {
+  getMeeting,
+  getMeetingLanguageConfigs,
+  getPageByToken,
+  isPageEnabled,
+} from "@/lib/repo";
 import { acceptMessage, translateMessage } from "@/lib/pipeline";
 
 type Params = { params: Promise<{ token: string }> };
@@ -25,10 +31,15 @@ export async function POST(request: Request, { params }: Params) {
 
   const page = getPageByToken(token);
   // 입력 페이지에만 언어가 있다. 통합 보기·출력 페이지로는 글을 보낼 수 없다.
-  if (!page || page.kind !== "input" || !page.lang || !isPageEnabled(page)) {
+  if (
+    !page ||
+    (page.kind !== "input" && page.kind !== "combined-input") ||
+    !page.lang ||
+    !isPageEnabled(page)
+  ) {
     return Response.json({ error: "입력 페이지를 찾을 수 없습니다" }, { status: 404 });
   }
-  const pageLang = page.lang;
+  const fallbackLang = page.lang;
 
   const meeting = getMeeting(page.meetingId);
   if (!meeting) {
@@ -50,10 +61,21 @@ export async function POST(request: Request, { params }: Params) {
     return Response.json({ error: "닉네임을 입력해 주세요" }, { status: 400 });
   }
 
+  const detected =
+    page.kind === "combined-input"
+      ? await detectTextLanguage(
+          parsed.data.body,
+          getMeetingLanguageConfigs(meeting.id)
+            .filter((row) => row.inputEnabled)
+            .map((row) => row.lang),
+          fallbackLang,
+        )
+      : { lang: fallbackLang, usedFallback: false };
+
   const message = acceptMessage({
     meeting,
     pageId: page.id,
-    lang: pageLang,
+    lang: detected.lang,
     body: parsed.data.body,
     speakerName: meeting.speakerLabels ? parsed.data.speakerName : null,
   });
@@ -61,7 +83,7 @@ export async function POST(request: Request, { params }: Params) {
   void translateMessage({
     meeting,
     messageId: message.id,
-    sourceLang: pageLang,
+    sourceLang: detected.lang,
     body: message.body,
     speakerName: message.speakerName,
   }).catch((error: unknown) => {
@@ -70,5 +92,5 @@ export async function POST(request: Request, { params }: Params) {
     console.error("[translate] 처리되지 않은 오류", error);
   });
 
-  return Response.json({ message }, { status: 201 });
+  return Response.json({ message, usedFallback: detected.usedFallback }, { status: 201 });
 }

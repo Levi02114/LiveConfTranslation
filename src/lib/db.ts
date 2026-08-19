@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS meeting_langs (
 CREATE TABLE IF NOT EXISTS pages (
   id          TEXT PRIMARY KEY,
   meeting_id  TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
-  kind        TEXT NOT NULL,                  -- 'input' | 'output' | 'combined' | 'capture'
+  kind        TEXT NOT NULL,                  -- 'input' | 'output' | 'combined' | 'combined-input' | 'capture'
   lang        TEXT NOT NULL,
   token       TEXT NOT NULL UNIQUE,           -- URL 에 노출되는 접근 토큰
   created_at  INTEGER NOT NULL,

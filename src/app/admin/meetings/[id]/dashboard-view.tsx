@@ -200,6 +200,7 @@ export function DashboardView({
     pages.filter((page) => page.kind === "output" && page.lang).map((page) => [page.lang, page]),
   );
   const combined = pages.find((page) => page.kind === "combined");
+  const combinedInput = pages.find((page) => page.kind === "combined-input");
   const capturePages = new Map(
     pages.filter((page) => page.kind === "capture" && page.lang).map((page) => [page.lang, page]),
   );
@@ -276,6 +277,7 @@ export function DashboardView({
         meetingId={meeting.id}
         initialLanguages={languageConfigs}
         initialSpeakerLabels={meeting.speakerLabels}
+        initialCombinedInputFallbackLang={combinedInput?.lang ?? null}
         initialPresets={presets}
         availableLanguages={displayLanguages}
         locked={configLocked}
@@ -382,6 +384,19 @@ export function DashboardView({
               </div>
             ) : null}
           </>
+        ) : null}
+        {combinedInput ? (
+          <div className="grid grid-cols-1 gap-3 border-b border-line py-4 sm:grid-cols-[110px_1fr] sm:items-center sm:gap-x-5 sm:py-3.5">
+            <div className="text-[15px]">{ui.role.combinedInput}</div>
+            <UrlCell
+              url={`${origin}/in/all/${combinedInput.token}`}
+              copied={copied?.key === "combined-input" ? copied : null}
+              onCopy={(url) => void copy("combined-input", url)}
+              className={copyBtn}
+              strings={strings.dashboard}
+              onQr={(url) => void showQr("combined-input", url)}
+            />
+          </div>
         ) : null}
       </section>
 

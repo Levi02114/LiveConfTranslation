@@ -19,7 +19,7 @@ export type Connection = {
   clientId: string;
   meetingId: string;
   /** 이 연결이 붙은 페이지 성격. 대시보드는 회의 전체를 본다. */
-  kind: "input" | "output" | "combined" | "capture" | "dashboard";
+  kind: "input" | "output" | "combined" | "combined-input" | "capture" | "dashboard";
   /** input/output 페이지의 언어. combined·dashboard 는 없다. */
   lang: LanguageCode | null;
   name: string;
@@ -76,6 +76,7 @@ function shouldDeliver(connection: Connection, message: ServerMessage): boolean 
       return message.t === "message";
 
     case "input":
+    case "combined-input":
       // 속기사는 다른 언어 속기사의 확정 원문과 번역까지 함께 본다.
       if (message.t === "presence") return true;
       return message.t === "message" || message.t === "translation";
@@ -97,13 +98,15 @@ export function leave(connection: Connection): void {
 /** 같은 세션의 다른 입력자가 쓰지 않는 닉네임이면 이 연결에 예약한다. */
 export function claimInputName(connection: Connection, name: string): boolean {
   const candidate = name.trim();
-  if (!candidate || connection.kind !== "input") return false;
+  if (!candidate || (connection.kind !== "input" && connection.kind !== "combined-input")) {
+    return false;
+  }
 
   const normalized = candidate.normalize("NFKC").toLocaleLowerCase();
   const duplicate = [...(state().rooms.get(connection.meetingId) ?? [])].some(
     (peer) =>
       peer !== connection &&
-      peer.kind === "input" &&
+      (peer.kind === "input" || peer.kind === "combined-input") &&
       peer.nameClaimed &&
       peer.name.normalize("NFKC").toLocaleLowerCase() === normalized,
   );
@@ -127,9 +130,13 @@ export function publish(meetingId: string, message: ServerMessage): void {
 }
 
 /** 같은 입력 페이지(회의 + 언어)에 들어와 있는 연결들 */
-function inputPeers(meetingId: string, lang: LanguageCode): Connection[] {
+function inputPeers(
+  meetingId: string,
+  lang: LanguageCode,
+  kind: "input" | "combined-input" = "input",
+): Connection[] {
   return [...(state().rooms.get(meetingId) ?? [])].filter(
-    (connection) => connection.kind === "input" && connection.lang === lang,
+    (connection) => connection.kind === kind && connection.lang === lang,
   );
 }
 
@@ -138,8 +145,12 @@ function inputPeers(meetingId: string, lang: LanguageCode): Connection[] {
  *
  * 자기 자신은 목록에서 뺀다 — 화면에 "나"를 남의 초안처럼 다시 보여 줄 이유가 없다.
  */
-export function broadcastPresence(meetingId: string, lang: LanguageCode): void {
-  const peers = inputPeers(meetingId, lang);
+export function broadcastPresence(
+  meetingId: string,
+  lang: LanguageCode,
+  kind: "input" | "combined-input" = "input",
+): void {
+  const peers = inputPeers(meetingId, lang, kind);
 
   for (const connection of peers) {
     const others: Peer[] = peers
@@ -168,10 +179,15 @@ export function countInputPeers(meetingId: string, lang: LanguageCode): number {
 export function disconnectDisabledPages(
   meetingId: string,
   configs: readonly MeetingLanguageConfig[],
+  combinedInputLang: LanguageCode | null = null,
 ): void {
   const byLanguage = new Map(configs.map((config) => [config.lang, config]));
   for (const connection of state().rooms.get(meetingId) ?? []) {
     if (!connection.lang || connection.kind === "dashboard" || connection.kind === "combined") {
+      continue;
+    }
+    if (connection.kind === "combined-input") {
+      if (connection.lang !== combinedInputLang) connection.close?.();
       continue;
     }
     const config = byLanguage.get(connection.lang);

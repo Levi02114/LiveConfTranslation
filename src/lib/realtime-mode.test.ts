@@ -40,18 +40,25 @@ test("세션은 언어별 입력 페이지를 만들고 음성 전사를 멱등 
         { lang: "vi", inputEnabled: true, outputEnabled: true },
       ],
       true,
+      "ko",
     );
     assert.equal(configured.ok, true);
     assert.deepEqual(repo.getMeetingActiveLangs(meeting.id), ["ko", "vi"]);
+    const combinedInput = repo.getMeetingPages(meeting.id).find(
+      (page) => page.kind === "combined-input",
+    );
+    assert.equal(combinedInput?.lang, "ko");
 
     const preset = repo.upsertSessionPreset({
       name: "통역 행사",
       config: {
         languages: repo.getMeetingLanguageConfigs(meeting.id),
         speakerLabels: true,
+        combinedInputFallbackLang: "ko",
       },
     });
     assert.equal(repo.listSessionPresets()[0]?.name, "통역 행사");
+    assert.equal(repo.listSessionPresets()[0]?.combinedInputFallbackLang, "ko");
 
     const first = repo.insertMessageOnce({
       meetingId: meeting.id,
@@ -92,6 +99,12 @@ test("세션은 언어별 입력 페이지를 만들고 음성 전사를 멱등 
     leases.releaseCapture(input.id, active.leaseId);
     assert.ok(leases.claimCapture(meeting.id, input.id, "second-device"));
     leases.releaseMeetingCaptures(meeting.id);
+
+    const exclusive = leases.claimExclusiveCapture(meeting.id, input.id, "first-device");
+    assert.ok(exclusive);
+    assert.equal(leases.claimExclusiveCapture(meeting.id, input.id, "second-device"), null);
+    leases.releaseCapture(input.id, exclusive.leaseId);
+    assert.ok(leases.claimExclusiveCapture(meeting.id, input.id, "second-device"));
   } finally {
     delete process.env.DATABASE_PATH;
     rmSync(directory, { recursive: true, force: true });

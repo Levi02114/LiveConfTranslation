@@ -1,5 +1,3 @@
-import "server-only";
-
 import { decryptSecret } from "@/lib/crypto";
 import { getEngineSecret, getEngineSetting } from "@/lib/repo";
 import type { EngineId } from "@/lib/translate/types";

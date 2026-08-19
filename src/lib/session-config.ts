@@ -12,6 +12,7 @@ export const sessionConfigSchema = z
       )
       .min(2),
     speakerLabels: z.boolean(),
+    combinedInputFallbackLang: z.string().trim().min(1).max(35).nullable().default(null),
   })
   .superRefine((config, context) => {
     const codes = config.languages.map((row) => row.lang);
@@ -23,6 +24,14 @@ export const sessionConfigSchema = z
     }
     if (!config.languages.some((row) => row.inputEnabled)) {
       context.addIssue({ code: "custom", message: "입력 언어가 하나 이상 필요합니다" });
+    }
+    if (
+      config.combinedInputFallbackLang &&
+      !config.languages.some(
+        (row) => row.lang === config.combinedInputFallbackLang && row.inputEnabled,
+      )
+    ) {
+      context.addIssue({ code: "custom", message: "통합 입력 기본 언어가 올바르지 않습니다" });
     }
   });
 

@@ -20,7 +20,13 @@ import type { LanguageCode } from "@/lib/languages";
  */
 export type UiStrings = {
   connection: { connected: string; reconnecting: string; disconnected: string };
-  role: { input: string; output: string; combined: string; capture: string };
+  role: {
+    input: string;
+    output: string;
+    combined: string;
+    combinedInput: string;
+    capture: string;
+  };
   input: {
     placeholder: string;
     send: string;
@@ -42,6 +48,7 @@ export type UiStrings = {
     permission: string;
     lost: string;
     startFailed: string;
+    fallback: string;
   };
   status: {
     waiting: string;
@@ -75,7 +82,7 @@ export type UiStrings = {
 
 const ko: UiStrings = {
   connection: { connected: "연결됨", reconnecting: "다시 연결 중", disconnected: "연결 끊김" },
-  role: { input: "입력", output: "출력", combined: "통합 조회", capture: "음성 수집" },
+  role: { input: "입력", output: "출력", combined: "통합 조회", combinedInput: "통합 입력", capture: "음성 수집" },
   input: {
     placeholder: "세션 내용을 입력하세요",
     send: "보내기",
@@ -97,6 +104,7 @@ const ko: UiStrings = {
     permission: "마이크를 사용할 수 없습니다",
     lost: "음성 수집 연결이 끊겼습니다",
     startFailed: "전사를 시작하지 못했습니다",
+    fallback: "언어를 확인하지 못해 {language}(으)로 처리했습니다",
   },
   status: {
     waiting: "번역을 기다리는 중",
@@ -138,7 +146,7 @@ const vi: UiStrings = {
     reconnecting: "Đang kết nối lại",
     disconnected: "Mất kết nối",
   },
-  role: { input: "Nhập liệu", output: "Bản dịch", combined: "Xem tổng hợp", capture: "Thu âm" },
+  role: { input: "Nhập liệu", output: "Bản dịch", combined: "Xem tổng hợp", combinedInput: "Nhập liệu tổng hợp", capture: "Thu âm" },
   input: {
     placeholder: "Nhập nội dung phiên",
     send: "Gửi",
@@ -160,6 +168,7 @@ const vi: UiStrings = {
     permission: "Không thể sử dụng micrô",
     lost: "Kết nối thu âm đã bị ngắt",
     startFailed: "Không thể bắt đầu phiên âm",
+    fallback: "Không xác định được ngôn ngữ nên đã xử lý bằng {language}",
   },
   status: {
     waiting: "Đang chờ bản dịch",
@@ -205,7 +214,7 @@ const th: UiStrings = {
     reconnecting: "กำลังเชื่อมต่อใหม่",
     disconnected: "การเชื่อมต่อขาด",
   },
-  role: { input: "ป้อนข้อมูล", output: "คำแปล", combined: "มุมมองรวม", capture: "รับเสียง" },
+  role: { input: "ป้อนข้อมูล", output: "คำแปล", combined: "มุมมองรวม", combinedInput: "ป้อนข้อมูลรวม", capture: "รับเสียง" },
   input: {
     placeholder: "พิมพ์เนื้อหาเซสชัน",
     send: "ส่ง",
@@ -227,6 +236,7 @@ const th: UiStrings = {
     permission: "ไม่สามารถใช้ไมโครโฟนได้",
     lost: "การเชื่อมต่อรับเสียงถูกตัด",
     startFailed: "ไม่สามารถเริ่มการถอดเสียงได้",
+    fallback: "ไม่สามารถระบุภาษาได้ จึงประมวลผลเป็น {language}",
   },
   status: {
     waiting: "กำลังรอคำแปล",
@@ -268,7 +278,7 @@ const si: UiStrings = {
     reconnecting: "නැවත සම්බන්ධ වෙමින්",
     disconnected: "සම්බන්ධතාව බිඳී ඇත",
   },
-  role: { input: "ඇතුළත් කිරීම", output: "පරිවර්තනය", combined: "ඒකාබද්ධ දසුන", capture: "හඬ ග්‍රහණය" },
+  role: { input: "ඇතුළත් කිරීම", output: "පරිවර්තනය", combined: "ඒකාබද්ධ දසුන", combinedInput: "ඒකාබද්ධ ඇතුළත් කිරීම", capture: "හඬ ග්‍රහණය" },
   input: {
     placeholder: "සැසි අන්තර්ගතය ටයිප් කරන්න",
     send: "යවන්න",
@@ -290,6 +300,7 @@ const si: UiStrings = {
     permission: "මයික්‍රෆෝනය භාවිත කළ නොහැක",
     lost: "හඬ ග්‍රහණ සම්බන්ධතාව බිඳී ඇත",
     startFailed: "පිටපත් කිරීම ආරම්භ කළ නොහැකි විය",
+    fallback: "භාෂාව හඳුනාගත නොහැකි නිසා {language} ලෙස සැකසීය",
   },
   status: {
     waiting: "පරිවර්තනය එනතුරු",
@@ -417,6 +428,7 @@ export type AdminStrings = {
     input: string;
     output: string;
     capture: string;
+    combinedInput: string;
     live: string;
     source: string;
     done: string;
@@ -445,6 +457,9 @@ export type AdminStrings = {
     output: string;
     nickname: string;
     nicknameNote: string;
+    combinedInput: string;
+    combinedInputNote: string;
+    combinedInputFallback: string;
     save: string;
     saving: string;
     saved: string;
@@ -605,6 +620,7 @@ const adminKo: AdminStrings = {
     input: "입력",
     output: "출력",
     capture: "음성 수집",
+    combinedInput: "통합 입력",
     live: "실시간 번역",
     source: "원문",
     done: "완료",
@@ -633,6 +649,9 @@ const adminKo: AdminStrings = {
     output: "출력",
     nickname: "닉네임 사용",
     nicknameNote: "입력자가 이름을 정하고 모든 원문·번역·로그에 화자를 표시합니다.",
+    combinedInput: "통합 입력 사용",
+    combinedInputNote: "한 페이지에서 타자 또는 마이크로 여러 입력 언어를 자동 감지합니다.",
+    combinedInputFallback: "언어 감지 실패 시 기본 언어",
     save: "설정 저장",
     saving: "저장 중",
     saved: "설정이 저장되었습니다",
@@ -799,6 +818,7 @@ const adminVi: AdminStrings = {
     input: "Nhập liệu",
     output: "Bản dịch",
     capture: "Thu âm",
+    combinedInput: "Nhập liệu tổng hợp",
     live: "Dịch trực tiếp",
     source: "Nguồn",
     done: "Hoàn tất",
@@ -827,6 +847,9 @@ const adminVi: AdminStrings = {
     output: "Bản dịch",
     nickname: "Dùng tên hiển thị",
     nicknameNote: "Người nhập đặt tên và tên người nói xuất hiện trong bản gốc, bản dịch và nhật ký.",
+    combinedInput: "Dùng trang nhập liệu tổng hợp",
+    combinedInputNote: "Tự động nhận diện nhiều ngôn ngữ nhập bằng bàn phím hoặc micrô trên một trang.",
+    combinedInputFallback: "Ngôn ngữ mặc định khi không nhận diện được",
     save: "Lưu cài đặt",
     saving: "Đang lưu",
     saved: "Đã lưu cài đặt",
@@ -993,6 +1016,7 @@ const adminTh: AdminStrings = {
     input: "ป้อนข้อมูล",
     output: "คำแปล",
     capture: "รับเสียง",
+    combinedInput: "ป้อนข้อมูลรวม",
     live: "การแปลแบบเรียลไทม์",
     source: "ต้นฉบับ",
     done: "เสร็จ",
@@ -1021,6 +1045,9 @@ const adminTh: AdminStrings = {
     output: "คำแปล",
     nickname: "ใช้ชื่อที่แสดง",
     nicknameNote: "ผู้ป้อนข้อมูลกำหนดชื่อ และแสดงผู้พูดในต้นฉบับ คำแปล และบันทึกทั้งหมด",
+    combinedInput: "ใช้หน้าป้อนข้อมูลรวม",
+    combinedInputNote: "ตรวจจับหลายภาษาจากการพิมพ์หรือไมโครโฟนโดยอัตโนมัติในหน้าเดียว",
+    combinedInputFallback: "ภาษาเริ่มต้นเมื่อตรวจจับไม่ได้",
     save: "บันทึกการตั้งค่า",
     saving: "กำลังบันทึก",
     saved: "บันทึกการตั้งค่าแล้ว",
@@ -1187,6 +1214,7 @@ const adminSi: AdminStrings = {
     input: "ඇතුළත් කිරීම",
     output: "පරිවර්තනය",
     capture: "හඬ ග්‍රහණය",
+    combinedInput: "ඒකාබද්ධ ඇතුළත් කිරීම",
     live: "තත්‍ය කාලීන පරිවර්තනය",
     source: "මූලාශ්‍රය",
     done: "සම්පූර්ණයි",
@@ -1215,6 +1243,9 @@ const adminSi: AdminStrings = {
     output: "පරිවර්තනය",
     nickname: "පෙන්වන නම භාවිත කරන්න",
     nicknameNote: "ඇතුළත් කරන්නා නමක් තෝරන අතර සියලු මූලාශ්‍ර, පරිවර්තන සහ ලොග්වල කථිකයා පෙන්වයි.",
+    combinedInput: "ඒකාබද්ධ ඇතුළත් කිරීම භාවිත කරන්න",
+    combinedInputNote: "එක් පිටුවක යතුරු ලියනයෙන් හෝ මයික්‍රෆෝනයෙන් භාෂා කිහිපයක් ස්වයංක්‍රීයව හඳුනා ගනී.",
+    combinedInputFallback: "භාෂාව හඳුනාගත නොහැකි විට පෙරනිමි භාෂාව",
     save: "සැකසුම් සුරකින්න",
     saving: "සුරකිමින්",
     saved: "සැකසුම් සුරැකිණි",

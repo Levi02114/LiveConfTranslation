@@ -40,6 +40,24 @@ export function claimCapture(meetingId: string, pageId: string, clientId: string
   return lease;
 }
 
+/** 통합 입력은 언어 감지 순서를 보존하려고 페이지당 마이크 하나만 허용한다. */
+export function claimExclusiveCapture(
+  meetingId: string,
+  pageId: string,
+  clientId: string,
+): Lease | null {
+  const now = Date.now();
+  for (const [leaseId, lease] of state().leases) {
+    if (lease.expiresAt <= now) {
+      state().leases.delete(leaseId);
+      state().clients.delete(clientKey(lease.pageId, lease.clientId));
+      continue;
+    }
+    if (lease.pageId === pageId && lease.clientId !== clientId) return null;
+  }
+  return claimCapture(meetingId, pageId, clientId);
+}
+
 export function renewCapture(pageId: string, leaseId: string): Lease | null {
   const current = state().leases.get(leaseId);
   if (!current || current.pageId !== pageId || current.expiresAt <= Date.now()) return null;

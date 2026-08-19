@@ -20,6 +20,7 @@ export function SessionSettings({
   meetingId,
   initialLanguages,
   initialSpeakerLabels,
+  initialCombinedInputFallbackLang,
   initialPresets,
   availableLanguages,
   locked,
@@ -28,6 +29,7 @@ export function SessionSettings({
   meetingId: string;
   initialLanguages: MeetingLanguageConfig[];
   initialSpeakerLabels: boolean;
+  initialCombinedInputFallbackLang: LanguageCode | null;
   initialPresets: SessionPreset[];
   availableLanguages: Language[];
   locked: boolean;
@@ -37,11 +39,17 @@ export function SessionSettings({
   const [navigating, startNavigation] = useTransition();
   const [languages, setLanguages] = useState(initialLanguages);
   const [speakerLabels, setSpeakerLabels] = useState(initialSpeakerLabels);
+  const [combinedInputFallbackLang, setCombinedInputFallbackLang] = useState(
+    initialCombinedInputFallbackLang,
+  );
   const [presets, setPresets] = useState(initialPresets);
   const [selectedPreset, setSelectedPreset] = useState(() =>
+    initialCombinedInputFallbackLang === null &&
     initialLanguages.every((row) => row.inputEnabled && !row.outputEnabled) && initialSpeakerLabels
       ? MEETING_PRESET
-      : initialLanguages.every((row) => row.inputEnabled && row.outputEnabled) && !initialSpeakerLabels
+      : initialCombinedInputFallbackLang === null &&
+          initialLanguages.every((row) => row.inputEnabled && row.outputEnabled) &&
+          !initialSpeakerLabels
         ? ASSEMBLY_PRESET
         : "",
   );
@@ -69,6 +77,7 @@ export function SessionSettings({
         rows.map((row) => ({ ...row, inputEnabled: true, outputEnabled: false })),
       );
       setSpeakerLabels(true);
+      setCombinedInputFallbackLang(null);
       setPresetName("");
       return;
     }
@@ -77,12 +86,14 @@ export function SessionSettings({
         rows.map((row) => ({ ...row, inputEnabled: true, outputEnabled: true })),
       );
       setSpeakerLabels(false);
+      setCombinedInputFallbackLang(null);
       setPresetName("");
       return;
     }
     if (selectedCustom) {
       setLanguages(selectedCustom.languages.filter((row) => languageByCode.has(row.lang)));
       setSpeakerLabels(selectedCustom.speakerLabels);
+      setCombinedInputFallbackLang(selectedCustom.combinedInputFallbackLang);
       setPresetName(selectedCustom.name);
     }
   };
@@ -100,7 +111,11 @@ export function SessionSettings({
     return true;
   };
 
-  const config = (): SessionPresetConfig => ({ languages, speakerLabels });
+  const config = (): SessionPresetConfig => ({
+    languages,
+    speakerLabels,
+    combinedInputFallbackLang,
+  });
 
   const saveSettings = async () => {
     if (disabled || !validate()) return;
@@ -187,9 +202,19 @@ export function SessionSettings({
     code: LanguageCode,
     field: "inputEnabled" | "outputEnabled",
   ) => {
-    setLanguages((rows) =>
-      rows.map((row) => (row.lang === code ? { ...row, [field]: !row[field] } : row)),
-    );
+    setLanguages((rows) => {
+      const next = rows.map((row) =>
+        row.lang === code ? { ...row, [field]: !row[field] } : row,
+      );
+      if (
+        field === "inputEnabled" &&
+        combinedInputFallbackLang === code &&
+        !next.find((row) => row.lang === code)?.inputEnabled
+      ) {
+        setCombinedInputFallbackLang(null);
+      }
+      return next;
+    });
   };
 
   return (
@@ -269,7 +294,10 @@ export function SessionSettings({
               </label>
               <button
                 type="button"
-                onClick={() => setLanguages((rows) => rows.filter((item) => item.lang !== row.lang))}
+                onClick={() => {
+                  setLanguages((rows) => rows.filter((item) => item.lang !== row.lang));
+                  if (combinedInputFallbackLang === row.lang) setCombinedInputFallbackLang(null);
+                }}
                 disabled={disabled}
                 title={strings.languages.remove}
                 aria-label={`${strings.languages.remove}: ${languageByCode.get(row.lang)?.label ?? row.lang}`}
@@ -330,6 +358,47 @@ export function SessionSettings({
           <span className="mt-1 block leading-5 text-muted">{strings.settings.nicknameNote}</span>
         </span>
       </label>
+
+      <div className="mt-5 border-t border-line pt-5">
+        <label className="flex items-start gap-2.5 font-mono text-[11px]">
+          <input
+            type="checkbox"
+            checked={combinedInputFallbackLang !== null}
+            onChange={(event) =>
+              setCombinedInputFallbackLang(
+                event.target.checked
+                  ? (languages.find((row) => row.inputEnabled)?.lang ?? null)
+                  : null,
+              )
+            }
+            disabled={disabled}
+            className="mt-0.5 h-[15px] w-[15px] accent-[var(--fg)]"
+          />
+          <span>
+            <span className="block text-fg">{strings.settings.combinedInput}</span>
+            <span className="mt-1 block leading-5 text-muted">
+              {strings.settings.combinedInputNote}
+            </span>
+          </span>
+        </label>
+        {combinedInputFallbackLang !== null ? (
+          <label className="mt-3 block max-w-[320px] font-mono text-[11px] text-muted">
+            <span className="mb-1.5 block">{strings.settings.combinedInputFallback}</span>
+            <select
+              value={combinedInputFallbackLang}
+              onChange={(event) => setCombinedInputFallbackLang(event.target.value)}
+              disabled={disabled}
+              className="h-10 w-full border border-line bg-bg px-2.5 text-fg outline-none disabled:opacity-50"
+            >
+              {languages.filter((row) => row.inputEnabled).map((row) => (
+                <option key={row.lang} value={row.lang}>
+                  {languageByCode.get(row.lang)?.label ?? row.lang}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
 
       <div className="mt-5 flex flex-wrap items-end gap-2.5">
         <button

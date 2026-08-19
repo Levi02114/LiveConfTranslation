@@ -65,6 +65,14 @@ export function openaiBaseUrl(): string {
   return (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
 }
 
+/** 커스텀 서버가 OpenAI Realtime WebSocket에 연결할 주소. */
+export function openaiRealtimeWebSocketUrl(model: string): string {
+  const url = new URL(`${openaiBaseUrl()}/realtime`);
+  url.protocol = url.protocol === "http:" ? "ws:" : "wss:";
+  url.searchParams.set("model", model);
+  return url.toString();
+}
+
 /** 관리자 세션 유효 기간(초). 기본 12시간 — 하루짜리 행사를 덮는다. */
 export function sessionTtlSeconds(): number {
   const raw = process.env.SESSION_TTL_SECONDS;

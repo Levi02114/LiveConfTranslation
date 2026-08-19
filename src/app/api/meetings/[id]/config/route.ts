@@ -22,13 +22,14 @@ export async function PUT(request: Request, { params }: Params) {
     id,
     parsed.data.languages.map((row) => ({ ...row, lang: row.lang })),
     parsed.data.speakerLabels,
+    parsed.data.combinedInputFallbackLang,
   );
   if (!result.ok) {
     const status = result.reason === "not-found" ? 404 : 409;
     return Response.json({ error: result.reason }, { status });
   }
 
-  disconnectDisabledPages(id, parsed.data.languages);
+  disconnectDisabledPages(id, parsed.data.languages, parsed.data.combinedInputFallbackLang);
   releaseMeetingCaptures(id);
 
   revalidatePath("/admin");

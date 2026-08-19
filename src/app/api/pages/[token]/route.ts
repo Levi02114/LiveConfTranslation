@@ -58,7 +58,10 @@ export async function GET(_request: Request, { params }: Params) {
     history:
       page.kind === "output" && page.lang
         ? getRecentOutput(meeting.id, page.lang)
-        : page.kind === "combined" || page.kind === "input" || page.kind === "capture"
+        : page.kind === "combined" ||
+            page.kind === "combined-input" ||
+            page.kind === "input" ||
+            page.kind === "capture"
           ? getRecentCombined(meeting.id)
           : [],
   });

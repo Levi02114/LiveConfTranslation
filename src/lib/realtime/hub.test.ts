@@ -145,3 +145,43 @@ test("같은 세션에서는 언어가 달라도 닉네임을 중복 등록할 �
     leave(second);
   }
 });
+
+test("통합 입력도 전체 원문·번역을 받고 일반 입력과 닉네임을 공유한다", () => {
+  const received: ServerMessage[] = [];
+  const combined: Connection = {
+    clientId: "combined",
+    meetingId: "combined-input-meeting",
+    kind: "combined-input",
+    lang: "ko",
+    name: "#1",
+    nameClaimed: false,
+    draft: "",
+    send: (message) => received.push(message),
+  };
+  const regular: Connection = {
+    ...combined,
+    clientId: "regular",
+    kind: "input",
+    lang: "vi",
+    send: () => undefined,
+  };
+
+  join(combined);
+  join(regular);
+  try {
+    assert.equal(claimInputName(regular, "Levi"), true);
+    assert.equal(claimInputName(combined, "levi"), false);
+    publish(combined.meetingId, {
+      t: "message",
+      messageId: 9,
+      lang: "vi",
+      body: "Xin chào",
+      speakerName: "Levi",
+      createdAt: 1,
+    });
+    assert.equal(received.at(-1)?.t, "message");
+  } finally {
+    leave(combined);
+    leave(regular);
+  }
+});

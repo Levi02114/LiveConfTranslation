@@ -26,7 +26,7 @@ import type { EngineId } from "@/lib/translate/types";
 
 export type MeetingStatus = "open" | "closed";
 export type InputMode = "human" | "realtime";
-export type PageKind = "input" | "output" | "combined" | "capture";
+export type PageKind = "input" | "output" | "combined" | "combined-input" | "capture";
 
 /**
  * 통합 보기 페이지는 특정 언어에 속하지 않는다.
@@ -53,7 +53,7 @@ export type Page = {
   id: string;
   meetingId: string;
   kind: PageKind;
-  /** 통합 보기 페이지는 `null` */
+  /** 통합 보기 페이지는 `null`, 통합 입력은 감지 실패 기본 언어 */
   lang: LanguageCode | null;
   token: string;
   createdAt: number;
@@ -78,6 +78,8 @@ export type MeetingLanguageConfig = {
 export type SessionPresetConfig = {
   languages: MeetingLanguageConfig[];
   speakerLabels: boolean;
+  /** `null` 이면 통합 입력을 쓰지 않고, 값이 있으면 감지 실패 기본 언어다. */
+  combinedInputFallbackLang: LanguageCode | null;
 };
 
 export type SessionPreset = SessionPresetConfig & {
@@ -294,6 +296,7 @@ export function updateMeetingConfig(
   meetingId: string,
   languages: readonly MeetingLanguageConfig[],
   speakerLabels: boolean,
+  combinedInputFallbackLang: LanguageCode | null = null,
 ): MeetingConfigUpdateResult {
   return transaction(() => {
     const meeting = getMeeting(meetingId);
@@ -361,6 +364,28 @@ export function updateMeetingConfig(
       }
     });
 
+    const combinedInput = getMeetingPages(meetingId).find(
+      (page) => page.kind === "combined-input",
+    );
+    if (combinedInputFallbackLang) {
+      if (combinedInput) {
+        getDb()
+          .prepare(`UPDATE pages SET lang = ? WHERE id = ?`)
+          .run(combinedInputFallbackLang, combinedInput.id);
+      } else {
+        insertPage.run(
+          newId(),
+          meetingId,
+          "combined-input",
+          combinedInputFallbackLang,
+          newPageToken(),
+          now,
+        );
+      }
+    } else if (combinedInput) {
+      getDb().prepare(`DELETE FROM pages WHERE id = ?`).run(combinedInput.id);
+    }
+
     getDb()
       .prepare(`UPDATE meetings SET speaker_labels = ? WHERE id = ?`)
       .run(Number(speakerLabels), meetingId);
@@ -380,12 +405,17 @@ export function listSessionPresets(): SessionPreset[] {
   }[];
   return rows.flatMap((row) => {
     try {
-      const config = JSON.parse(row.config_json) as SessionPresetConfig;
+      const config = JSON.parse(row.config_json) as Partial<SessionPresetConfig>;
+      if (!Array.isArray(config.languages) || typeof config.speakerLabels !== "boolean") return [];
       return [{
         id: row.id,
         name: row.name,
         languages: config.languages,
         speakerLabels: config.speakerLabels,
+        combinedInputFallbackLang:
+          typeof config.combinedInputFallbackLang === "string"
+            ? config.combinedInputFallbackLang
+            : null,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       }];
@@ -438,7 +468,7 @@ export function getMeetingPages(meetingId: string): Page[] {
        LEFT JOIN meeting_langs ml
          ON ml.meeting_id = p.meeting_id AND ml.lang = p.lang
        WHERE p.meeting_id = ?
-       ORDER BY (p.kind = 'combined'), ml.position, p.kind`,
+       ORDER BY (p.kind = 'combined'), (p.kind = 'combined-input'), ml.position, p.kind`,
     )
     .all(meetingId) as unknown as PageRow[];
   return rows.map(toPage);
