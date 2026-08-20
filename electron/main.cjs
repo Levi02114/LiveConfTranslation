@@ -14,7 +14,7 @@ const {
   parseHealth,
   pickLanAddress,
 } = require("./network.cjs");
-const { applyLocalAiEnvironment, ensureLocalCertificate, isPortable, setupLocalAi, stringsFor: localAiStrings } = require("./local-ai.cjs");
+const { applyLocalAiEnvironment, ensureLocalCertificate, installLocalAi, installedLocalAi, stringsFor: localAiStrings } = require("./local-ai.cjs");
 
 const PORT = 3000;
 const LOOPBACK_ORIGIN = `http://127.0.0.1:${PORT}`;
@@ -81,35 +81,12 @@ function loadDesktopSettings() {
   const userData = app.getPath("userData");
   desktopSettingsPath = path.join(userData, "desktop-settings.json");
   mkdirSync(userData, { recursive: true });
-  if (!existsSync(desktopSettingsPath)) return;
-  desktopSettings = JSON.parse(readFileSync(desktopSettingsPath, "utf8"));
+  if (existsSync(desktopSettingsPath)) desktopSettings = JSON.parse(readFileSync(desktopSettingsPath, "utf8"));
+  const localAi = installedLocalAi(process.resourcesPath);
+  if (localAi) desktopSettings = { ...desktopSettings, localAi };
+  if (!desktopSettings) return;
   preferredShareOrigin = desktopSettings.preferredOrigin ?? null;
   applyLocalAiEnvironment(desktopSettings);
-}
-
-async function runLocalAiSetup() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  const text = localAiStrings(app);
-  const health = await probeServer();
-  if (health.state === "ours" && health.openMeetings > 0) {
-    await dialog.showMessageBox(mainWindow, {
-      type: "warning",
-      message: text.running,
-      detail: text.runningDetail,
-      buttons: [text.ok],
-    });
-    return;
-  }
-  try {
-    const changed = await setupLocalAi({ app, dialog, shell, window: mainWindow, settings: desktopSettings, save: writeDesktopSettings });
-    if (changed) {
-      globalThis.__localAiRuntimes?.translation?.kill();
-      globalThis.__localAiRuntimes?.transcription?.kill();
-      await mainWindow.reload();
-    }
-  } catch (error) {
-    dialog.showErrorBox(text.failed, error instanceof Error ? error.message : String(error));
-  }
 }
 
 function writeDesktopSettings() {
@@ -121,20 +98,17 @@ function createDesktopSettings() {
   if (!app.isPackaged) return null;
   const userData = app.getPath("userData");
 
-  const created = !desktopSettings;
-  if (created) {
-    desktopSettings = {
-      adminPassword: randomBytes(9).toString("base64url"),
-      sessionSecret: randomBytes(32).toString("base64url"),
-    };
-    if (preferredShareOrigin) desktopSettings.preferredOrigin = preferredShareOrigin;
-    writeDesktopSettings();
-  }
+  desktopSettings ??= {};
+  const createdPassword = desktopSettings.adminPassword ? null : randomBytes(9).toString("base64url");
+  desktopSettings.adminPassword ||= createdPassword;
+  desktopSettings.sessionSecret ||= randomBytes(32).toString("base64url");
+  if (preferredShareOrigin) desktopSettings.preferredOrigin = preferredShareOrigin;
+  writeDesktopSettings();
 
   process.env.ADMIN_PASSWORD ||= desktopSettings.adminPassword;
   process.env.SESSION_SECRET ||= desktopSettings.sessionSecret;
   process.env.DATABASE_PATH ||= path.join(userData, "meetings.db");
-  return created ? desktopSettings.adminPassword : null;
+  return createdPassword;
 }
 
 function lanOrigin(address) {
@@ -391,7 +365,6 @@ function installApplicationMenu() {
         label: "설정",
         submenu: [
           { label: "기본 공유 주소", submenu: addressItems },
-          { label: localText.menuSetup, enabled: app.isPackaged && process.platform === "win32" && !isPortable(), click: () => void runLocalAiSetup() },
           { label: localText.caDownload, enabled: Boolean(desktopSettings?.localHttps), click: () => openInBrowser(caDownloadUrl()) },
           { type: "separator" },
           { id: "tunnel-status", label: "상태: 꺼짐", enabled: false },
@@ -511,41 +484,21 @@ async function start() {
     });
     if (result.response === 0) clipboard.writeText(generatedPassword);
 
-    if (process.platform === "win32" && !isPortable()) {
-      const text = localAiStrings(app);
-      const shortcut = await dialog.showMessageBox(mainWindow, {
-        type: "question",
-        message: text.desktopPrompt,
-        buttons: [text.noShortcut, text.createShortcut],
-        defaultId: 0,
-        cancelId: 0,
-      });
-      if (shortcut.response === 1) {
-        shell.writeShortcutLink(path.join(app.getPath("desktop"), "Live Conference Translation.lnk"), "create", {
-          target: process.execPath,
-          cwd: path.dirname(process.execPath),
-          description: "Live Conference Translation",
-        });
-      }
-    }
-  }
-
-  if (process.platform === "win32" && !isPortable() && !desktopSettings?.localAi?.enabled) {
-    const text = localAiStrings(app);
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: "question",
-      title: text.promptTitle,
-      message: text.promptMessage,
-      detail: text.promptDetail,
-      buttons: [text.install, text.later],
-      defaultId: 1,
-      cancelId: 1,
-    });
-    if (result.response === 0) await runLocalAiSetup();
   }
 }
 
-if (!app.requestSingleInstanceLock()) {
+const localAiInstallIndex = process.argv.indexOf("--install-local-ai");
+if (localAiInstallIndex >= 0) {
+  const configFile = process.argv[localAiInstallIndex + 1];
+  const errorFile = process.argv[localAiInstallIndex + 2];
+  app.whenReady()
+    .then(() => installLocalAi(configFile))
+    .then(() => app.exit(0))
+    .catch((error) => {
+      if (errorFile) writeFileSync(errorFile, error instanceof Error ? error.message : String(error));
+      app.exit(1);
+    });
+} else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {

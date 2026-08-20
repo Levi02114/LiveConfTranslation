@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { z } from "zod";
 
 import type { AdminStrings } from "@/lib/i18n-builtin";
@@ -54,7 +54,6 @@ export function SessionConfigEditor({
   const [pending, setPending] = useState<"preset" | "delete" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const pickerRef = useRef<HTMLDetailsElement>(null);
   const languageByCode = useMemo(
     () => new Map(availableLanguages.map((language) => [language.code, language])),
     [availableLanguages],
@@ -82,7 +81,6 @@ export function SessionConfigEditor({
     setPresetName(presets.find((preset) => preset.id === id)?.name ?? "");
     setNotice(null);
     setError(null);
-    if (pickerRef.current) pickerRef.current.open = false;
   };
 
   const applyPreset = () => {
@@ -171,12 +169,6 @@ export function SessionConfigEditor({
     }
   };
 
-  const selectedName = selectedPreset === MEETING_PRESET
-    ? strings.settings.meetingPreset
-    : selectedPreset === ASSEMBLY_PRESET
-      ? strings.settings.assemblyPreset
-      : selectedCustom?.name ?? "—";
-
   return (
     <section className="border-y border-line py-5">
       <div className="mb-4 font-mono text-[11px] text-muted">{strings.settings.heading}</div>
@@ -184,34 +176,29 @@ export function SessionConfigEditor({
       <div className="flex flex-wrap items-end gap-2.5">
         <label className="min-w-[180px] flex-1 font-mono text-[11px] text-muted sm:max-w-[320px]">
           <span className="mb-1.5 block">{strings.settings.preset}</span>
-          <details ref={pickerRef} className="relative">
-            <summary className="flex h-10 cursor-pointer list-none items-center justify-between border border-line bg-bg px-2.5 text-fg">
-              <span className="truncate">{selectedName}</span><span aria-hidden>⌄</span>
-            </summary>
-            <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto border border-line bg-bg p-1 text-fg">
-              {[
-                { id: "", name: "—", compatible: true },
-                { id: MEETING_PRESET, name: strings.settings.meetingPreset, compatible: true },
-                { id: ASSEMBLY_PRESET, name: strings.settings.assemblyPreset, compatible: true },
-                ...presets.map((preset) => ({
-                  id: preset.id,
-                  name: preset.name,
-                  compatible: sameLanguages(value, preset),
-                })),
-              ].map((preset) => (
-                <button
-                  key={preset.id || "none"}
-                  type="button"
-                  disabled={busy || !preset.compatible}
-                  title={preset.compatible ? preset.name : strings.settings.presetLanguageMismatch}
-                  onClick={() => choosePreset(preset.id)}
-                  className="block min-h-9 w-full cursor-pointer px-2 text-left hover:bg-fg hover:text-bg disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-bg disabled:hover:text-fg"
+          <select
+            value={selectedPreset}
+            disabled={busy}
+            onChange={(event) => choosePreset(event.target.value)}
+            className="h-10 w-full cursor-pointer border border-line bg-bg px-2.5 text-fg disabled:cursor-default disabled:opacity-30"
+          >
+            <option value="">—</option>
+            <option value={MEETING_PRESET}>{strings.settings.meetingPreset}</option>
+            <option value={ASSEMBLY_PRESET}>{strings.settings.assemblyPreset}</option>
+            {presets.map((preset) => {
+              const compatible = sameLanguages(value, preset);
+              return (
+                <option
+                  key={preset.id}
+                  value={preset.id}
+                  disabled={!compatible}
+                  title={compatible ? preset.name : strings.settings.presetLanguageMismatch}
                 >
-                  {preset.name}
-                </button>
-              ))}
-            </div>
-          </details>
+                  {preset.name}{compatible ? "" : ` — ${strings.settings.presetLanguageMismatch}`}
+                </option>
+              );
+            })}
+          </select>
         </label>
         <button
           type="button"

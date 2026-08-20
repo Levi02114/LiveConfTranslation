@@ -92,7 +92,9 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": false,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "installerLanguages": ["en_US", "ko_KR", "vi_VN", "th_TH"],
+      "include": "electron/installer.nsh"
     }
   }
 }

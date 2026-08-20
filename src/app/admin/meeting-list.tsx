@@ -96,6 +96,20 @@ export function MeetingList({
   const [meetingRows, setMeetingRows] = useState(meetings);
   // 키를 등록하면 "(키 없음)" 표시가 즉시 사라져야 한다.
   const [engines, setEngines] = useState(initialEngines);
+  const engineKeysDialog = (
+    <EngineKeysDialog
+      strings={strings.keys}
+      engines={engines.filter((item) => item.id !== "local").map((item) => ({ id: item.id, label: item.label }))}
+      initial={engineKeys}
+      onChange={(status) =>
+        setEngines((prev) =>
+          prev.map((item) =>
+            item.id === status.engine ? { ...item, configured: status.configured } : item,
+          ),
+        )
+      }
+    />
+  );
 
   // Next 16은 뒤로가기 때 이전 RSC 화면을 복원한다. 다시 보일 때 DB 목록을 합친다.
   useEffect(() => router.refresh(), [router]);
@@ -421,18 +435,7 @@ export function MeetingList({
             hidden={engine !== "openai" && fallbackEngine !== "openai"}
           />
 
-          <EngineKeysDialog
-            strings={strings.keys}
-            engines={engines.filter((item) => item.id !== "local").map((item) => ({ id: item.id, label: item.label }))}
-            initial={engineKeys}
-            onChange={(status) =>
-              setEngines((prev) =>
-                prev.map((item) =>
-                  item.id === status.engine ? { ...item, configured: status.configured } : item,
-                ),
-              )
-            }
-          />
+          {engine !== "local" ? engineKeysDialog : null}
         </div>
 
         {engine === "local" ? (

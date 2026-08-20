@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { createHash, randomBytes } = require("node:crypto");
 const { execFile } = require("node:child_process");
-const { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, statfsSync, statSync } = require("node:fs");
+const { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statfsSync, statSync, writeFileSync } = require("node:fs");
 const { get } = require("node:https");
 const os = require("node:os");
 const path = require("node:path");
@@ -59,30 +59,10 @@ const TRANSCRIPTION_MODELS = {
 };
 
 const UI = {
-  ko: {
-    installedOnly: "로컬 AI는 Windows 설치형에서만 지원합니다.", translationTitle: "로컬 번역 모델", transcriptionTitle: "로컬 음성 인식 모델",
-    recommended: "권장", modelNote: "큰 모델일수록 품질이 좋아지지만 메모리와 시작 시간이 늘어납니다.", cancel: "취소",
-    termsTitle: "모델 사용 조건", termsMessage: "TranslateGemma와 Whisper 모델을 다운로드합니다.", termsDetail: "설치 중 인터넷 연결이 필요합니다. TranslateGemma는 Gemma 사용 조건을 따릅니다. 사용 조건을 확인하고 동의한 경우에만 계속하세요.", openTerms: "사용 조건 열기", agree: "동의하고 계속",
-    modelFolder: "모델 저장 폴더", tempFolder: "임시 다운로드 폴더", noSpace: "임시 폴더의 여유 공간이 부족합니다.", need: "필요", downloadFailed: "다운로드 실패", checksumMismatch: "다운로드 파일의 SHA-256이 일치하지 않습니다", runtimeMissing: "로컬 AI 실행 파일을 찾지 못했습니다", complete: "로컬 AI 설치가 완료되었습니다.", completeDetail: "관리 페이지에서 번역 또는 음성 인식 엔진으로 Local AI를 선택할 수 있습니다.", ok: "확인", menuSetup: "로컬 AI 설치 및 모델 변경", caDownload: "휴대전화용 로컬 HTTPS 인증서 받기", running: "진행 중인 세션이 있어 로컬 AI 모델을 바꿀 수 없습니다.", runningDetail: "세션을 종료한 뒤 다시 시도해 주세요.", failed: "로컬 AI 설치 실패", promptTitle: "로컬 AI", promptMessage: "인터넷 없이 번역과 음성 인식을 사용할 모델을 설치할까요?", promptDetail: "지금 건너뛰어도 설정 메뉴에서 나중에 설치할 수 있습니다.", install: "설치", later: "나중에", desktopPrompt: "바탕 화면 바로가기를 만들까요?", createShortcut: "만들기", noShortcut: "만들지 않음",
-  },
-  vi: {
-    installedOnly: "AI cục bộ chỉ được hỗ trợ trong bản cài đặt Windows.", translationTitle: "Mô hình dịch cục bộ", transcriptionTitle: "Mô hình nhận dạng giọng nói cục bộ",
-    recommended: "Khuyên dùng", modelNote: "Mô hình lớn cho chất lượng tốt hơn nhưng cần nhiều bộ nhớ và thời gian khởi động hơn.", cancel: "Hủy",
-    termsTitle: "Điều khoản sử dụng mô hình", termsMessage: "Ứng dụng sẽ tải TranslateGemma và Whisper.", termsDetail: "Cần Internet trong khi cài đặt. TranslateGemma tuân theo điều khoản Gemma. Chỉ tiếp tục sau khi bạn đã đọc và đồng ý.", openTerms: "Mở điều khoản", agree: "Đồng ý và tiếp tục",
-    modelFolder: "Thư mục lưu mô hình", tempFolder: "Thư mục tải xuống tạm thời", noSpace: "Thư mục không còn đủ dung lượng.", need: "Cần", downloadFailed: "Tải xuống thất bại", checksumMismatch: "Mã SHA-256 của tệp tải xuống không khớp", runtimeMissing: "Không tìm thấy tệp chạy AI cục bộ", complete: "Đã cài đặt AI cục bộ.", completeDetail: "Bạn có thể chọn Local AI cho dịch hoặc nhận dạng giọng nói trong trang quản trị.", ok: "OK", menuSetup: "Cài đặt AI cục bộ và đổi mô hình", caDownload: "Tải chứng chỉ HTTPS cục bộ cho điện thoại", running: "Không thể đổi mô hình khi đang có phiên hoạt động.", runningDetail: "Hãy kết thúc phiên rồi thử lại.", failed: "Cài đặt AI cục bộ thất bại", promptTitle: "AI cục bộ", promptMessage: "Cài mô hình để dịch và nhận dạng giọng nói không cần Internet?", promptDetail: "Bạn có thể bỏ qua và cài sau trong menu Cài đặt.", install: "Cài đặt", later: "Để sau", desktopPrompt: "Tạo lối tắt trên màn hình nền?", createShortcut: "Tạo", noShortcut: "Không tạo",
-  },
-  th: {
-    installedOnly: "AI ภายในเครื่องรองรับเฉพาะรุ่นติดตั้ง Windows", translationTitle: "โมเดลแปลภายในเครื่อง", transcriptionTitle: "โมเดลรู้จำเสียงภายในเครื่อง",
-    recommended: "แนะนำ", modelNote: "โมเดลขนาดใหญ่มีคุณภาพดีกว่า แต่ใช้หน่วยความจำและเวลาเริ่มต้นมากขึ้น", cancel: "ยกเลิก",
-    termsTitle: "ข้อกำหนดการใช้โมเดล", termsMessage: "แอปจะดาวน์โหลด TranslateGemma และ Whisper", termsDetail: "ต้องใช้อินเทอร์เน็ตระหว่างติดตั้ง TranslateGemma อยู่ภายใต้ข้อกำหนด Gemma โปรดดำเนินการต่อเมื่ออ่านและยอมรับแล้ว", openTerms: "เปิดข้อกำหนด", agree: "ยอมรับและดำเนินการต่อ",
-    modelFolder: "โฟลเดอร์เก็บโมเดล", tempFolder: "โฟลเดอร์ดาวน์โหลดชั่วคราว", noSpace: "พื้นที่ว่างในโฟลเดอร์ไม่เพียงพอ", need: "ต้องการ", downloadFailed: "ดาวน์โหลดไม่สำเร็จ", checksumMismatch: "ค่า SHA-256 ของไฟล์ที่ดาวน์โหลดไม่ตรงกัน", runtimeMissing: "ไม่พบไฟล์เรียกใช้ AI ภายในเครื่อง", complete: "ติดตั้ง AI ภายในเครื่องแล้ว", completeDetail: "เลือก Local AI สำหรับการแปลหรือรู้จำเสียงได้ในหน้าผู้ดูแล", ok: "ตกลง", menuSetup: "ติดตั้ง AI ภายในเครื่องและเปลี่ยนโมเดล", caDownload: "ดาวน์โหลดใบรับรอง HTTPS สำหรับโทรศัพท์", running: "เปลี่ยนโมเดลไม่ได้ขณะมีเซสชันทำงาน", runningDetail: "โปรดจบเซสชันแล้วลองอีกครั้ง", failed: "ติดตั้ง AI ภายในเครื่องไม่สำเร็จ", promptTitle: "AI ภายในเครื่อง", promptMessage: "ติดตั้งโมเดลสำหรับแปลและรู้จำเสียงโดยไม่ใช้อินเทอร์เน็ตหรือไม่", promptDetail: "ข้ามตอนนี้และติดตั้งภายหลังจากเมนูการตั้งค่าได้", install: "ติดตั้ง", later: "ภายหลัง", desktopPrompt: "สร้างทางลัดบนเดสก์ท็อปหรือไม่", createShortcut: "สร้าง", noShortcut: "ไม่สร้าง",
-  },
-  si: {
-    installedOnly: "දේශීය AI Windows ස්ථාපිත අනුවාදයේ පමණක් සහාය දක්වයි.", translationTitle: "දේශීය පරිවර්තන ආකෘතිය", transcriptionTitle: "දේශීය හඬ හඳුනාගැනීමේ ආකෘතිය",
-    recommended: "නිර්දේශිත", modelNote: "විශාල ආකෘති වඩා හොඳ ගුණාත්මක බවක් ලබා දෙන නමුත් වැඩි මතකයක් සහ ආරම්භක කාලයක් අවශ්‍ය වේ.", cancel: "අවලංගු කරන්න",
-    termsTitle: "ආකෘති භාවිත නියම", termsMessage: "TranslateGemma සහ Whisper බාගත කරනු ඇත.", termsDetail: "ස්ථාපනයේදී අන්තර්ජාලය අවශ්‍ය වේ. TranslateGemma, Gemma නියමවලට යටත් වේ. කියවා එකඟ වූ පසු පමණක් ඉදිරියට යන්න.", openTerms: "නියම විවෘත කරන්න", agree: "එකඟ වී ඉදිරියට",
-    modelFolder: "ආකෘති ගබඩා ෆෝල්ඩරය", tempFolder: "තාවකාලික බාගැනීම් ෆෝල්ඩරය", noSpace: "ෆෝල්ඩරයේ ප්‍රමාණවත් ඉඩක් නැත.", need: "අවශ්‍ය", downloadFailed: "බාගැනීම අසාර්ථකයි", checksumMismatch: "බාගත් ගොනුවේ SHA-256 අගය නොගැළපේ", runtimeMissing: "දේශීය AI ක්‍රියාත්මක ගොනුව හමු නොවීය", complete: "දේශීය AI ස්ථාපනය සම්පූර්ණයි.", completeDetail: "පරිපාලක පිටුවේ පරිවර්තනය හෝ හඬ හඳුනාගැනීම සඳහා Local AI තෝරාගත හැක.", ok: "හරි", menuSetup: "දේශීය AI ස්ථාපනය සහ ආකෘති වෙනස් කිරීම", caDownload: "දුරකථනය සඳහා දේශීය HTTPS සහතිකය බාගන්න", running: "සක්‍රීය සැසි ඇති විට ආකෘති වෙනස් කළ නොහැක.", runningDetail: "සැසි අවසන් කර නැවත උත්සාහ කරන්න.", failed: "දේශීය AI ස්ථාපනය අසාර්ථකයි", promptTitle: "දේශීය AI", promptMessage: "අන්තර්ජාලය නොමැතිව පරිවර්තනය සහ හඬ හඳුනාගැනීම සඳහා ආකෘති ස්ථාපනය කරන්නද?", promptDetail: "දැන් මඟහැර පසුව සැකසුම් මෙනුවෙන් ස්ථාපනය කළ හැක.", install: "ස්ථාපනය", later: "පසුව", desktopPrompt: "ඩෙස්ක්ටොප් කෙටිමඟක් සාදන්නද?", createShortcut: "සාදන්න", noShortcut: "සාදන්න එපා",
-  },
+  ko: { caDownload: "휴대전화용 로컬 HTTPS 인증서 받기" },
+  vi: { caDownload: "Tải chứng chỉ HTTPS cục bộ cho điện thoại" },
+  th: { caDownload: "ดาวน์โหลดใบรับรอง HTTPS สำหรับโทรศัพท์" },
+  si: { caDownload: "දුරකථනය සඳහා දේශීය HTTPS සහතිකය බාගන්න" },
 };
 
 function stringsFor(app) {
@@ -250,65 +230,43 @@ function findFile(directory, name) {
   return null;
 }
 
-async function chooseModel(dialog, window, title, models, recommended, text) {
-  const keys = Object.keys(models);
-  const result = await dialog.showMessageBox(window, {
-    type: "question",
-    title,
-    message: `${title}\n${text.recommended}: ${models[recommended].label}`,
-    detail: text.modelNote,
-    buttons: [...keys.map((key) => models[key].label), text.cancel],
-    defaultId: keys.indexOf(recommended),
-    cancelId: keys.length,
-    noLink: true,
-  });
-  return keys[result.response] ?? null;
+function readConfig(file) {
+  return Object.fromEntries(readFileSync(file, "utf8").split(/\r?\n/).flatMap((line) => {
+    const separator = line.indexOf("=");
+    return separator > 0 ? [[line.slice(0, separator), line.slice(separator + 1)]] : [];
+  }));
 }
 
-async function setupLocalAi({ app, dialog, shell, window, settings, save }) {
-  const text = stringsFor(app);
-  if (process.platform !== "win32" || isPortable()) {
-    await dialog.showMessageBox(window, { type: "info", message: text.installedOnly, buttons: [text.ok] });
-    return false;
-  }
-  const gpu = await gpuInfo();
-  const health = recommendedModels();
-  if (gpu.vram >= 20 * 1024 ** 3 && os.totalmem() >= 32 * 1024 ** 3) health.translation = "27b";
-  else if (gpu.vram >= 10 * 1024 ** 3 && os.totalmem() >= 16 * 1024 ** 3) health.translation = "12b";
-  const translation = await chooseModel(dialog, window, text.translationTitle, TRANSLATION_MODELS, health.translation, text);
-  if (!translation) return false;
-  const transcription = await chooseModel(dialog, window, text.transcriptionTitle, TRANSCRIPTION_MODELS, health.transcription, text);
-  if (!transcription) return false;
+function installedLocalAi(resourcesPath) {
+  const file = path.join(resourcesPath, "local-ai-install.conf");
+  if (!existsSync(file)) return null;
+  const config = readConfig(file);
+  const required = ["translationModelPath", "transcriptionModelPath", "llamaServer", "whisperServer"];
+  if (!required.every((key) => config[key] && existsSync(config[key]))) return null;
+  return {
+    enabled: true,
+    modelDir: config.modelDir,
+    tempDir: config.tempDir,
+    translationModel: config.translationModel,
+    transcriptionModel: config.transcriptionModel,
+    translationModelPath: config.translationModelPath,
+    transcriptionModelPath: config.transcriptionModelPath,
+    llamaServer: config.llamaServer,
+    whisperServer: config.whisperServer,
+    useGpu: config.useGpu === "1",
+  };
+}
 
-  const license = await dialog.showMessageBox(window, {
-    type: "warning",
-    title: text.termsTitle,
-    message: text.termsMessage,
-    detail: text.termsDetail,
-    buttons: [text.openTerms, text.agree, text.cancel],
-    defaultId: 2,
-    cancelId: 2,
-  });
-  if (license.response === 0) {
-    await shell.openExternal("https://ai.google.dev/gemma/terms");
-    return false;
+async function installLocalAi(configFile) {
+  const config = readConfig(configFile);
+  const translation = config.translation;
+  const transcription = config.transcription;
+  if (!TRANSLATION_MODELS[translation] || !TRANSCRIPTION_MODELS[transcription]) {
+    throw new Error("지원하지 않는 로컬 AI 모델입니다.");
   }
-  if (license.response !== 1) return false;
-
-  const selected = await dialog.showOpenDialog(window, {
-    title: text.modelFolder,
-    defaultPath: settings.localAi?.modelDir ?? path.join(app.getPath("userData"), "local-ai"),
-    properties: ["openDirectory", "createDirectory"],
-  });
-  if (selected.canceled || !selected.filePaths[0]) return false;
-  const modelDir = selected.filePaths[0];
-  const tempSelected = await dialog.showOpenDialog(window, {
-    title: text.tempFolder,
-    defaultPath: settings.localAi?.tempDir ?? path.join(app.getPath("temp"), "LiveConfTranslation"),
-    properties: ["openDirectory", "createDirectory"],
-  });
-  if (tempSelected.canceled || !tempSelected.filePaths[0]) return false;
-  const tempDir = tempSelected.filePaths[0];
+  const modelDir = config.modelDir;
+  const tempDir = config.tempDir;
+  if (!modelDir || !tempDir || !config.output) throw new Error("로컬 AI 설치 경로가 비어 있습니다.");
   const runtimeDir = path.join(modelDir, "runtime");
   const modelsDir = path.join(modelDir, "models");
   const downloadDir = path.join(tempDir, "downloads");
@@ -318,42 +276,37 @@ async function setupLocalAi({ app, dialog, shell, window, settings, save }) {
   const modelFs = statfsSync(modelsDir);
   const freeBytes = modelFs.bavail * modelFs.bsize;
   const requiredBytes = translation === "27b" ? 21e9 : translation === "12b" ? 11e9 : 5e9;
-  if (freeBytes < requiredBytes) throw new Error(`${text.noSpace} ${text.need}: ${Math.ceil(requiredBytes / 1e9)} GB`);
+  if (freeBytes < requiredBytes) throw new Error(`모델 폴더의 여유 공간이 부족합니다. 필요: ${Math.ceil(requiredBytes / 1e9)} GB`);
   const assets = [
     { asset: RUNTIMES.llama, destination: path.join(downloadDir, RUNTIMES.llama.file) },
     { asset: RUNTIMES.whisper, destination: path.join(downloadDir, RUNTIMES.whisper.file) },
     { asset: TRANSLATION_MODELS[translation], destination: path.join(modelsDir, TRANSLATION_MODELS[translation].file) },
     { asset: TRANSCRIPTION_MODELS[transcription], destination: path.join(modelsDir, TRANSCRIPTION_MODELS[transcription].file) },
   ];
-  window.setProgressBar(0);
-  try {
-    for (let index = 0; index < assets.length; index += 1) {
-      const { asset, destination } = assets[index];
-      await download(asset, destination, (fraction) => window.setProgressBar((index + fraction) / assets.length), text);
-    }
-    await extract(path.join(downloadDir, RUNTIMES.llama.file), path.join(runtimeDir, "llama"));
-    await extract(path.join(downloadDir, RUNTIMES.whisper.file), path.join(runtimeDir, "whisper"));
-    const localAi = {
-      enabled: true,
-      modelDir,
-      tempDir,
-      translationModel: translation,
-      transcriptionModel: transcription,
-      translationModelPath: path.join(modelsDir, TRANSLATION_MODELS[translation].file),
-      transcriptionModelPath: path.join(modelsDir, TRANSCRIPTION_MODELS[transcription].file),
-      llamaServer: findFile(path.join(runtimeDir, "llama"), RUNTIMES.llama.binary),
-      whisperServer: findFile(path.join(runtimeDir, "whisper"), RUNTIMES.whisper.binary),
-      useGpu: gpu.available,
-    };
-    if (!localAi.llamaServer || !localAi.whisperServer) throw new Error(text.runtimeMissing);
-    settings.localAi = localAi;
-    save();
-    applyLocalAiEnvironment(settings);
-    await dialog.showMessageBox(window, { type: "info", message: text.complete, detail: text.completeDetail, buttons: [text.ok] });
-    return true;
-  } finally {
-    window.setProgressBar(-1);
+  const text = { downloadFailed: "다운로드 실패", checksumMismatch: "다운로드 파일의 SHA-256이 일치하지 않습니다" };
+  for (let index = 0; index < assets.length; index += 1) {
+    const { asset, destination } = assets[index];
+    console.log(`[${index + 1}/${assets.length}] ${asset.label ?? asset.file}`);
+    await download(asset, destination, () => {}, text);
   }
+  await extract(path.join(downloadDir, RUNTIMES.llama.file), path.join(runtimeDir, "llama"));
+  await extract(path.join(downloadDir, RUNTIMES.whisper.file), path.join(runtimeDir, "whisper"));
+  const gpu = await gpuInfo();
+  const localAi = {
+    enabled: "1",
+    modelDir,
+    tempDir,
+    translationModel: translation,
+    transcriptionModel: transcription,
+    translationModelPath: path.join(modelsDir, TRANSLATION_MODELS[translation].file),
+    transcriptionModelPath: path.join(modelsDir, TRANSCRIPTION_MODELS[transcription].file),
+    llamaServer: findFile(path.join(runtimeDir, "llama"), RUNTIMES.llama.binary),
+    whisperServer: findFile(path.join(runtimeDir, "whisper"), RUNTIMES.whisper.binary),
+    useGpu: gpu.available ? "1" : "0",
+  };
+  if (!localAi.llamaServer || !localAi.whisperServer) throw new Error("로컬 AI 실행 파일을 찾지 못했습니다.");
+  mkdirSync(path.dirname(config.output), { recursive: true });
+  writeFileSync(config.output, `${Object.entries(localAi).map(([key, value]) => `${key}=${value}`).join("\n")}\n`);
 }
 
-module.exports = { applyLocalAiEnvironment, ensureLocalCertificate, isPortable, recommendedModels, setupLocalAi, stringsFor };
+module.exports = { applyLocalAiEnvironment, ensureLocalCertificate, installLocalAi, installedLocalAi, isPortable, recommendedModels, stringsFor };
