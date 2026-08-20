@@ -67,7 +67,7 @@ Windows 설치본은 Node.js나 개발 도구를 따로 설치하지 않아도 �
 
 ### 1. 설치 또는 포터블 실행
 
-[v0.9.14 릴리스 페이지](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.14)에서 다음 중
+[v0.9.15 릴리스 페이지](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.15)에서 다음 중
 하나를 내려받습니다.
 
 - `... Setup ... .exe`: Windows에 설치하는 버전
@@ -928,6 +928,13 @@ API 키를 등록하지 않습니다.
 5. DeepL은 API 플랜 키인지, 대상 언어를 지원하는지 확인합니다.
 6. OpenAI는 `gpt-5.6-luna`를 프로젝트에서 사용할 수 있는지 확인합니다.
 7. 키 앞뒤 공백이 의심되면 새 키로 덮어씁니다. 앱은 붙여넣기 공백을 제거합니다.
+
+### Local AI 번역 실패
+
+- v0.9.15 이상인지 확인합니다. 이전 버전은 TranslateGemma 언어 지정이 llama.cpp에서
+  누락돼 번역이 실패할 수 있습니다.
+- 첫 번역은 모델을 메모리에 올리느라 최대 3분 정도 걸릴 수 있습니다.
+- TranslateGemma가 지원하지 않는 싱할라어는 선택한 폴백 엔진이 없으면 실패합니다.
 
 ### DeepL에서 특정 언어만 실패
 

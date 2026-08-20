@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { configuredLocalTranslationModel, ensureLocalTranslationRuntime, localTranslationConfigured } from "@/lib/local-runtime";
+import { ensureLocalTranslationRuntime, localTranslationConfigured } from "@/lib/local-runtime";
 
 import { TranslationError, type TranslateInput, type TranslationEngine } from "./types";
 
@@ -11,9 +11,8 @@ const SUPPORTED = new Set([
   "ru", "sk", "sl", "sr", "sv", "sw", "ta", "te", "th", "tl", "tr", "uk", "ur",
   "vi", "zh",
 ]);
-const responseSchema = z.object({
-  choices: z.array(z.object({ message: z.object({ content: z.string() }) })),
-});
+const responseSchema = z.object({ content: z.string() });
+const englishNames = new Intl.DisplayNames(["en"], { type: "language" });
 
 function code(value: string): string {
   const locale = value.replaceAll("_", "-");
@@ -27,23 +26,27 @@ function clean(text: string): string {
   return text.trim().replace(/^(translation|translated text|번역)\s*[:：]\s*/i, "");
 }
 
+export function localTranslationRequest(input: Pick<TranslateInput, "text" | "from" | "to">) {
+  const sourceCode = code(input.from);
+  const targetCode = code(input.to);
+  const sourceName = englishNames.of(sourceCode) ?? sourceCode;
+  const targetName = englishNames.of(targetCode) ?? targetCode;
+  return {
+    prompt: `<start_of_turn>user\nYou are a professional ${sourceName} (${sourceCode}) to ${targetName} (${targetCode}) translator. Your goal is to accurately convey the meaning and nuances of the original ${sourceName} text while adhering to ${targetName} grammar, vocabulary, and cultural sensitivities.\nProduce only the ${targetName} translation, without any additional explanations or commentary. Please translate the following ${sourceName} text into ${targetName}:\n\n\n${input.text.trim()}<end_of_turn>\n<start_of_turn>model\n`,
+    temperature: 0,
+    n_predict: 1024,
+    stop: ["<end_of_turn>"],
+  };
+}
+
 async function translate(input: TranslateInput): Promise<string> {
   const origin = await ensureLocalTranslationRuntime();
   let response: Response;
   try {
-    response = await fetch(`${origin}/v1/chat/completions`, {
+    response = await fetch(`${origin}/completion`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        model: configuredLocalTranslationModel() ?? "local",
-        messages: [{ role: "user", content: input.text }],
-        chat_template_kwargs: {
-          source_lang_code: code(input.from),
-          target_lang_code: code(input.to),
-        },
-        temperature: 0,
-        max_tokens: 1024,
-      }),
+      body: JSON.stringify(localTranslationRequest(input)),
       signal: input.signal,
     });
   } catch (cause) {
@@ -53,7 +56,7 @@ async function translate(input: TranslateInput): Promise<string> {
     throw new TranslationError(`로컬 번역 모델이 ${response.status}를 반환했습니다`, "local");
   }
   const parsed = responseSchema.safeParse(await response.json().catch(() => null));
-  const output = parsed.success ? clean(parsed.data.choices[0]?.message.content ?? "") : "";
+  const output = parsed.success ? clean(parsed.data.content) : "";
   if (!output) throw new TranslationError("로컬 번역 결과가 비어 있습니다", "local");
   return output;
 }

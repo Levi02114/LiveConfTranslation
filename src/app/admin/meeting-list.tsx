@@ -432,7 +432,7 @@ export function MeetingList({
           <OpenaiModelSelect
             label={strings.list.model}
             model={openaiModel}
-            hidden={engine !== "openai" && fallbackEngine !== "openai"}
+            hidden={engine !== "openai"}
           />
 
           {engine !== "local" ? engineKeysDialog : null}
@@ -474,6 +474,11 @@ export function MeetingList({
             noneLabel={strings.list.noFallback}
             exclude={engine}
             onChange={setFallbackEngine}
+          />
+          <OpenaiModelSelect
+            label={strings.list.model}
+            model={openaiModel}
+            hidden={fallbackEngine !== "openai"}
           />
         </div>
 
