@@ -16,6 +16,36 @@ import {
   formatTranslationLine,
 } from "@/lib/log-format";
 import type { EngineId } from "@/lib/translate/types";
+import {
+  bodyRowSchema,
+  combinedTranslationRowSchema,
+  engineSecretInfoRowSchema,
+  engineSecretRowSchema,
+  engineSettingRowSchema,
+  glossaryEntryRowSchema,
+  glossaryPairRowSchema,
+  glossaryTermRowSchema,
+  languageOnlyRowSchema,
+  languageRowSchema,
+  logMessageRowSchema,
+  logTranslationRowSchema,
+  maxPositionRowSchema,
+  meetingLanguageConfigRowSchema,
+  meetingRowSchema,
+  messageCountRowSchema,
+  messageRowSchema,
+  openaiModelRowSchema,
+  outputRowSchema,
+  pageRowSchema,
+  promptCueRowSchema,
+  recentTranslationRowSchema,
+  sessionPresetRowSchema,
+  translationCountRowSchema,
+  uiStringRowSchema,
+  type MeetingRow,
+  type PageRow,
+} from "@/lib/repo-schema";
+import { parseRequiredSqlRow, parseSqlRow, parseSqlRows } from "@/lib/sqlite-schema";
 
 /**
  * 데이터 접근 계층.
@@ -45,6 +75,8 @@ export type Meeting = {
   fallbackEngine: EngineId | null;
   inputMode: InputMode;
   speakerLabels: boolean;
+  /** 전사 프롬프트에 붙는 관리자 지정 문맥(의제·분야·화자 이름 등). */
+  transcriptionContext: string | null;
   createdAt: number;
   closedAt: number | null;
 };
@@ -114,47 +146,27 @@ function transaction<T>(work: () => T): T {
 }
 
 // node:sqlite 는 null 프로토타입 객체를 돌려준다. 필드명을 앱 규약(camelCase)으로 옮긴다.
-type MeetingRow = {
-  id: string;
-  title: string;
-  status: string;
-  engine: string;
-  fallback_engine: string | null;
-  input_mode: string;
-  speaker_labels: number;
-  created_at: number;
-  closed_at: number | null;
-};
-
 function toMeeting(row: MeetingRow): Meeting {
   return {
     id: row.id,
     title: row.title,
-    status: row.status as MeetingStatus,
-    engine: row.engine as EngineId,
-    fallbackEngine: row.fallback_engine as EngineId | null,
-    inputMode: (row.input_mode || "human") as InputMode,
+    status: row.status,
+    engine: row.engine,
+    fallbackEngine: row.fallback_engine,
+    inputMode: row.input_mode,
     speakerLabels: Boolean(row.speaker_labels),
+    transcriptionContext: row.transcription_context,
     createdAt: row.created_at,
     closedAt: row.closed_at,
   };
 }
 
-type PageRow = {
-  id: string;
-  meeting_id: string;
-  kind: string;
-  lang: string;
-  token: string;
-  created_at: number;
-};
-
 function toPage(row: PageRow): Page {
   return {
     id: row.id,
     meetingId: row.meeting_id,
-    kind: row.kind as PageKind,
-    lang: row.lang === NO_LANG ? null : (row.lang as LanguageCode),
+    kind: row.kind,
+    lang: row.lang === NO_LANG ? null : row.lang,
     token: row.token,
     createdAt: row.created_at,
   };
@@ -218,6 +230,7 @@ export function createMeeting(input: {
       fallbackEngine: input.fallbackEngine ?? null,
       inputMode: "human",
       speakerLabels: true,
+      transcriptionContext: null,
       createdAt: now,
       closedAt: null,
     };
@@ -225,39 +238,45 @@ export function createMeeting(input: {
 }
 
 export function listMeetings(): Meeting[] {
-  const rows = getDb()
-    .prepare(`SELECT * FROM meetings ORDER BY created_at DESC`)
-    .all() as unknown as MeetingRow[];
+  const rows = parseSqlRows(
+    meetingRowSchema,
+    getDb().prepare(`SELECT * FROM meetings ORDER BY created_at DESC`).all(),
+    "meetings 목록",
+  );
   return rows.map(toMeeting);
 }
 
 export function getMeeting(id: string): Meeting | null {
-  const row = getDb().prepare(`SELECT * FROM meetings WHERE id = ?`).get(id) as
-    | unknown
-    | undefined;
-  return row ? toMeeting(row as MeetingRow) : null;
+  const row = parseSqlRow(
+    meetingRowSchema,
+    getDb().prepare(`SELECT * FROM meetings WHERE id = ?`).get(id),
+    "meeting 단건",
+  );
+  return row ? toMeeting(row) : null;
 }
 
 export function getMeetingLangs(meetingId: string): LanguageCode[] {
-  const rows = getDb()
-    .prepare(`SELECT lang FROM meeting_langs WHERE meeting_id = ? ORDER BY position`)
-    .all(meetingId) as unknown as { lang: string }[];
-  return rows.map((row) => row.lang as LanguageCode);
+  const rows = parseSqlRows(
+    languageOnlyRowSchema,
+    getDb()
+      .prepare(`SELECT lang FROM meeting_langs WHERE meeting_id = ? ORDER BY position`)
+      .all(meetingId),
+    "meeting_langs 언어 목록",
+  );
+  return rows.map((row) => row.lang);
 }
 
 export function getMeetingLanguageConfigs(meetingId: string): MeetingLanguageConfig[] {
-  const rows = getDb()
-    .prepare(
+  const rows = parseSqlRows(
+    meetingLanguageConfigRowSchema,
+    getDb().prepare(
       `SELECT lang, input_enabled, output_enabled FROM meeting_langs
        WHERE meeting_id = ? ORDER BY position`,
-    )
-    .all(meetingId) as unknown as {
-    lang: string;
-    input_enabled: number;
-    output_enabled: number;
-  }[];
+    ).all(meetingId),
+    "meeting_langs 설정 목록",
+  );
   return rows.map((row) => ({
-    lang: row.lang as LanguageCode,
+    lang: row.lang,
     inputEnabled: Boolean(row.input_enabled),
     outputEnabled: Boolean(row.output_enabled),
   }));
@@ -393,36 +412,36 @@ export function updateMeetingConfig(
   });
 }
 
+/**
+ * 전사 문맥만 바꾼다. 페이지 구조가 아니라 다음 음성 세션의 프롬프트에만
+ * 영향을 주므로, 첫 입력 후에도(운영 설정 잠김) 바꿀 수 있게 분리해 둔다.
+ */
+export function updateTranscriptionContext(
+  meetingId: string,
+  context: string | null,
+) {
+  const meeting = getMeeting(meetingId);
+  if (!meeting || meeting.status !== "open") return { ok: false };
+  const cleaned = context?.replace(/\s+/g, " ").trim().slice(0, 300) || null;
+  getDb()
+    .prepare(`UPDATE meetings SET transcription_context = ? WHERE id = ?`)
+    .run(cleaned, meetingId);
+  return { ok: true };
+}
+
 export function listSessionPresets(): SessionPreset[] {
-  const rows = getDb()
-    .prepare(`SELECT * FROM session_presets ORDER BY updated_at DESC, name`)
-    .all() as unknown as {
-    id: string;
-    name: string;
-    config_json: string;
-    created_at: number;
-    updated_at: number;
-  }[];
-  return rows.flatMap((row) => {
-    try {
-      const config = JSON.parse(row.config_json) as Partial<SessionPresetConfig>;
-      if (!Array.isArray(config.languages) || typeof config.speakerLabels !== "boolean") return [];
-      return [{
-        id: row.id,
-        name: row.name,
-        languages: config.languages,
-        speakerLabels: config.speakerLabels,
-        combinedInputFallbackLang:
-          typeof config.combinedInputFallbackLang === "string"
-            ? config.combinedInputFallbackLang
-            : null,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      }];
-    } catch {
-      return [];
-    }
-  });
+  const rows = parseSqlRows(
+    sessionPresetRowSchema,
+    getDb().prepare(`SELECT * FROM session_presets ORDER BY updated_at DESC, name`).all(),
+    "session_presets 목록",
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    ...row.config_json,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
 }
 
 export function upsertSessionPreset(input: {
@@ -462,23 +481,27 @@ export function deleteClosedMeeting(id: string): boolean {
 export function getMeetingPages(meetingId: string): Page[] {
   // LEFT JOIN 이어야 통합 보기 페이지(언어 없음)가 빠지지 않는다.
   // 통합 보기는 목록 맨 뒤로 보낸다.
-  const rows = getDb()
-    .prepare(
+  const rows = parseSqlRows(
+    pageRowSchema,
+    getDb().prepare(
       `SELECT p.* FROM pages p
        LEFT JOIN meeting_langs ml
          ON ml.meeting_id = p.meeting_id AND ml.lang = p.lang
        WHERE p.meeting_id = ?
        ORDER BY (p.kind = 'combined'), (p.kind = 'combined-input'), ml.position, p.kind`,
-    )
-    .all(meetingId) as unknown as PageRow[];
+    ).all(meetingId),
+    "pages 목록",
+  );
   return rows.map(toPage);
 }
 
 export function getPageByToken(token: string): Page | null {
-  const row = getDb().prepare(`SELECT * FROM pages WHERE token = ?`).get(token) as
-    | unknown
-    | undefined;
-  return row ? toPage(row as PageRow) : null;
+  const row = parseSqlRow(
+    pageRowSchema,
+    getDb().prepare(`SELECT * FROM pages WHERE token = ?`).get(token),
+    "page 단건",
+  );
+  return row ? toPage(row) : null;
 }
 
 // ---------------------------------------------------------------- 메시지 / 번역
@@ -494,6 +517,8 @@ export function insertMessage(input: {
 }
 
 /** AI 완료 이벤트 재전송 시 같은 원문을 두 번 만들지 않는다. */
+export type InsertMessageResult = { message: Message; inserted: boolean };
+
 export function insertMessageOnce(input: {
   meetingId: string;
   pageId: string | null;
@@ -501,7 +526,7 @@ export function insertMessageOnce(input: {
   body: string;
   speakerName?: string | null;
   ingestKey?: string;
-}): { message: Message; inserted: boolean } {
+}): InsertMessageResult {
   const now = Date.now();
   const result = getDb()
     .prepare(
@@ -520,24 +545,18 @@ export function insertMessageOnce(input: {
     );
 
   if (result.changes === 0 && input.ingestKey) {
-    const existing = getDb()
-      .prepare(`SELECT * FROM messages WHERE ingest_key = ?`)
-      .get(input.ingestKey) as unknown as {
-      id: number;
-      meeting_id: string;
-      page_id: string | null;
-      lang: string;
-      body: string;
-      speaker_name: string | null;
-      created_at: number;
-    };
+    const existing = parseRequiredSqlRow(
+      messageRowSchema,
+      getDb().prepare(`SELECT * FROM messages WHERE ingest_key = ?`).get(input.ingestKey),
+      "중복 원문",
+    );
     return {
       inserted: false,
       message: {
         id: existing.id,
         meetingId: existing.meeting_id,
         pageId: existing.page_id,
-        lang: existing.lang as LanguageCode,
+        lang: existing.lang,
         body: existing.body,
         speakerName: existing.speaker_name,
         createdAt: existing.created_at,
@@ -573,8 +592,9 @@ export function getRecentOutput(
   lang: LanguageCode,
   limit = 200,
 ): OutputEntry[] {
-  const rows = getDb()
-    .prepare(
+  const rows = parseSqlRows(
+    outputRowSchema,
+    getDb().prepare(
       `SELECT message_id, body, speaker_name, status, created_at FROM (
          SELECT m.id AS message_id, m.body, m.speaker_name, 'ok' AS status, m.created_at
          FROM messages m WHERE m.meeting_id = ? AND m.lang = ?
@@ -584,20 +604,15 @@ export function getRecentOutput(
          JOIN messages m ON m.id = t.message_id
          WHERE m.meeting_id = ? AND t.lang = ?
        ) ORDER BY message_id DESC LIMIT ?`,
-    )
-    .all(meetingId, lang, meetingId, lang, limit) as unknown as {
-    message_id: number;
-    body: string;
-    speaker_name: string | null;
-    status: string;
-    created_at: number;
-  }[];
+    ).all(meetingId, lang, meetingId, lang, limit),
+    "출력 이력",
+  );
 
   return rows.reverse().map((row) => ({
     messageId: row.message_id,
     body: row.body,
     speakerName: row.speaker_name,
-    status: row.status as "ok" | "error",
+    status: row.status,
     createdAt: row.created_at,
   }));
 }
@@ -640,19 +655,12 @@ export function upsertTranslation(input: {
 
 /** 대시보드가 처음 열릴 때 채워 넣을 최근 원문 */
 export function getRecentMessages(meetingId: string, limit: number | null = 200): Message[] {
-  const rows = (limit === null
+  const rawRows = limit === null
     ? getDb().prepare(`SELECT * FROM messages WHERE meeting_id = ? ORDER BY id`).all(meetingId)
     : getDb()
         .prepare(`SELECT * FROM messages WHERE meeting_id = ? ORDER BY id DESC LIMIT ?`)
-        .all(meetingId, limit)) as unknown as {
-    id: number;
-    meeting_id: string;
-    page_id: string | null;
-    lang: string;
-    body: string;
-    speaker_name: string | null;
-    created_at: number;
-  }[];
+        .all(meetingId, limit);
+  const rows = parseSqlRows(messageRowSchema, rawRows, "원문 이력");
 
   if (limit !== null) rows.reverse();
 
@@ -660,7 +668,7 @@ export function getRecentMessages(meetingId: string, limit: number | null = 200)
     id: row.id,
     meetingId: row.meeting_id,
     pageId: row.page_id,
-    lang: row.lang as LanguageCode,
+    lang: row.lang,
     body: row.body,
     speakerName: row.speaker_name,
     createdAt: row.created_at,
@@ -678,72 +686,64 @@ export function getRecentTranslations(
   lang: LanguageCode,
   limit = 200,
 ): (Translation & { sourceLang: LanguageCode; sourceBody: string; speakerName: string | null })[] {
-  const rows = getDb()
-    .prepare(
+  const rows = parseSqlRows(
+    recentTranslationRowSchema,
+    getDb().prepare(
       `SELECT t.*, m.lang AS source_lang, m.body AS source_body, m.speaker_name
        FROM translations t
        JOIN messages m ON m.id = t.message_id
        WHERE m.meeting_id = ? AND t.lang = ?
        ORDER BY t.message_id DESC
        LIMIT ?`,
-    )
-    .all(meetingId, lang, limit) as unknown as {
-    id: number;
-    message_id: number;
-    lang: string;
-    body: string;
-    engine: string;
-    status: string;
-    error: string | null;
-    created_at: number;
-    source_lang: string;
-    source_body: string;
-    speaker_name: string | null;
-  }[];
+    ).all(meetingId, lang, limit),
+    "번역 이력",
+  );
 
   return rows.reverse().map((row) => ({
     id: row.id,
     messageId: row.message_id,
-    lang: row.lang as LanguageCode,
+    lang: row.lang,
     body: row.body,
     engine: row.engine,
-    status: row.status as "ok" | "error",
+    status: row.status,
     error: row.error,
     createdAt: row.created_at,
-    sourceLang: row.source_lang as LanguageCode,
+    sourceLang: row.source_lang,
     sourceBody: row.source_body,
     speakerName: row.speaker_name,
   }));
 }
 
 /** 페이지 헤더의 "입력/출력 상태"에 쓰는 요약 */
-export function getMeetingActivity(meetingId: string): {
+export type MeetingActivity = {
   messageCount: number;
   translationCount: number;
   lastMessageAt: number | null;
   lastTranslationAt: number | null;
   failedTranslationCount: number;
-} {
-  const messages = getDb()
-    .prepare(
-      `SELECT COUNT(*) AS c, MAX(created_at) AS last FROM messages WHERE meeting_id = ?`,
-    )
-    .get(meetingId) as unknown as { c: number; last: number | null };
+};
 
-  const translations = getDb()
-    .prepare(
+export function getMeetingActivity(meetingId: string): MeetingActivity {
+  const messages = parseRequiredSqlRow(
+    messageCountRowSchema,
+    getDb().prepare(
+      `SELECT COUNT(*) AS c, MAX(created_at) AS last FROM messages WHERE meeting_id = ?`,
+    ).get(meetingId),
+    "원문 활동 요약",
+  );
+
+  const translations = parseRequiredSqlRow(
+    translationCountRowSchema,
+    getDb().prepare(
       `SELECT COUNT(*) AS c,
               MAX(t.created_at) AS last,
               SUM(CASE WHEN t.status = 'error' THEN 1 ELSE 0 END) AS failed
        FROM translations t
        JOIN messages m ON m.id = t.message_id
        WHERE m.meeting_id = ?`,
-    )
-    .get(meetingId) as unknown as {
-    c: number;
-    last: number | null;
-    failed: number | null;
-  };
+    ).get(meetingId),
+    "번역 활동 요약",
+  );
 
   return {
     messageCount: messages.c,
@@ -768,34 +768,26 @@ export function getLogLines(
   meetingId: string,
   langs?: readonly LanguageCode[],
 ): LogLine[] {
-  const messages = getDb()
-    .prepare(
+  const messages = parseSqlRows(
+    logMessageRowSchema,
+    getDb().prepare(
       `SELECT id, lang, body, speaker_name, created_at FROM messages
        WHERE meeting_id = ? ORDER BY id`,
-    )
-    .all(meetingId) as unknown as {
-    id: number;
-    lang: string;
-    body: string;
-    speaker_name: string | null;
-    created_at: number;
-  }[];
+    ).all(meetingId),
+    "로그 원문",
+  );
 
-  const translations = getDb()
-    .prepare(
+  const translations = parseSqlRows(
+    logTranslationRowSchema,
+    getDb().prepare(
       `SELECT t.message_id, t.lang, t.body, t.status, t.created_at
        FROM translations t
        JOIN messages m ON m.id = t.message_id
        WHERE m.meeting_id = ? AND t.status = 'ok'
        ORDER BY t.message_id, t.lang`,
-    )
-    .all(meetingId) as unknown as {
-    message_id: number;
-    lang: string;
-    body: string;
-    status: string;
-    created_at: number;
-  }[];
+    ).all(meetingId),
+    "로그 번역",
+  );
 
   const byMessage = new Map<number, typeof translations>();
   for (const row of translations) {
@@ -808,7 +800,7 @@ export function getLogLines(
   const lines: LogLine[] = [];
 
   for (const message of messages) {
-    const sourceLang = message.lang as LanguageCode;
+    const sourceLang = message.lang;
     if (!wanted || wanted.has(sourceLang)) {
       lines.push({
         at: message.created_at,
@@ -819,7 +811,7 @@ export function getLogLines(
     }
 
     for (const translation of byMessage.get(message.id) ?? []) {
-      const lang = translation.lang as LanguageCode;
+      const lang = translation.lang;
       if (wanted && !wanted.has(lang)) continue;
       lines.push({
         at: translation.created_at,
@@ -849,13 +841,15 @@ export function getRecentSourceBodies(
   beforeMessageId: number,
   limit = 4,
 ): string[] {
-  const rows = getDb()
-    .prepare(
+  const rows = parseSqlRows(
+    bodyRowSchema,
+    getDb().prepare(
       `SELECT body FROM messages
        WHERE meeting_id = ? AND id < ?
        ORDER BY id DESC LIMIT ?`,
-    )
-    .all(meetingId, beforeMessageId, limit) as unknown as { body: string }[];
+    ).all(meetingId, beforeMessageId, limit),
+    "번역 문맥 원문",
+  );
 
   return rows.reverse().map((row) => row.body);
 }
@@ -881,26 +875,22 @@ export function getRecentCombined(meetingId: string, limit: number | null = null
 
   // 메시지 목록이 정해진 뒤 번역을 한 번에 가져온다. 메시지마다 조회하면 N+1 이 된다.
   const placeholders = messages.map(() => "?").join(",");
-  const rows = getDb()
-    .prepare(
+  const rows = parseSqlRows(
+    combinedTranslationRowSchema,
+    getDb().prepare(
       `SELECT message_id, lang, body, status, error FROM translations
        WHERE message_id IN (${placeholders})
        ORDER BY message_id, lang`,
-    )
-    .all(...messages.map((message) => message.id)) as unknown as {
-    message_id: number;
-    lang: string;
-    body: string;
-    status: string;
-    error: string | null;
-  }[];
+    ).all(...messages.map((message) => message.id)),
+    "통합 조회 번역",
+  );
 
   const byMessage = new Map<number, CombinedEntry["translations"]>();
   for (const row of rows) {
     const entry = {
-      lang: row.lang as LanguageCode,
+      lang: row.lang,
       body: row.body,
-      status: row.status as "ok" | "error",
+      status: row.status,
       error: row.error,
     };
     const bucket = byMessage.get(row.message_id);
@@ -958,16 +948,18 @@ export function upsertEngineSecret(input: {
 }
 
 export function getEngineSecret(engine: EngineId): EngineSecret | null {
-  const row = getDb()
-    .prepare(`SELECT engine, secret, hint, updated_at FROM engine_secrets WHERE engine = ?`)
-    .get(engine) as unknown as
-    | { engine: string; secret: Uint8Array; hint: string; updated_at: number }
-    | undefined;
+  const row = parseSqlRow(
+    engineSecretRowSchema,
+    getDb()
+      .prepare(`SELECT engine, secret, hint, updated_at FROM engine_secrets WHERE engine = ?`)
+      .get(engine),
+    "번역 엔진 비밀키",
+  );
 
   if (!row) return null;
 
   return {
-    engine: row.engine as EngineId,
+    engine: row.engine,
     secret: row.secret,
     hint: row.hint,
     updatedAt: row.updated_at,
@@ -975,12 +967,14 @@ export function getEngineSecret(engine: EngineId): EngineSecret | null {
 }
 
 export function listEngineSecrets(): EngineSecretInfo[] {
-  const rows = getDb()
-    .prepare(`SELECT engine, hint, updated_at FROM engine_secrets ORDER BY engine`)
-    .all() as unknown as { engine: string; hint: string; updated_at: number }[];
+  const rows = parseSqlRows(
+    engineSecretInfoRowSchema,
+    getDb().prepare(`SELECT engine, hint, updated_at FROM engine_secrets ORDER BY engine`).all(),
+    "번역 엔진 비밀키 목록",
+  );
 
   return rows.map((row) => ({
-    engine: row.engine as EngineId,
+    engine: row.engine,
     hint: row.hint,
     updatedAt: row.updated_at,
   }));
@@ -1000,9 +994,11 @@ export type LanguageRow = {
 
 /** 등록된 언어. **화면과 API 는 언제나 여기를 본다** — 코드 상수를 직접 읽지 않는다. */
 export function listLanguages(): LanguageRow[] {
-  const rows = getDb()
-    .prepare(`SELECT code, position, added_at FROM languages ORDER BY position, code`)
-    .all() as unknown as { code: string; position: number; added_at: number }[];
+  const rows = parseSqlRows(
+    languageRowSchema,
+    getDb().prepare(`SELECT code, position, added_at FROM languages ORDER BY position, code`).all(),
+    "언어 목록",
+  );
 
   return rows.map((row) => ({
     code: row.code,
@@ -1019,13 +1015,15 @@ export function hasLanguage(code: LanguageCode): boolean {
 /** 목록 맨 뒤에 붙인다. 이미 있으면 아무 일도 하지 않는다. */
 export function addLanguage(code: LanguageCode): void {
   const db = getDb();
-  const max = db.prepare(`SELECT MAX(position) AS max FROM languages`).get() as unknown as {
-    max: number | null;
-  };
+  const max = parseRequiredSqlRow(
+    maxPositionRowSchema,
+    db.prepare(`SELECT MAX(position) AS max FROM languages`).get(),
+    "언어 최대 위치",
+  );
 
   db.prepare(`INSERT OR IGNORE INTO languages (code, position, added_at) VALUES (?, ?, ?)`).run(
     code,
-    (max?.max ?? -1) + 1,
+    (max.max ?? -1) + 1,
     Date.now(),
   );
 }
@@ -1060,14 +1058,16 @@ export type UiStringRow = {
 
 /** 한 언어의 UI 문구 오버레이. 빌트인 언어는 대개 비어 있다. */
 export function getUiStrings(lang: LanguageCode): UiStringRow[] {
-  const rows = getDb()
-    .prepare(`SELECT key, text, origin FROM ui_strings WHERE lang = ?`)
-    .all(lang) as unknown as { key: string; text: string; origin: string }[];
+  const rows = parseSqlRows(
+    uiStringRowSchema,
+    getDb().prepare(`SELECT key, text, origin FROM ui_strings WHERE lang = ?`).all(lang),
+    "UI 문구",
+  );
 
   return rows.map((row) => ({
     key: row.key,
     text: row.text,
-    origin: row.origin === "manual" ? "manual" : "machine",
+    origin: row.origin,
   }));
 }
 
@@ -1121,12 +1121,20 @@ export type GlossaryEntry = {
 export type GlossaryPair = { source: string; target: string };
 
 export function listGlossaryEntries(): GlossaryEntry[] {
-  const entries = getDb()
-    .prepare(`SELECT id, created_at, updated_at FROM glossary_entries ORDER BY created_at, id`)
-    .all() as unknown as { id: string; created_at: number; updated_at: number }[];
-  const terms = getDb()
-    .prepare(`SELECT entry_id, lang, term FROM glossary_terms ORDER BY entry_id, lang`)
-    .all() as unknown as { entry_id: string; lang: string; term: string }[];
+  const entries = parseSqlRows(
+    glossaryEntryRowSchema,
+    getDb()
+      .prepare(`SELECT id, created_at, updated_at FROM glossary_entries ORDER BY created_at, id`)
+      .all(),
+    "단어집 항목",
+  );
+  const terms = parseSqlRows(
+    glossaryTermRowSchema,
+    getDb()
+      .prepare(`SELECT entry_id, lang, term FROM glossary_terms ORDER BY entry_id, lang`)
+      .all(),
+    "단어집 번역어",
+  );
   const byEntry = new Map<string, Record<LanguageCode, string>>();
 
   for (const row of terms) {
@@ -1173,16 +1181,18 @@ export function replaceGlossaryEntries(
 
 /** 회의 번역에서 현재 원문/대상 언어에 해당하는 용어쌍만 꺼낸다. */
 export function listGlossaryPairs(from: LanguageCode, to: LanguageCode): GlossaryPair[] {
-  const rows = getDb()
-    .prepare(
+  const rows = parseSqlRows(
+    glossaryPairRowSchema,
+    getDb().prepare(
       `SELECT source.term AS source, target.term AS target
        FROM glossary_terms source
        JOIN glossary_terms target ON target.entry_id = source.entry_id
        JOIN glossary_entries entry ON entry.id = source.entry_id
        WHERE source.lang = ? AND target.lang = ?
        ORDER BY entry.created_at, entry.id`,
-    )
-    .all(from, to) as unknown as GlossaryPair[];
+    ).all(from, to),
+    "번역 단어집",
+  );
 
   return rows.filter((row) => row.source.trim() && row.target.trim());
 }
@@ -1196,11 +1206,13 @@ export type LanguagePromptCue = {
 };
 
 export function getLanguagePromptCue(lang: LanguageCode): LanguagePromptCue | null {
-  const row = getDb()
-    .prepare(`SELECT text, engine, updated_at FROM language_prompt_cues WHERE lang = ?`)
-    .get(lang) as unknown as
-    | { text: string; engine: EngineId; updated_at: number }
-    | undefined;
+  const row = parseSqlRow(
+    promptCueRowSchema,
+    getDb()
+      .prepare(`SELECT text, engine, updated_at FROM language_prompt_cues WHERE lang = ?`)
+      .get(lang),
+    "언어별 번역 지시문",
+  );
 
   return row ? { text: row.text, engine: row.engine, updatedAt: row.updated_at } : null;
 }
@@ -1231,16 +1243,18 @@ export type EngineSetting = {
 };
 
 export function getEngineSetting(engine: EngineId): EngineSetting | null {
-  const row = getDb()
-    .prepare(`SELECT engine, model, updated_at FROM engine_settings WHERE engine = ?`)
-    .get(engine) as unknown as
-    | { engine: string; model: string | null; updated_at: number }
-    | undefined;
+  const row = parseSqlRow(
+    engineSettingRowSchema,
+    getDb()
+      .prepare(`SELECT engine, model, updated_at FROM engine_settings WHERE engine = ?`)
+      .get(engine),
+    "번역 엔진 설정",
+  );
 
   if (!row) return null;
 
   return {
-    engine: row.engine as EngineId,
+    engine: row.engine,
     model: row.model,
     updatedAt: row.updated_at,
   };
@@ -1248,15 +1262,15 @@ export function getEngineSetting(engine: EngineId): EngineSetting | null {
 
 /** 관리자 화면에서 마지막으로 고른 번역 엔진. */
 export function getLastEngineSetting(): EngineSetting | null {
-  const row = getDb()
-    .prepare(
+  const row = parseSqlRow(
+    engineSettingRowSchema,
+    getDb().prepare(
       `SELECT engine, model, updated_at FROM engine_settings
        WHERE engine IN ('google', 'deepl', 'openai')
        ORDER BY updated_at DESC LIMIT 1`,
-    )
-    .get() as unknown as
-    | { engine: EngineId; model: string | null; updated_at: number }
-    | undefined;
+    ).get(),
+    "마지막 번역 엔진 설정",
+  );
 
   return row
     ? { engine: row.engine, model: row.model, updatedAt: row.updated_at }
@@ -1291,9 +1305,11 @@ export function upsertEngineSetting(engine: EngineId, model: string | null): voi
 
 /** 마지막으로 조회한 모델 목록. 없으면 빈 배열이다. */
 export function listOpenaiModels(): string[] {
-  const rows = getDb()
-    .prepare(`SELECT model FROM openai_models ORDER BY position`)
-    .all() as unknown as { model: string }[];
+  const rows = parseSqlRows(
+    openaiModelRowSchema,
+    getDb().prepare(`SELECT model FROM openai_models ORDER BY position`).all(),
+    "OpenAI 모델 캐시",
+  );
 
   return rows.map((row) => row.model);
 }

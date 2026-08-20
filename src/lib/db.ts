@@ -11,9 +11,19 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { z } from "zod";
+
 import { databasePath } from "@/lib/env";
 import { newId, newPageToken } from "@/lib/ids";
 import { BUILTIN_LANGUAGES } from "@/lib/languages";
+import { parseSqlRows } from "@/lib/sqlite-schema";
+
+declare global {
+  var __meetingDb: DatabaseSync | undefined;
+}
+
+const missingCaptureRowSchema = z.object({ meeting_id: z.string(), lang: z.string() });
+const columnRowSchema = z.object({ name: z.string() });
 
 /**
  * SQLite 연결.
@@ -180,14 +190,18 @@ function seedLanguages(db: DatabaseSync): void {
 
 /** 이전 단일 원음 세션에도 선택된 모든 언어의 수집 페이지를 채운다. */
 function backfillRealtimeCapturePages(db: DatabaseSync): void {
-  const missing = db.prepare(
-    `SELECT m.id AS meeting_id, ml.lang
-     FROM meetings m
-     JOIN meeting_langs ml ON ml.meeting_id = m.id
-     LEFT JOIN pages p
-       ON p.meeting_id = m.id AND p.kind = 'capture' AND p.lang = ml.lang
-     WHERE m.input_mode = 'realtime' AND p.id IS NULL`,
-  ).all() as unknown as { meeting_id: string; lang: string }[];
+  const missing = parseSqlRows(
+    missingCaptureRowSchema,
+    db.prepare(
+      `SELECT m.id AS meeting_id, ml.lang
+       FROM meetings m
+       JOIN meeting_langs ml ON ml.meeting_id = m.id
+       LEFT JOIN pages p
+         ON p.meeting_id = m.id AND p.kind = 'capture' AND p.lang = ml.lang
+       WHERE m.input_mode = 'realtime' AND p.id IS NULL`,
+    ).all(),
+    "실시간 수집 페이지 마이그레이션",
+  );
   const insert = db.prepare(
     `INSERT INTO pages (id, meeting_id, kind, lang, token, created_at)
      VALUES (?, ?, 'capture', ?, ?, ?)`,
@@ -200,7 +214,11 @@ function backfillRealtimeCapturePages(db: DatabaseSync): void {
 
 /** 기존 개발 DB에도 새 nullable/default 컬럼을 파괴 없이 더한다. */
 function ensureColumn(db: DatabaseSync, table: string, column: string, definition: string): void {
-  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string }[];
+  const columns = parseSqlRows(
+    columnRowSchema,
+    db.prepare(`PRAGMA table_info(${table})`).all(),
+    `${table} 테이블 정보`,
+  );
   if (!columns.some((item) => item.name === column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
@@ -224,6 +242,7 @@ function open(): DatabaseSync {
   ensureColumn(db, "meetings", "input_mode", "TEXT NOT NULL DEFAULT 'human'");
   ensureColumn(db, "meetings", "source_lang", "TEXT");
   ensureColumn(db, "meetings", "speaker_labels", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "meetings", "transcription_context", "TEXT");
   ensureColumn(db, "meeting_langs", "input_enabled", "INTEGER NOT NULL DEFAULT 1");
   ensureColumn(db, "meeting_langs", "output_enabled", "INTEGER NOT NULL DEFAULT 1");
   ensureColumn(db, "messages", "speaker_name", "TEXT");
@@ -235,9 +254,7 @@ function open(): DatabaseSync {
   return db;
 }
 
-const globalForDb = globalThis as unknown as { __meetingDb?: DatabaseSync };
-
 /** 연결을 얻는다. 첫 호출에서 파일을 열고 스키마를 만든다. */
 export function getDb(): DatabaseSync {
-  return (globalForDb.__meetingDb ??= open());
+  return (globalThis.__meetingDb ??= open());
 }

@@ -278,6 +278,7 @@ export function DashboardView({
         initialLanguages={languageConfigs}
         initialSpeakerLabels={meeting.speakerLabels}
         initialCombinedInputFallbackLang={combinedInput?.lang ?? null}
+        initialTranscriptionContext={meeting.transcriptionContext}
         initialPresets={presets}
         availableLanguages={displayLanguages}
         locked={configLocked}

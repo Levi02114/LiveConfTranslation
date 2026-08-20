@@ -3,13 +3,13 @@ import { getLanguagePromptCue, upsertLanguagePromptCue } from "@/lib/repo";
 import { builtinStyleCue, STYLE_CUE_SOURCE } from "@/lib/translate/prompt";
 import type { EngineId } from "@/lib/translate/types";
 
-const state = globalThis as typeof globalThis & {
-  __promptCuePending?: Map<LanguageCode, Promise<string | null>>;
-  __promptCueFailed?: Set<LanguageCode>;
-};
+declare global {
+  var __promptCuePending: Map<LanguageCode, Promise<string | null>> | undefined;
+  var __promptCueFailed: Set<LanguageCode> | undefined;
+}
 
-const pending = (state.__promptCuePending ??= new Map());
-const failed = (state.__promptCueFailed ??= new Set());
+const pending = (globalThis.__promptCuePending ??= new Map());
+const failed = (globalThis.__promptCueFailed ??= new Set());
 
 export function resolveLanguagePromptCue(lang: LanguageCode): string | null {
   return getLanguagePromptCue(lang)?.text ?? builtinStyleCue(lang);

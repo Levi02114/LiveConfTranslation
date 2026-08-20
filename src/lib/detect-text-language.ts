@@ -1,9 +1,17 @@
 import "server-only";
 
+import { z } from "zod";
+
 import { matchDetectedLanguage } from "@/lib/detected-language";
 import { openaiBaseUrl } from "@/lib/env";
 import { type LanguageCode, languageLogName } from "@/lib/languages";
 import { engineKey, resolveOpenaiModel } from "@/lib/secrets";
+import { parseJsonResponse } from "@/lib/json-response";
+
+const detectionResponseSchema = z.object({
+  choices: z.array(z.object({ message: z.object({ content: z.string() }) })),
+});
+const detectedLanguageSchema = z.object({ language: z.string() });
 
 export async function detectTextLanguage(
   text: string,
@@ -35,14 +43,10 @@ export async function detectTextLanguage(
       }),
     });
     if (!response.ok) throw new Error(`OpenAI ${response.status}`);
-    const payload = (await response.json()) as {
-      choices?: { message?: { content?: string } }[];
-    };
-    const content = payload.choices?.[0]?.message?.content;
-    const detected = content
-      ? (JSON.parse(content) as { language?: unknown }).language
-      : undefined;
-    const lang = matchDetectedLanguage(typeof detected === "string" ? detected : null, candidates);
+    const payload = await parseJsonResponse(response, detectionResponseSchema);
+    const content = payload?.choices[0]?.message.content;
+    const detected = content ? detectedLanguageSchema.safeParse(JSON.parse(content)) : null;
+    const lang = matchDetectedLanguage(detected?.success ? detected.data.language : null, candidates);
     return lang ? { lang, usedFallback: false } : { lang: fallback, usedFallback: true };
   } catch (error) {
     console.warn("[language-detection] 텍스트 언어 감지 실패", error);

@@ -8,6 +8,7 @@ import {
   getPageByToken,
   isPageEnabled,
 } from "@/lib/repo";
+import { cleanTranscript } from "@/lib/transcript-clean";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -59,11 +60,17 @@ export async function POST(request: Request, { params }: Params) {
     return Response.json({ error: "감지된 입력 언어가 올바르지 않습니다" }, { status: 400 });
   }
 
+  const cleaned = cleanTranscript(parsed.data.body);
+  if (!cleaned) {
+    // 무음·잡음 구간의 환각 전사다. 저장하지 않지만 클라이언트 오류로도 취급하지 않는다.
+    return Response.json({ dropped: true, inserted: false }, { status: 200 });
+  }
+
   const result = acceptTranscript({
     meeting,
     pageId: page.id,
     lang: detectedLang,
-    body: parsed.data.body,
+    body: cleaned,
     ingestKey: parsed.data.ingestKey,
     speakerName: meeting.speakerLabels ? parsed.data.speakerName : null,
   });
@@ -75,7 +82,7 @@ export async function POST(request: Request, { params }: Params) {
       sourceLang: result.message.lang,
       body: result.message.body,
       speakerName: result.message.speakerName,
-    }).catch((error: unknown) => console.error("[translate] AI 전사 번역 오류", error));
+    }).catch((error) => console.error("[translate] AI 전사 번역 오류", error));
   }
 
   return Response.json({ message: result.message, inserted: result.inserted }, { status: result.inserted ? 201 : 200 });

@@ -38,11 +38,11 @@ export type { AdminStrings, UiStrings } from "@/lib/i18n-builtin";
 const UI_PREFIX = "ui.";
 const ADMIN_PREFIX = "admin.";
 
-function loadOverlay(lang: LanguageCode, prefix: string): Record<string, string> {
-  const out: Record<string, string> = {};
+function loadOverlay(lang: LanguageCode, prefix: string): Map<string, string> {
+  const out = new Map<string, string>();
 
   for (const row of getUiStrings(lang)) {
-    if (row.key.startsWith(prefix)) out[row.key.slice(prefix.length)] = row.text;
+    if (row.key.startsWith(prefix)) out.set(row.key.slice(prefix.length), row.text);
   }
 
   return out;
@@ -56,13 +56,13 @@ function loadOverlay(lang: LanguageCode, prefix: string): Record<string, string>
  * 검사하지 않는다(`noUncheckedIndexedAccess` 미설정). 폴백은 사람이 적어야 한다.
  */
 export function getStrings(lang: LanguageCode): UiStrings {
-  const base: UiStrings = BUILTIN_UI[lang] ?? FALLBACK_UI;
+  const base = BUILTIN_UI.get(lang) ?? FALLBACK_UI;
   return applyStrings(base, loadOverlay(lang, UI_PREFIX));
 }
 
 /** 관리자 화면(로그인·회의 목록) 문구. 같은 규칙을 따른다. */
 export function getAdminStrings(lang: LanguageCode): AdminStrings {
-  const base: AdminStrings = BUILTIN_ADMIN[lang] ?? FALLBACK_ADMIN;
+  const base = BUILTIN_ADMIN.get(lang) ?? FALLBACK_ADMIN;
   return applyStrings(base, loadOverlay(lang, ADMIN_PREFIX));
 }
 
@@ -87,8 +87,8 @@ export function sourceEntries(): StringEntry[] {
   const admin = flattenStrings(FALLBACK_ADMIN);
 
   return [
-    ...Object.entries(ui).map(([key, source]) => ({ key: UI_PREFIX + key, source })),
-    ...Object.entries(admin).map(([key, source]) => ({ key: ADMIN_PREFIX + key, source })),
+    ...[...ui].map(([key, source]) => ({ key: UI_PREFIX + key, source })),
+    ...[...admin].map(([key, source]) => ({ key: ADMIN_PREFIX + key, source })),
   ].sort((a, b) => a.key.localeCompare(b.key));
 }
 
@@ -107,8 +107,10 @@ export type ResolvedEntry = StringEntry & {
  */
 export function resolveEntries(lang: LanguageCode): ResolvedEntry[] {
   const overlay = new Map(getUiStrings(lang).map((row) => [row.key, row]));
-  const builtinUi = BUILTIN_UI[lang] ? flattenStrings(BUILTIN_UI[lang]) : null;
-  const builtinAdmin = BUILTIN_ADMIN[lang] ? flattenStrings(BUILTIN_ADMIN[lang]) : null;
+  const ui = BUILTIN_UI.get(lang);
+  const admin = BUILTIN_ADMIN.get(lang);
+  const builtinUi = ui ? flattenStrings(ui) : null;
+  const builtinAdmin = admin ? flattenStrings(admin) : null;
 
   return sourceEntries().map((entry) => {
     const stored = overlay.get(entry.key);
@@ -117,13 +119,13 @@ export function resolveEntries(lang: LanguageCode): ResolvedEntry[] {
     }
 
     const builtin = entry.key.startsWith(UI_PREFIX)
-      ? builtinUi?.[entry.key.slice(UI_PREFIX.length)]
-      : builtinAdmin?.[entry.key.slice(ADMIN_PREFIX.length)];
+      ? builtinUi?.get(entry.key.slice(UI_PREFIX.length))
+      : builtinAdmin?.get(entry.key.slice(ADMIN_PREFIX.length));
 
-    if (typeof builtin === "string") {
-      return { ...entry, text: builtin, origin: "builtin" as const };
+    if (builtin !== undefined) {
+      return { ...entry, text: builtin, origin: "builtin" };
     }
 
-    return { ...entry, text: entry.source, origin: "fallback" as const };
+    return { ...entry, text: entry.source, origin: "fallback" };
   });
 }

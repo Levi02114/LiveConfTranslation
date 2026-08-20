@@ -3,24 +3,33 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import { openaiBaseUrl } from "@/lib/env";
+import { parseJsonResponse } from "@/lib/json-response";
 import {
   claimCapture,
   releaseCapture,
   renewCapture,
 } from "@/lib/realtime/capture-lease";
-import { getLanguage } from "@/lib/languages";
 import {
   getMeeting,
   getPageByToken,
   isPageEnabled,
-  listGlossaryEntries,
 } from "@/lib/repo";
 import { engineKey } from "@/lib/secrets";
+import { buildSingleSessionParams } from "@/lib/transcribe-config";
+import { singleTranscriptionProfile } from "@/lib/transcription-profile";
 
 type Params = { params: Promise<{ token: string }> };
 
-const startSchema = z.object({ clientId: z.string().min(8).max(100) });
+const startSchema = z.object({
+  clientId: z.string().min(8).max(100),
+  speakerName: z.string().trim().min(1).max(40).regex(/^[^\r\n]+$/).optional(),
+});
 const leaseSchema = z.object({ leaseId: z.string().uuid() });
+const clientSecretSchema = z.object({
+  value: z.string().optional(),
+  expires_at: z.number().optional(),
+  error: z.object({ message: z.string().optional() }).optional(),
+});
 
 function resolveVoicePage(token: string) {
   const page = getPageByToken(token);
@@ -42,6 +51,9 @@ export async function POST(request: Request, { params }: Params) {
   if (target.meeting.status === "closed") {
     return Response.json({ error: "종료된 세션입니다" }, { status: 409 });
   }
+  if (singleTranscriptionProfile(target.lang).transport !== "webrtc") {
+    return Response.json({ error: "이 언어는 WebSocket 전사 경로를 사용합니다" }, { status: 409 });
+  }
 
   const parsed = startSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "요청이 올바르지 않습니다" }, { status: 400 });
@@ -54,16 +66,21 @@ export async function POST(request: Request, { params }: Params) {
     return Response.json({ error: "다른 기기에서 음성을 수집하고 있습니다" }, { status: 409 });
   }
 
-  const language = getLanguage(target.lang).logName;
-  const title = target.meeting.title.replace(/\s+/g, " ").trim().slice(0, 160);
-  const keywords = listGlossaryEntries()
-    .map((entry) => entry.terms[target.lang]?.trim())
-    .filter(
-      (term): term is string =>
-        typeof term === "string" && term.length > 0 && !/[\r\n<>]/.test(term),
-    )
-    .slice(0, 100);
+  const sessionParams = buildSingleSessionParams(target.lang, target.meeting.title, {
+    farField: target.page.kind === "capture",
+    context: target.meeting.transcriptionContext,
+    speaker: parsed.data.speakerName ?? null,
+  });
 
+  const transcription = {
+    model: sessionParams.model,
+    keywords: sessionParams.keywords,
+    delay: sessionParams.delay,
+    prompt: sessionParams.prompt,
+  };
+  const transcriptionWithLanguages = sessionParams.languages.length
+    ? Object.assign(transcription, { languages: sessionParams.languages })
+    : transcription;
   const response = await fetch(`${openaiBaseUrl()}/realtime/client_secrets`, {
     method: "POST",
     headers: {
@@ -77,14 +94,8 @@ export async function POST(request: Request, { params }: Params) {
         audio: {
           input: {
             format: { type: "audio/pcm", rate: 24000 },
-            noise_reduction: { type: target.page.kind === "capture" ? "far_field" : "near_field" },
-            transcription: {
-              model: "gpt-live-transcribe",
-              languages: [target.lang.toLowerCase()],
-              keywords,
-              delay: "high",
-              prompt: `Live meeting title/context: "${title}". Transcribe every intelligible spoken word in ${language} (${target.lang}), including brief acknowledgements and hesitations. Preserve wording, names, numbers, and terminology. Never summarize, translate, answer, invent speaker labels, or add unspoken text.`,
-            },
+            noise_reduction: { type: sessionParams.noiseReduction },
+            transcription: transcriptionWithLanguages,
             // 이 전사 모델은 현재 서버 VAD를 거부하므로 브라우저가 무음을 감지해 확정한다.
             turn_detection: null,
           },
@@ -93,9 +104,7 @@ export async function POST(request: Request, { params }: Params) {
     }),
   });
 
-  const payload = (await response.json().catch(() => null)) as
-    | { value?: string; expires_at?: number; error?: { message?: string } }
-    | null;
+  const payload = await parseJsonResponse(response, clientSecretSchema);
   if (!response.ok || !payload?.value) {
     releaseCapture(target.page.id, lease.leaseId);
     return Response.json(

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppearanceControls } from "@/components/appearance-controls";
+import { VoiceLevelMeter } from "@/components/voice-level-meter";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import type { UiStrings } from "@/lib/i18n-builtin";
@@ -18,6 +19,7 @@ export function CaptureView({
   meetingTitle,
   history,
   initiallyClosed,
+  voiceAvailable,
 }: {
   token: string;
   language: Language;
@@ -25,6 +27,7 @@ export function CaptureView({
   meetingTitle: string;
   history: Message[];
   initiallyClosed: boolean;
+  voiceAvailable: boolean;
 }) {
   const [messages, setMessages] = useState(history);
   const [closed, setClosed] = useState(initiallyClosed);
@@ -33,7 +36,8 @@ export function CaptureView({
     token,
     strings: strings.capture,
     closed,
-    requestPermissionOnMount: true,
+    requestPermissionOnMount: voiceAvailable,
+    lang: language.code,
   });
   const { stop: stopVoice } = voice;
 
@@ -181,6 +185,11 @@ export function CaptureView({
                   : strings.capture.start}
             </button>
           </div>
+          {voice.state === "active" ? (
+            <div className="mt-2.5">
+              <VoiceLevelMeter meter={voice.meter} strings={strings.capture} />
+            </div>
+          ) : null}
           {voice.error ? <p className="mt-2 font-mono text-[11px] text-fg">{voice.error}</p> : null}
         </div>
       </div>

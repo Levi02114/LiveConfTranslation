@@ -1,12 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
 
 import { AppearanceControls } from "@/components/appearance-controls";
 import { TranslationEntry } from "@/components/translation-entry";
-import { useCombinedVoiceInput } from "@/hooks/use-combined-voice-input";
+import { VoiceLevelMeter } from "@/components/voice-level-meter";
+import { useServerVoiceInput } from "@/hooks/use-combined-voice-input";
 import { useRealtime } from "@/hooks/use-realtime";
 import type { UiStrings } from "@/lib/i18n-builtin";
+import { parseJsonResponse } from "@/lib/json-response";
 import { type Language, type LanguageCode, textDirection } from "@/lib/languages";
 import type { Peer, ServerMessage } from "@/lib/realtime/protocol";
 import type { CombinedEntry } from "@/lib/repo";
@@ -63,12 +66,15 @@ export function CombinedInputView({
       setFallbackNotice(strings.capture.fallback.replace("{language}", nameOf(lang))),
     [nameOf, strings.capture.fallback],
   );
-  const voice = useCombinedVoiceInput({
+  const voice = useServerVoiceInput({
     token,
     strings: strings.capture,
     closed,
     speakerName: speakerName.trim() || null,
     onFallback: showFallback,
+    langs: languages.map((language) => language.code),
+    preloadVad: voiceAvailable,
+    requestPermissionOnMount: voiceAvailable,
   });
   const { stop: stopVoice } = voice;
 
@@ -164,7 +170,7 @@ export function CombinedInputView({
     };
   }, []);
   useEffect(() => {
-    if (!contentRef.current || typeof ResizeObserver === "undefined") return;
+    if (!contentRef.current || !("ResizeObserver" in globalThis)) return;
     const observer = new ResizeObserver(() => {
       const container = scrollRef.current;
       if (container) requestAnimationFrame(() => { container.scrollTop = container.scrollHeight; });
@@ -203,9 +209,13 @@ export function CombinedInputView({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ body, speakerName: speakerLabels ? speakerName.trim() : undefined }),
       });
-      const payload = (await response.json().catch(() => null)) as
-        | { usedFallback?: boolean; message?: { lang?: LanguageCode } }
-        | null;
+      const payload = await parseJsonResponse(
+        response,
+        z.object({
+          usedFallback: z.boolean().optional(),
+          message: z.object({ lang: z.string().optional() }).optional(),
+        }),
+      );
       if (response.status === 409) setClosed(true);
       else if (!response.ok) setError(strings.error.sendFailed);
       else {
@@ -320,6 +330,7 @@ export function CombinedInputView({
             ) : null}
             {!voiceAvailable ? <span className="text-muted">{strings.capture.keyRequired}</span> : null}
             {voice.partial ? <span className="min-w-0 flex-1 break-words text-fg">{strings.capture.partial}: {voice.partial}</span> : null}
+            {voice.state === "active" ? <VoiceLevelMeter meter={voice.meter} strings={strings.capture} /> : null}
             {voice.error ? <span>{voice.error}</span> : null}
           </div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 font-mono text-[11px] text-muted">

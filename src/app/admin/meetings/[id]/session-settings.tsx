@@ -2,9 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
+import { z } from "zod";
 
 import type { AdminStrings } from "@/lib/i18n-builtin";
 import type { Language, LanguageCode } from "@/lib/languages";
+import { parseJsonResponse } from "@/lib/json-response";
 import type {
   MeetingLanguageConfig,
   SessionPreset,
@@ -12,6 +14,22 @@ import type {
 } from "@/lib/repo";
 
 import { AdminBusyOverlay } from "../../admin-busy-overlay";
+
+const sessionPresetResponseSchema = z.object({
+  preset: z.object({
+    id: z.string(),
+    name: z.string(),
+    languages: z.array(z.object({
+      lang: z.string(),
+      inputEnabled: z.boolean(),
+      outputEnabled: z.boolean(),
+    })),
+    speakerLabels: z.boolean(),
+    combinedInputFallbackLang: z.string().nullable(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  }).optional(),
+});
 
 const MEETING_PRESET = "builtin:meeting";
 const ASSEMBLY_PRESET = "builtin:assembly";
@@ -21,6 +39,7 @@ export function SessionSettings({
   initialLanguages,
   initialSpeakerLabels,
   initialCombinedInputFallbackLang,
+  initialTranscriptionContext,
   initialPresets,
   availableLanguages,
   locked,
@@ -30,6 +49,7 @@ export function SessionSettings({
   initialLanguages: MeetingLanguageConfig[];
   initialSpeakerLabels: boolean;
   initialCombinedInputFallbackLang: LanguageCode | null;
+  initialTranscriptionContext: string | null;
   initialPresets: SessionPreset[];
   availableLanguages: Language[];
   locked: boolean;
@@ -43,6 +63,9 @@ export function SessionSettings({
     initialCombinedInputFallbackLang,
   );
   const [presets, setPresets] = useState(initialPresets);
+  const [transcriptionContext, setTranscriptionContext] = useState(
+    initialTranscriptionContext ?? "",
+  );
   const [selectedPreset, setSelectedPreset] = useState(() =>
     initialCombinedInputFallbackLang === null &&
     initialLanguages.every((row) => row.inputEnabled && !row.outputEnabled) && initialSpeakerLabels
@@ -55,7 +78,7 @@ export function SessionSettings({
   );
   const [presetName, setPresetName] = useState("");
   const [languageToAdd, setLanguageToAdd] = useState("");
-  const [pending, setPending] = useState<"settings" | "preset" | "delete" | null>(null);
+  const [pending, setPending] = useState<"settings" | "preset" | "delete" | "context" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -156,9 +179,7 @@ export function SessionSettings({
           config: config(),
         }),
       });
-      const payload = (await response.json().catch(() => null)) as
-        | { preset?: SessionPreset }
-        | null;
+      const payload = await parseJsonResponse(response, sessionPresetResponseSchema);
       if (!response.ok || !payload?.preset) {
         setError(strings.settings.presetFailed);
         return;
@@ -193,6 +214,30 @@ export function SessionSettings({
       setPresetName("");
     } catch {
       setError(strings.settings.presetFailed);
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const saveContext = async () => {
+    if (pending !== null || navigating) return;
+    setPending("context");
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/meetings/${meetingId}/transcription-context`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ context: transcriptionContext.trim() || null }),
+      });
+      if (!response.ok) {
+        setError(strings.settings.saveFailed);
+        return;
+      }
+      setNotice(strings.settings.saved);
+      startNavigation(() => router.refresh());
+    } catch {
+      setError(strings.settings.saveFailed);
     } finally {
       setPending(null);
     }
@@ -330,7 +375,7 @@ export function SessionSettings({
                 setLanguages((rows) => [
                   ...rows,
                   {
-                    lang: languageToAdd as LanguageCode,
+                    lang: languageToAdd,
                     inputEnabled: true,
                     outputEnabled: false,
                   },
@@ -398,6 +443,32 @@ export function SessionSettings({
             </select>
           </label>
         ) : null}
+      </div>
+
+      <div className="mt-5 border-t border-line pt-5">
+        <label className="block font-mono text-[11px] text-muted">
+          <span className="block text-fg">{strings.settings.transcriptionContext}</span>
+          <span className="mt-1 block leading-5 text-muted">
+            {strings.settings.transcriptionContextNote}
+          </span>
+          <textarea
+            value={transcriptionContext}
+            maxLength={300}
+            rows={2}
+            onChange={(event) => setTranscriptionContext(event.target.value)}
+            disabled={pending !== null || navigating}
+            placeholder={strings.settings.transcriptionContextPlaceholder}
+            className="mt-2 w-full border border-line bg-bg px-2.5 py-2 text-[12px] leading-5 text-fg outline-none disabled:opacity-50"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => void saveContext()}
+          disabled={pending !== null || navigating}
+          className="mt-2 min-h-9 cursor-pointer border border-line px-3 font-mono text-[11px] hover:border-fg disabled:cursor-default disabled:opacity-30"
+        >
+          {pending === "context" ? strings.settings.saving : strings.settings.contextSave}
+        </button>
       </div>
 
       <div className="mt-5 flex flex-wrap items-end gap-2.5">

@@ -1,4 +1,4 @@
-import type { LanguageCode } from "@/lib/languages";
+import { z } from "zod";
 
 /**
  * 브라우저와 서버가 WebSocket 으로 주고받는 메시지.
@@ -8,69 +8,67 @@ import type { LanguageCode } from "@/lib/languages";
  */
 
 /** 같은 입력 페이지에 들어와 있는 다른 속기사 */
-export type Peer = {
-  clientId: string;
-  name: string;
-  /** 지금 입력창에 뭔가 쓰고 있는지 */
-  typing: boolean;
-  /** 작성 중인 문장. 읽기 전용으로 보여 준다. */
-  draft: string;
-};
+const peerSchema = z.object({
+  clientId: z.string(),
+  name: z.string(),
+  typing: z.boolean(),
+  draft: z.string(),
+});
+export type Peer = z.infer<typeof peerSchema>;
 
-export type ServerMessage =
-  /** 연결 직후 1회. 클라이언트가 자기 식별자를 알게 된다. */
-  | { t: "hello"; clientId: string; name: string }
-  /** 표시 이름 등록 결과 */
-  | { t: "name-result"; ok: true; name: string }
-  | { t: "name-result"; ok: false; reason: "duplicate" }
-  /** 원문이 들어왔다 */
-  | {
-      t: "message";
-      messageId: number;
-      lang: LanguageCode;
-      body: string;
-      speakerName: string | null;
-      createdAt: number;
-    }
-  /** 번역이 나왔다 */
-  | {
-      t: "translation";
-      messageId: number;
-      sourceLang: LanguageCode;
-      lang: LanguageCode;
-      body: string;
-      speakerName: string | null;
-      engine: string;
-      status: "ok" | "error";
-      error?: string;
-      createdAt: number;
-    }
-  /** 같은 입력 페이지의 접속자 목록이 바뀌었다 */
-  | { t: "presence"; peers: Peer[] }
-  /** 회의가 종료되었다 */
-  | { t: "meeting-closed"; closedAt: number };
+export const serverMessageSchema = z.union([
+  z.object({ t: z.literal("hello"), clientId: z.string(), name: z.string() }),
+  z.object({ t: z.literal("name-result"), ok: z.literal(true), name: z.string() }),
+  z.object({ t: z.literal("name-result"), ok: z.literal(false), reason: z.literal("duplicate") }),
+  z.object({
+    t: z.literal("message"),
+    messageId: z.number(),
+    lang: z.string(),
+    body: z.string(),
+    speakerName: z.string().nullable(),
+    createdAt: z.number(),
+  }),
+  z.object({
+    t: z.literal("translation"),
+    messageId: z.number(),
+    sourceLang: z.string(),
+    lang: z.string(),
+    body: z.string(),
+    speakerName: z.string().nullable(),
+    engine: z.string(),
+    status: z.enum(["ok", "error"]),
+    error: z.string().optional(),
+    createdAt: z.number(),
+  }),
+  z.object({ t: z.literal("presence"), peers: z.array(peerSchema) }),
+  z.object({ t: z.literal("meeting-closed"), closedAt: z.number() }),
+]);
+export type ServerMessage = z.infer<typeof serverMessageSchema>;
 
-export type ClientMessage =
-  /** 작성 중인 문장을 알린다. 저장되지 않는다. */
-  | { t: "draft"; text: string }
-  /** 표시 이름을 정한다 */
-  | { t: "name"; name: string };
+const clientMessageSchema = z.union([
+  z.object({ t: z.literal("draft"), text: z.string() }),
+  z.object({ t: z.literal("name"), name: z.string() }),
+]);
+export type ClientMessage = z.infer<typeof clientMessageSchema>;
 
 export function parseClientMessage(raw: string): ClientMessage | null {
   try {
-    const value = JSON.parse(raw) as unknown;
-    if (typeof value !== "object" || value === null) return null;
-
-    const message = value as { t?: unknown; text?: unknown; name?: unknown };
-
-    if (message.t === "draft" && typeof message.text === "string") {
+    const parsed = clientMessageSchema.safeParse(JSON.parse(raw));
+    if (!parsed.success) return null;
+    if (parsed.data.t === "draft") {
       // 초안은 저장되지 않지만 브로드캐스트되므로 길이를 막아 둔다.
-      return { t: "draft", text: message.text.slice(0, 5000) };
+      return { t: "draft", text: parsed.data.text.slice(0, 5000) };
     }
-    if (message.t === "name" && typeof message.name === "string") {
-      return { t: "name", name: message.name.slice(0, 40) };
-    }
+    return { t: "name", name: parsed.data.name.slice(0, 40) };
+  } catch {
     return null;
+  }
+}
+
+export function parseServerMessage(raw: string): ServerMessage | null {
+  try {
+    const parsed = serverMessageSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }

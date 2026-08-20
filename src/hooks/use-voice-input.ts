@@ -1,27 +1,36 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
 
 import { AudioTurnDetector } from "@/lib/audio-turn-detector";
 import { newBrowserId } from "@/lib/browser-id";
+import { useServerVoiceInput } from "@/hooks/use-combined-voice-input";
 import type { UiStrings } from "@/lib/i18n-builtin";
+import { parseJsonResponse } from "@/lib/json-response";
+import type { LanguageCode } from "@/lib/languages";
+import { NeuralTurnDetector, redemptionMsFor, warmVadAssets } from "@/lib/neural-turn-detector";
+import { singleTranscriptionProfile } from "@/lib/transcription-profile";
+import {
+  METER_INTERVAL_MS,
+  VoiceMeterTracker,
+  type VoiceMeter,
+} from "@/lib/voice-level";
 
 export type VoiceInputState = "idle" | "starting" | "active";
 
-type RealtimeSession = {
-  leaseId: string;
-  clientSecret: string;
-  realtimeUrl: string;
-};
-
-type TranscriptionEvent = {
-  type?: string;
-  item_id?: string;
-  content_index?: number;
-  delta?: string;
-  transcript?: string;
-};
-
+const realtimeSessionSchema = z.object({
+  leaseId: z.string(),
+  clientSecret: z.string(),
+  realtimeUrl: z.string(),
+});
+const transcriptionEventSchema = z.object({
+  type: z.string().optional(),
+  item_id: z.string().optional(),
+  content_index: z.number().optional(),
+  delta: z.string().optional(),
+  transcript: z.string().optional(),
+});
 type CompletedTranscript = { contentIndex: number; body: string };
 
 export function useVoiceInput({
@@ -32,6 +41,7 @@ export function useVoiceInput({
   speakerName,
   onTranscript,
   requestPermissionOnMount = false,
+  lang,
 }: {
   token: string;
   strings: UiStrings["capture"];
@@ -40,12 +50,30 @@ export function useVoiceInput({
   speakerName?: string | null;
   onTranscript?: (body: string) => void;
   requestPermissionOnMount?: boolean;
+  /** VAD 무음 관용을 언어별로 맞춘다(타이어·싱할라어는 더 길게). */
+  lang?: LanguageCode;
 }) {
+  const serverTransport = Boolean(
+    lang && singleTranscriptionProfile(lang).transport === "websocket",
+  );
+  const serverVoice = useServerVoiceInput({
+    token,
+    strings,
+    closed,
+    autoSubmit,
+    speakerName,
+    onTranscript,
+    langs: lang ? [lang] : [],
+    enabled: serverTransport,
+    preloadVad: requestPermissionOnMount,
+    requestPermissionOnMount,
+  });
   const [state, setState] = useState<VoiceInputState>("idle");
   const [partial, setPartial] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState("");
+  const [meter, setMeter] = useState<VoiceMeter | null>(null);
 
   const clientId = useRef("");
   const leaseId = useRef<string | null>(null);
@@ -54,6 +82,7 @@ export function useVoiceInput({
   const channel = useRef<RTCDataChannel | null>(null);
   const audioContext = useRef<AudioContext | null>(null);
   const audioFrame = useRef<number | null>(null);
+  const neuralVad = useRef<NeuralTurnDetector | null>(null);
   const heartbeat = useRef<ReturnType<typeof setInterval> | null>(null);
   const closingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const partials = useRef(new Map<string, string>());
@@ -63,6 +92,19 @@ export function useVoiceInput({
   const nextSubmission = useRef(0);
   const submissionChain = useRef(Promise.resolve());
   const finalCommit = useRef<{ ordinal: number; release: boolean; itemId?: string } | null>(null);
+  const speechSinceCommit = useRef(false);
+  const meterLastSet = useRef(0);
+  const meterPeak = useRef(0);
+
+  // 음량 미터는 100ms 간격으로만 상태를 갱신해 불필요한 리렌더를 막는다.
+  const updateMeter = useCallback((tracker: VoiceMeterTracker, rms: number, peak: number) => {
+    const now = performance.now();
+    meterPeak.current = Math.max(meterPeak.current, peak);
+    if (now - meterLastSet.current < METER_INTERVAL_MS) return;
+    meterLastSet.current = now;
+    setMeter(tracker.update(rms, meterPeak.current, now));
+    meterPeak.current = 0;
+  }, []);
 
   const endpoint = `/api/pages/${encodeURIComponent(token)}/realtime-session`;
 
@@ -74,6 +116,8 @@ export function useVoiceInput({
       closingTimer.current = null;
       if (audioFrame.current !== null) cancelAnimationFrame(audioFrame.current);
       audioFrame.current = null;
+      void neuralVad.current?.destroy();
+      neuralVad.current = null;
       void audioContext.current?.close();
       audioContext.current = null;
       channel.current?.close();
@@ -89,6 +133,8 @@ export function useVoiceInput({
       nextSubmission.current = 0;
       submissionChain.current = Promise.resolve();
       finalCommit.current = null;
+      speechSinceCommit.current = false;
+      setMeter(null);
       setPartial("");
       setState("idle");
 
@@ -107,9 +153,17 @@ export function useVoiceInput({
   );
 
   useEffect(() => {
+    if (serverTransport) return;
     clientId.current = newBrowserId();
     return () => disconnect();
-  }, [disconnect]);
+  }, [disconnect, serverTransport]);
+
+  // 페이지 진입 시 VAD 자산을 미리 내려받는다 — 첫 마이크 시작이 다운로드를
+  // 기다리지 않게 하기 위한 예열이다.
+  useEffect(() => {
+    if (serverTransport || !requestPermissionOnMount) return;
+    warmVadAssets();
+  }, [requestPermissionOnMount, serverTransport]);
 
   const refreshDevices = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -125,13 +179,18 @@ export function useVoiceInput({
   }, []);
 
   useEffect(() => {
-    if (!navigator.mediaDevices?.enumerateDevices) return;
+    if (serverTransport || !navigator.mediaDevices?.enumerateDevices) return;
     navigator.mediaDevices.addEventListener("devicechange", refreshDevices);
     return () => navigator.mediaDevices.removeEventListener("devicechange", refreshDevices);
-  }, [refreshDevices]);
+  }, [refreshDevices, serverTransport]);
 
   useEffect(() => {
-    if (!requestPermissionOnMount || !window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    if (
+      serverTransport ||
+      !requestPermissionOnMount ||
+      !window.isSecureContext ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
       return;
     }
     let cancelled = false;
@@ -147,7 +206,7 @@ export function useVoiceInput({
     return () => {
       cancelled = true;
     };
-  }, [refreshDevices, requestPermissionOnMount]);
+  }, [refreshDevices, requestPermissionOnMount, serverTransport]);
 
   const deliverTranscript = useCallback(
     async (sessionLease: string, itemId: string, contentIndex: number, body: string) => {
@@ -214,12 +273,15 @@ export function useVoiceInput({
 
   const handleEvent = useCallback(
     (raw: string, sessionLease: string) => {
-      let event: TranscriptionEvent;
+      let value;
       try {
-        event = JSON.parse(raw) as TranscriptionEvent;
+        value = JSON.parse(raw);
       } catch {
         return;
       }
+      const parsed = transcriptionEventSchema.safeParse(value);
+      if (!parsed.success) return;
+      const event = parsed.data;
 
       const itemId = event.item_id;
       if (event.type === "input_audio_buffer.committed" && itemId) {
@@ -255,27 +317,61 @@ export function useVoiceInput({
 
   const monitorSilence = useCallback(
     async (media: MediaStream) => {
+      // VAD와 음량 미터가 같은 오디오 그래프를 공유한다. 각각 AudioContext를
+      // 만들면 휴대전화에서 같은 마이크를 두 번 처리하게 된다.
       const context = new AudioContext();
       audioContext.current = context;
       if (context.state !== "running") await context.resume();
 
+      // 신경망 VAD 는 백그라운드에서 로드한다 — 기다리는 동안 RMS 감지기가 커밋을
+      // 맡고, 로드가 끝나면 그때부터 신경망이 이어받는다(통합 입력과 같은 방식).
+      void NeuralTurnDetector.create(
+        media,
+        () => {
+          if (channel.current?.readyState === "open") {
+            sendCommit();
+            speechSinceCommit.current = false;
+          }
+        },
+        { redemptionMs: redemptionMsFor(lang ? [lang] : []), audioContext: context },
+      ).then((vad) => {
+        // 로드가 끝나기 전에 세션이 닫혔으면 붙이지 않고 바로 버린다.
+        if (vad && stream.current === media) neuralVad.current = vad;
+        else void vad?.destroy();
+      });
+
+      // 음량 미터는 VAD 경로와 무관하게 항상 단다.
+      // 커밋 판정(RMS 감지기)은 신경망이 아직 없을 때만 돌린다.
       const analyser = context.createAnalyser();
       analyser.fftSize = 1024;
       context.createMediaStreamSource(media).connect(analyser);
       const samples = new Float32Array(analyser.fftSize);
       const detector = new AudioTurnDetector();
+      const tracker = new VoiceMeterTracker();
       const measure = () => {
         analyser.getFloatTimeDomainData(samples);
         let sum = 0;
-        for (const sample of samples) sum += sample * sample;
+        let peak = 0;
+        for (const sample of samples) {
+          sum += sample * sample;
+          const abs = sample < 0 ? -sample : sample;
+          if (abs > peak) peak = abs;
+        }
         const level = Math.sqrt(sum / samples.length);
-        if (channel.current?.readyState !== "open") detector.calibrate(level);
-        else if (detector.update(level, performance.now())) sendCommit();
+        if (level > 0.0025) speechSinceCommit.current = true;
+        if (!neuralVad.current) {
+          if (channel.current?.readyState !== "open") detector.calibrate(level);
+          else if (detector.update(level, performance.now()) && speechSinceCommit.current) {
+            sendCommit();
+            speechSinceCommit.current = false;
+          }
+        }
+        updateMeter(tracker, level, peak);
         audioFrame.current = requestAnimationFrame(measure);
       };
       measure();
     },
-    [sendCommit],
+    [lang, sendCommit, updateMeter],
   );
 
   const stop = useCallback(
@@ -288,11 +384,28 @@ export function useVoiceInput({
 
       if (audioFrame.current !== null) cancelAnimationFrame(audioFrame.current);
       audioFrame.current = null;
+      void neuralVad.current?.destroy();
+      neuralVad.current = null;
       void audioContext.current?.close();
       audioContext.current = null;
+      setMeter(null);
+      stream.current?.getTracks().forEach((track) => track.stop());
+
+      if (!speechSinceCommit.current) {
+        const ordinal = commitsSent.current;
+        if (!ordinal || nextSubmission.current >= ordinal) {
+          disconnect();
+          return;
+        }
+        const itemId = committedItems.current[ordinal - 1];
+        finalCommit.current = { ordinal, release: true, itemId };
+        if (itemId && leaseId.current) flushTranscripts(leaseId.current);
+        closingTimer.current = setTimeout(() => disconnect(), 5_000);
+        return;
+      }
 
       const ordinal = sendCommit();
-      stream.current?.getTracks().forEach((track) => track.stop());
+      speechSinceCommit.current = false;
       if (ordinal === null) {
         disconnect();
         return;
@@ -301,11 +414,11 @@ export function useVoiceInput({
       finalCommit.current = { ordinal, release: true };
       closingTimer.current = setTimeout(() => disconnect(), 5_000);
     },
-    [disconnect, sendCommit],
+    [disconnect, flushTranscripts, sendCommit],
   );
 
   const start = useCallback(async () => {
-    if (state !== "idle" || closed) return;
+    if (serverTransport || state !== "idle" || closed) return;
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       setError(strings.insecure);
       return;
@@ -316,21 +429,25 @@ export function useVoiceInput({
     const sessionRequest = fetch(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ clientId: clientId.current }),
+      body: JSON.stringify({
+        clientId: clientId.current,
+        speakerName: speakerName || undefined,
+      }),
     }).then(async (response) => ({
       response,
-      session: (await response.json().catch(() => null)) as RealtimeSession | null,
+      session: await parseJsonResponse(response, realtimeSessionSchema),
     }));
     try {
       try {
-        stream.current = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
-        });
+        const audio: MediaTrackConstraints = {
+          echoCancellation: true,
+          // 서버 측 noise_reduction 과 이중 처리되면 자음이 뭉개져 전사가
+          // 나빠진다. 브라우저 노이즈 억제는 끄고 서버에 맡긴다.
+          noiseSuppression: false,
+          autoGainControl: true,
+        };
+        if (deviceId) audio.deviceId = { exact: deviceId };
+        stream.current = await navigator.mediaDevices.getUserMedia({ audio });
       } catch {
         throw new Error(strings.permission);
       }
@@ -406,9 +523,9 @@ export function useVoiceInput({
       setError(cause instanceof Error && cause.message ? cause.message : strings.permission);
       disconnect();
     }
-  }, [closed, deviceId, disconnect, endpoint, handleEvent, monitorSilence, refreshDevices, state, strings]);
+  }, [closed, deviceId, disconnect, endpoint, handleEvent, monitorSilence, refreshDevices, serverTransport, speakerName, state, strings]);
 
-  return {
+  const webRtcVoice = {
     state,
     partial,
     error,
@@ -417,5 +534,7 @@ export function useVoiceInput({
     setDeviceId,
     start,
     stop,
+    meter,
   };
+  return serverTransport ? serverVoice : webRtcVoice;
 }

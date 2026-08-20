@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // 임시 작업 폴더. 디자인 시안이 들고 온 런타임 코드까지 검사할 이유가 없다.
     ".tmp/**",
+    // prepare-vad.mjs 가 복사하는 서드파티 VAD 자산(난독화 번들).
+    "public/vad/**",
   ]),
 ]);
 

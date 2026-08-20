@@ -18,10 +18,12 @@ import { createHash, randomUUID } from "node:crypto";
 
 import next from "next";
 import { WebSocket as WsSocket, WebSocketServer, type WebSocket } from "ws";
+import { z } from "zod";
 
 import { isAdminFromCookieHeader } from "@/lib/auth-core";
 import { matchDetectedLanguage } from "@/lib/detected-language";
-import { openaiRealtimeWebSocketUrl } from "@/lib/env";
+import { openaiRealtimeTranscribeUrl } from "@/lib/env";
+import { hasScriptEvidence, scriptLanguageOf } from "@/lib/script-language";
 import type { LanguageCode } from "@/lib/languages";
 import {
   broadcastPresence,
@@ -36,28 +38,34 @@ import {
   getMeetingLanguageConfigs,
   getPageByToken,
   isPageEnabled,
-  listGlossaryEntries,
   listMeetings,
   type Meeting,
   type Page,
 } from "@/lib/repo";
 import {
+  claimCapture,
   claimExclusiveCapture,
   releaseCapture,
   renewCapture,
 } from "@/lib/realtime/capture-lease";
 import { engineKey } from "@/lib/secrets";
+import {
+  buildCombinedSessionParams,
+  buildSingleSessionParams,
+  splitTranscribeHintLangs,
+} from "@/lib/transcribe-config";
+import { singleTranscriptionProfile } from "@/lib/transcription-profile";
+import { RescueAudioTurns, RESCUE_MAX_BYTES, rescueTranscribe } from "@/lib/transcription-rescue";
+
+declare global {
+  var __liveConfTranslationAppRoot: string | undefined;
+}
 
 const dev = process.env.NODE_ENV !== "production";
 const port = Number(process.env.PORT ?? 3000);
 // 0.0.0.0 으로 열어야 같은 네트워크의 참석자 기기에서 접속할 수 있다.
 const hostname = process.env.HOSTNAME ?? "0.0.0.0";
-const appRoot =
-  (
-    globalThis as typeof globalThis & {
-      __liveConfTranslationAppRoot?: string;
-    }
-  ).__liveConfTranslationAppRoot ?? process.cwd();
+const appRoot = globalThis.__liveConfTranslationAppRoot ?? process.cwd();
 
 const app = next({ dev, hostname, port, dir: appRoot });
 const handle = app.getRequestHandler();
@@ -80,7 +88,7 @@ const server = createServer((req, res) => {
     return;
   }
 
-  handle(req, res).catch((error: unknown) => {
+  handle(req, res).catch((error) => {
     console.error("[http] 요청 처리 실패", error);
     res.statusCode = 500;
     res.end("Internal Server Error");
@@ -94,14 +102,14 @@ server.on("upgrade", (request, socket, head) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
   if (url.pathname === "/ws/transcribe") {
-    const target = resolveCombinedInputTarget(url);
+    const target = resolveTranscriptionTarget(url);
     if (!target) {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;
     }
     transcriptionWss.handleUpgrade(request, socket, head, (ws) => {
-      attachCombinedTranscription(ws, target);
+      attachTranscription(ws, target);
     });
     return;
   }
@@ -154,52 +162,110 @@ function resolveConnectionTarget(url: URL, cookie: string | undefined): Target |
   return { meetingId: page.meetingId, kind: page.kind, lang: page.lang };
 }
 
-type CombinedInputTarget = {
+type TranscriptionTarget = {
   page: Page & { lang: LanguageCode };
   meeting: Meeting;
   clientId: string;
   languages: LanguageCode[];
+  mode: "single" | "combined";
 };
 
-function resolveCombinedInputTarget(url: URL): CombinedInputTarget | null {
+function resolveTranscriptionTarget(url: URL): TranscriptionTarget | null {
   const token = url.searchParams.get("token");
   const clientId = url.searchParams.get("clientId")?.slice(0, 100);
   if (!token || !clientId || clientId.length < 8) return null;
   const page = getPageByToken(token);
-  if (!page || page.kind !== "combined-input" || !page.lang || !isPageEnabled(page)) return null;
+  const lang = page?.lang;
+  if (!page || !lang || !isPageEnabled(page)) return null;
   const meeting = getMeeting(page.meetingId);
   if (!meeting || meeting.status !== "open") return null;
-  const languages = getMeetingLanguageConfigs(meeting.id)
-    .filter((row) => row.inputEnabled)
-    .map((row) => row.lang);
-  return { page: page as Page & { lang: LanguageCode }, meeting, clientId, languages };
+  if (page.kind === "combined-input") {
+    const languages = getMeetingLanguageConfigs(meeting.id)
+      .filter((row) => row.inputEnabled)
+      .map((row) => row.lang);
+    return {
+      page: { ...page, lang },
+      meeting,
+      clientId,
+      languages,
+      mode: "combined",
+    };
+  }
+  if (
+    (page.kind !== "input" && page.kind !== "capture") ||
+    singleTranscriptionProfile(lang).transport !== "websocket" ||
+    (page.kind === "capture" && meeting.inputMode !== "realtime")
+  ) return null;
+  return {
+    page: { ...page, lang },
+    meeting,
+    clientId,
+    languages: [lang],
+    mode: "single",
+  };
 }
 
-type OpenAiTranscriptionEvent = {
-  type?: string;
-  item_id?: string;
-  content_index?: number;
-  delta?: string;
-  transcript?: string;
-  languages?: { code?: string }[];
-  error?: { message?: string };
+const openAiTranscriptionEventSchema = z.object({
+  type: z.string().optional(),
+  item_id: z.string().optional(),
+  content_index: z.number().optional(),
+  delta: z.string().optional(),
+  transcript: z.string().optional(),
+  languages: z.array(z.object({ code: z.string().optional() })).optional(),
+  error: z.object({ message: z.string().optional() }).optional(),
+});
+type OpenAiTranscriptionEvent = z.infer<typeof openAiTranscriptionEventSchema>;
+
+const transcriptionClientMessageSchema = z.union([
+  z.object({ t: z.literal("start"), speakerName: z.string().optional() }),
+  z.object({ t: z.literal("heartbeat") }),
+  z.object({ t: z.literal("commit") }),
+]);
+
+type TranscriptionServerMessage =
+  | { t: "error"; reason: "busy" | "key-required" | "speaker-required" | "lost" }
+  | { t: "ready"; leaseId: string | null }
+  | { t: "partial"; text: string }
+  | {
+      t: "transcript";
+      itemId: string;
+      contentIndex: number;
+      body: string;
+      lang: LanguageCode;
+      usedFallback: boolean;
+      leaseId: string | null;
+    };
+
+type OpenAiTranscriptionSettings = {
+  model: string;
+  languages?: string[];
+  keywords: string[];
+  delay?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  prompt: string;
 };
 
-function attachCombinedTranscription(ws: WebSocket, target: CombinedInputTarget) {
+function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   let upstream: WsSocket | null = null;
   let leaseId: string | null = null;
   let speakerName: string | null = null;
   let started = false;
   let closed = false;
   const committed: string[] = [];
-  const completed = new Map<
-    string,
-    { contentIndex: number; body: string; lang: LanguageCode; usedFallback: boolean }
-  >();
+  const completedEvents = new Map<string, OpenAiTranscriptionEvent>();
   const partials = new Map<string, string>();
   let nextTranscript = 0;
+  let draining = false;
 
-  const send = (message: unknown) => {
+  // 2차 전사(rescue)는 힌트 미지원 언어가 있는 세션에서만 의미가 있다 —
+  // 그런 언어가 없으면 문자 교차 검증으로 충분하므로 PCM 을 쌓지 않는다.
+  const rescueEnabled =
+    target.mode === "combined" &&
+    splitTranscribeHintLangs(target.languages).unsupported.length > 0;
+  let sessionKey: string | null = null;
+  let rescuePrompt = "";
+  const rescueAudio = rescueEnabled ? new RescueAudioTurns() : null;
+
+  const send = (message: TranscriptionServerMessage) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));
   };
   const cleanup = () => {
@@ -213,24 +279,91 @@ function attachCombinedTranscription(ws: WebSocket, target: CombinedInputTarget)
     send({ t: "error", reason });
     ws.close(1011, reason);
   };
-  const flush = () => {
-    while (nextTranscript < committed.length) {
-      const itemId = committed[nextTranscript];
-      const item = completed.get(itemId);
-      if (!item) break;
-      nextTranscript += 1;
-      completed.delete(itemId);
-      if (item.body) {
-        send({
-          t: "transcript",
-          itemId,
-          contentIndex: item.contentIndex,
-          body: item.body,
-          lang: item.lang,
-          usedFallback: item.usedFallback,
-          leaseId,
-        });
+  const handleCompleted = async (itemId: string, event: OpenAiTranscriptionEvent) => {
+    let body = event.transcript?.trim() ?? "";
+    let lang = target.page.lang;
+    let usedFallback = false;
+    let scripted: LanguageCode | null = null;
+    let detected: LanguageCode | null = null;
+    if (target.mode === "combined") {
+      detected = matchDetectedLanguage(event.languages?.[0]?.code, target.languages);
+      // 문자 증거가 모델 감지와 다르면 문자를 우선한다 — 한글·태국어·싱할라
+      // 문자 영역은 짧은 발화에서도 흔들리지 않는다.
+      scripted = scriptLanguageOf(body, target.languages);
+      lang = scripted ?? detected ?? target.page.lang;
+      usedFallback = !scripted && !detected;
+    }
+
+    // item_id 에 커밋 시점의 경계를 먼저 결합해 두었으므로 완료 순서가 뒤집혀도
+    // 다른 턴의 PCM 을 rescue 에 보내지 않는다.
+    const turnPcm = rescueAudio?.take(itemId) ?? null;
+
+    // 문자·감지 증거가 모두 없거나(폴백) 둘이 충돌하는 턴은 배치로 한 번 더 듣는다.
+    // 충돌 예: 문자는 싱할라인데 감지는 bn/ta — 실측에서 이 경우 절반은 깨진 문자열이었다.
+    // 세 번째 경우: 감지는 한국어인데 문자에 한글이 한 글자도 없는 경우처럼, 감지 결과를
+    // 문자가 뒷받침하지 못하는 턴(실측에서 Thaana 음역을 ko 로 저장하는 사고가 있었다).
+    const rawDetected = event.languages?.[0]?.code?.toLowerCase().split("-")[0] ?? null;
+    const conflict = Boolean(
+      scripted && rawDetected && rawDetected !== scripted.toLowerCase().split("-")[0],
+    );
+    const contradicted = Boolean(
+      !scripted && detected && hasScriptEvidence(body, detected) === false,
+    );
+    if ((usedFallback || conflict || contradicted) && rescueEnabled && sessionKey) {
+      if (turnPcm && turnPcm.byteLength <= RESCUE_MAX_BYTES) {
+        const rescued = await rescueTranscribe({ pcm: turnPcm, key: sessionKey, prompt: rescuePrompt });
+        let rescueStatus = "failed";
+        if (rescued) {
+          // 배치 결과는 문자 증거가 세션 언어를 가리킬 때만 받아들인다.
+          const rescuedLang = scriptLanguageOf(rescued, target.languages);
+          if (rescuedLang) {
+            body = rescued;
+            lang = rescuedLang;
+            usedFallback = false;
+            rescueStatus = "accepted";
+          } else {
+            rescueStatus = "rejected-script";
+          }
+        }
+        console.warn(
+          `[rescue] item=${itemId} duration=${(turnPcm.byteLength / 48_000).toFixed(1)}s status=${rescueStatus}`,
+        );
+      } else {
+        console.warn(`[rescue] item=${itemId} status=skipped-audio`);
       }
+    }
+
+    if (body) {
+      send({
+        t: "transcript",
+        itemId,
+        contentIndex: event.content_index ?? 0,
+        body,
+        lang,
+        usedFallback,
+        leaseId,
+      });
+    }
+  };
+
+  const drainCompleted = async () => {
+    if (draining) return;
+    draining = true;
+    try {
+      while (nextTranscript < committed.length) {
+        const itemId = committed[nextTranscript];
+        const event = completedEvents.get(itemId);
+        if (!event) break;
+        nextTranscript += 1;
+        completedEvents.delete(itemId);
+        await handleCompleted(itemId, event);
+      }
+    } finally {
+      draining = false;
+      if (
+        nextTranscript < committed.length &&
+        completedEvents.has(committed[nextTranscript])
+      ) void drainCompleted();
     }
   };
 
@@ -240,25 +373,35 @@ function attachCombinedTranscription(ws: WebSocket, target: CombinedInputTarget)
       fail("key-required");
       return;
     }
-    const lease = claimExclusiveCapture(
-      target.meeting.id,
-      target.page.id,
-      target.clientId,
-    );
+    const lease = target.mode === "combined"
+      ? claimExclusiveCapture(target.meeting.id, target.page.id, target.clientId)
+      : claimCapture(target.meeting.id, target.page.id, target.clientId);
     if (!lease) {
       fail("busy");
       return;
     }
     leaseId = lease.leaseId;
+    sessionKey = key;
+    const params = target.mode === "combined"
+      ? buildCombinedSessionParams(
+          target.languages,
+          target.page.lang,
+          target.meeting.title,
+          { context: target.meeting.transcriptionContext, speaker: speakerName },
+        )
+      : buildSingleSessionParams(target.page.lang, target.meeting.title, {
+          farField: target.page.kind === "capture",
+          context: target.meeting.transcriptionContext,
+          speaker: speakerName,
+        });
+    if (rescueEnabled) {
+      rescuePrompt = params.prompt +
+        (params.keywords.length ? ` Terminology: ${params.keywords.join(", ")}.` : "");
+    }
 
-    const terms = listGlossaryEntries()
-      .flatMap((entry) => Object.values(entry.terms))
-      .map((term) => term.trim())
-      .filter((term, index, rows) => term && !/[\r\n<>]/.test(term) && rows.indexOf(term) === index)
-      .slice(0, 100);
-    const title = target.meeting.title.replace(/\s+/g, " ").trim().slice(0, 160);
-
-    upstream = new WsSocket(openaiRealtimeWebSocketUrl("gpt-transcribe"), {
+    // 전사 세션은 모델명이 아니라 intent=transcription 으로 연다.
+    // ?model=gpt-transcribe 는 현재 API 가 거부한다(전사 모델은 세션 모델이 될 수 없다).
+    upstream = new WsSocket(openaiRealtimeTranscribeUrl(), {
       headers: {
         authorization: `Bearer ${key}`,
         "OpenAI-Safety-Identifier": createHash("sha256")
@@ -267,6 +410,13 @@ function attachCombinedTranscription(ws: WebSocket, target: CombinedInputTarget)
       },
     });
     upstream.on("open", () => {
+      const transcription: OpenAiTranscriptionSettings = {
+        model: params.model,
+        keywords: params.keywords,
+        prompt: params.prompt,
+      };
+      if (params.languages.length) transcription.languages = params.languages;
+      if (params.delay) transcription.delay = params.delay;
       upstream?.send(JSON.stringify({
         type: "session.update",
         session: {
@@ -274,13 +424,8 @@ function attachCombinedTranscription(ws: WebSocket, target: CombinedInputTarget)
           audio: {
             input: {
               format: { type: "audio/pcm", rate: 24000 },
-              noise_reduction: { type: "near_field" },
-              transcription: {
-                model: "gpt-transcribe",
-                languages: target.languages.map((lang) => lang.toLowerCase()),
-                keywords: terms,
-                prompt: `Live session title/context: "${title}". Transcribe every intelligible word exactly as spoken. Detect the spoken language from the allowed language list. Preserve names, numbers, short acknowledgements, and glossary terms. Never translate, summarize, answer, invent speaker labels, or add unspoken text.`,
-              },
+              noise_reduction: { type: params.noiseReduction },
+              transcription,
               turn_detection: null,
             },
           },
@@ -288,19 +433,23 @@ function attachCombinedTranscription(ws: WebSocket, target: CombinedInputTarget)
       }));
     });
     upstream.on("message", (raw) => {
-      let event: OpenAiTranscriptionEvent;
+      let value;
       try {
-        event = JSON.parse(raw.toString()) as OpenAiTranscriptionEvent;
+        value = JSON.parse(raw.toString());
       } catch {
         return;
       }
+      const parsed = openAiTranscriptionEventSchema.safeParse(value);
+      if (!parsed.success) return;
+      const event = parsed.data;
       if (event.type === "session.updated" || event.type === "transcription_session.updated") {
         send({ t: "ready", leaseId });
         return;
       }
       if (event.type === "input_audio_buffer.committed" && event.item_id) {
         committed.push(event.item_id);
-        flush();
+        rescueAudio?.bindCommit(event.item_id);
+        void drainCompleted();
         return;
       }
       if (!event.item_id) {
@@ -313,14 +462,8 @@ function attachCombinedTranscription(ws: WebSocket, target: CombinedInputTarget)
       } else if (event.type === "conversation.item.input_audio_transcription.completed") {
         partials.delete(event.item_id);
         send({ t: "partial", text: [...partials.values()].join(" ") });
-        const matched = matchDetectedLanguage(event.languages?.[0]?.code, target.languages);
-        completed.set(event.item_id, {
-          contentIndex: event.content_index ?? 0,
-          body: event.transcript?.trim() ?? "",
-          lang: matched ?? target.page.lang,
-          usedFallback: !matched,
-        });
-        flush();
+        completedEvents.set(event.item_id, event);
+        void drainCompleted();
       }
     });
     upstream.on("close", () => {
@@ -343,6 +486,8 @@ function attachCombinedTranscription(ws: WebSocket, target: CombinedInputTarget)
         ws.close(1009, "Audio frame too large");
         return;
       }
+      // 2차 전사(rescue)용으로 원시 PCM 을 세션 동안만 보관한다.
+      rescueAudio?.append(audio);
       upstream.send(JSON.stringify({
         type: "input_audio_buffer.append",
         audio: audio.toString("base64"),
@@ -350,15 +495,18 @@ function attachCombinedTranscription(ws: WebSocket, target: CombinedInputTarget)
       return;
     }
 
-    let message: { t?: string; speakerName?: string };
+    let value;
     try {
-      message = JSON.parse(raw.toString()) as { t?: string; speakerName?: string };
+      value = JSON.parse(raw.toString());
     } catch {
       return;
     }
+    const parsed = transcriptionClientMessageSchema.safeParse(value);
+    if (!parsed.success) return;
+    const message = parsed.data;
     if (message.t === "start" && !started) {
       speakerName = message.speakerName?.trim().slice(0, 40) || null;
-      if (target.meeting.speakerLabels && !speakerName) {
+      if (target.page.kind !== "capture" && target.meeting.speakerLabels && !speakerName) {
         fail("speaker-required");
         return;
       }
@@ -367,6 +515,7 @@ function attachCombinedTranscription(ws: WebSocket, target: CombinedInputTarget)
     } else if (message.t === "heartbeat" && leaseId) {
       if (!renewCapture(target.page.id, leaseId)) fail("lost");
     } else if (message.t === "commit" && upstream?.readyState === WsSocket.OPEN) {
+      rescueAudio?.markCommit();
       upstream.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
     }
   });
@@ -452,7 +601,7 @@ async function main() {
   });
 }
 
-main().catch((error: unknown) => {
+main().catch((error) => {
   console.error("[server] 기동 실패", error);
   process.exit(1);
 });

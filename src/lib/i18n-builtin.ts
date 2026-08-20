@@ -5,6 +5,8 @@
  * 클라이언트 컴포넌트도 이 타입을 가져가므로 그 경계를 지켜야 한다.
  * DB 오버레이를 얹는 해석기는 `lib/i18n.ts` 에 있다.
  */
+import { z } from "zod";
+
 import type { LanguageCode } from "@/lib/languages";
 
 /**
@@ -49,6 +51,9 @@ export type UiStrings = {
     lost: string;
     startFailed: string;
     fallback: string;
+    level: string;
+    levelTooQuiet: string;
+    levelClipping: string;
   };
   status: {
     waiting: string;
@@ -105,6 +110,9 @@ const ko: UiStrings = {
     lost: "음성 수집 연결이 끊겼습니다",
     startFailed: "전사를 시작하지 못했습니다",
     fallback: "언어를 확인하지 못해 {language}(으)로 처리했습니다",
+    level: "입력 음량",
+    levelTooQuiet: "소리가 너무 작습니다 — 마이크를 가까이 하세요",
+    levelClipping: "소리가 너무 큽니다 — 조금 떨어지세요",
   },
   status: {
     waiting: "번역을 기다리는 중",
@@ -169,6 +177,9 @@ const vi: UiStrings = {
     lost: "Kết nối thu âm đã bị ngắt",
     startFailed: "Không thể bắt đầu phiên âm",
     fallback: "Không xác định được ngôn ngữ nên đã xử lý bằng {language}",
+    level: "Âm lượng đầu vào",
+    levelTooQuiet: "Âm thanh quá nhỏ — hãy lại gần micrô hơn",
+    levelClipping: "Âm thanh quá lớn — hãy tránh xa micrô một chút",
   },
   status: {
     waiting: "Đang chờ bản dịch",
@@ -237,6 +248,9 @@ const th: UiStrings = {
     lost: "การเชื่อมต่อรับเสียงถูกตัด",
     startFailed: "ไม่สามารถเริ่มการถอดเสียงได้",
     fallback: "ไม่สามารถระบุภาษาได้ จึงประมวลผลเป็น {language}",
+    level: "ระดับเสียงที่เข้า",
+    levelTooQuiet: "เสียงเบาเกินไป — โปรดเข้าใกล้ไมโครโฟน",
+    levelClipping: "เสียงดังเกินไป — โปรดอยู่ห่างจากไมโครโฟนเล็กน้อย",
   },
   status: {
     waiting: "กำลังรอคำแปล",
@@ -301,6 +315,9 @@ const si: UiStrings = {
     lost: "හඬ ග්‍රහණ සම්බන්ධතාව බිඳී ඇත",
     startFailed: "පිටපත් කිරීම ආරම්භ කළ නොහැකි විය",
     fallback: "භාෂාව හඳුනාගත නොහැකි නිසා {language} ලෙස සැකසීය",
+    level: "ආදාන ශබ්ද මට්ටම",
+    levelTooQuiet: "හඬ ඉතා මෘදුයි — මයික්‍රෆෝනයට ළං වන්න",
+    levelClipping: "හඬ ඉතා වැඩියි — මයික්‍රෆෝනයෙන් ටිකක් ඈත් වන්න",
   },
   status: {
     waiting: "පරිවර්තනය එනතුරු",
@@ -341,7 +358,12 @@ const si: UiStrings = {
 };
 
 /** 코드에 박혀 있는 참석자 페이지 문구. 언어별 오버레이의 바탕이 된다. */
-export const BUILTIN_UI: Record<LanguageCode, UiStrings> = { ko, vi, th, si };
+export const BUILTIN_UI = new Map<LanguageCode, UiStrings>([
+  ["ko", ko],
+  ["vi", vi],
+  ["th", th],
+  ["si", si],
+]);
 
 /** 기계 번역이 실패하거나 빈 자리를 메울 때 쓰는 최종 폴백 */
 export const FALLBACK_UI: UiStrings = ko;
@@ -460,6 +482,10 @@ export type AdminStrings = {
     combinedInput: string;
     combinedInputNote: string;
     combinedInputFallback: string;
+    transcriptionContext: string;
+    transcriptionContextNote: string;
+    transcriptionContextPlaceholder: string;
+    contextSave: string;
     save: string;
     saving: string;
     saved: string;
@@ -652,6 +678,10 @@ const adminKo: AdminStrings = {
     combinedInput: "통합 입력 사용",
     combinedInputNote: "한 페이지에서 타자 또는 마이크로 여러 입력 언어를 자동 감지합니다.",
     combinedInputFallback: "언어 감지 실패 시 기본 언어",
+    transcriptionContext: "전사 컨텍스트",
+    transcriptionContextNote: "안건, 분야, 화자 이름을 적어 전사 프롬프트에 반영합니다. 다음 마이크 시작부터 적용됩니다.",
+    transcriptionContextPlaceholder: "예: 3분기 제품 리뷰 · 화자: 김민수, Priya · 용어: SLA",
+    contextSave: "컨텍스트 저장",
     save: "설정 저장",
     saving: "저장 중",
     saved: "설정이 저장되었습니다",
@@ -850,6 +880,10 @@ const adminVi: AdminStrings = {
     combinedInput: "Dùng trang nhập liệu tổng hợp",
     combinedInputNote: "Tự động nhận diện nhiều ngôn ngữ nhập bằng bàn phím hoặc micrô trên một trang.",
     combinedInputFallback: "Ngôn ngữ mặc định khi không nhận diện được",
+    transcriptionContext: "Ngữ cảnh phiên âm",
+    transcriptionContextNote: "Ghi chương trình, lĩnh vực, tên người nói để đưa vào lời nhắc phiên âm. Áp dụng từ lần bật micrô tiếp theo.",
+    transcriptionContextPlaceholder: "VD: Đánh giá sản phẩm quý 3 · Người nói: Kim Min-su, Priya · Thuật ngữ: SLA",
+    contextSave: "Lưu ngữ cảnh",
     save: "Lưu cài đặt",
     saving: "Đang lưu",
     saved: "Đã lưu cài đặt",
@@ -1048,6 +1082,10 @@ const adminTh: AdminStrings = {
     combinedInput: "ใช้หน้าป้อนข้อมูลรวม",
     combinedInputNote: "ตรวจจับหลายภาษาจากการพิมพ์หรือไมโครโฟนโดยอัตโนมัติในหน้าเดียว",
     combinedInputFallback: "ภาษาเริ่มต้นเมื่อตรวจจับไม่ได้",
+    transcriptionContext: "บริบทการถอดเสียง",
+    transcriptionContextNote: "ระบุวาระ สาขา และชื่อผู้พูดเพื่อใส่ในพรอมป์ถอดเสียง มีผลตั้งแต่การเปิดไมโครโฟนครั้งถัดไป",
+    transcriptionContextPlaceholder: "เช่น ทบทวนผลิตภัณฑ์ไตรมาส 3 · ผู้พูด: คิม มินซู, Priya · คำศัพท์: SLA",
+    contextSave: "บันทึกบริบท",
     save: "บันทึกการตั้งค่า",
     saving: "กำลังบันทึก",
     saved: "บันทึกการตั้งค่าแล้ว",
@@ -1246,6 +1284,10 @@ const adminSi: AdminStrings = {
     combinedInput: "ඒකාබද්ධ ඇතුළත් කිරීම භාවිත කරන්න",
     combinedInputNote: "එක් පිටුවක යතුරු ලියනයෙන් හෝ මයික්‍රෆෝනයෙන් භාෂා කිහිපයක් ස්වයංක්‍රීයව හඳුනා ගනී.",
     combinedInputFallback: "භාෂාව හඳුනාගත නොහැකි විට පෙරනිමි භාෂාව",
+    transcriptionContext: "පිටපත් සන්දර්භය",
+    transcriptionContextNote: "වැඩසටහන, ක්ෂේත්‍රය, කථික නම් සඳහන් කරන්න — පිටපත් කිරීමේ විමසුමට එකතු වේ. ඊළඟ මයික්‍රෆෝන සැසියෙන් අදාළ වේ.",
+    transcriptionContextPlaceholder: "උදා: 3 වන කාර්තු නිෂ්පාදන සමාලෝචනය · කථිකයින්: Kim, Priya · පද: SLA",
+    contextSave: "සන්දර්භය සුරකින්න",
     save: "සැකසුම් සුරකින්න",
     saving: "සුරකිමින්",
     saved: "සැකසුම් සුරැකිණි",
@@ -1337,12 +1379,12 @@ const adminSi: AdminStrings = {
 };
 
 /** 코드에 박혀 있는 관리자 화면 문구 */
-export const BUILTIN_ADMIN: Record<LanguageCode, AdminStrings> = {
-  ko: adminKo,
-  vi: adminVi,
-  th: adminTh,
-  si: adminSi,
-};
+export const BUILTIN_ADMIN = new Map<LanguageCode, AdminStrings>([
+  ["ko", adminKo],
+  ["vi", adminVi],
+  ["th", adminTh],
+  ["si", adminSi],
+]);
 
 export const FALLBACK_ADMIN: AdminStrings = adminKo;
 
@@ -1354,18 +1396,13 @@ export const FALLBACK_ADMIN: AdminStrings = adminKo;
  * DB 는 행 단위로 저장하고 화면은 중첩 객체로 읽으므로 양방향 변환이 필요하다.
  * 값이 전부 문자열인 2단 구조만 다루면 되어 재귀가 단순하다.
  */
-export function flattenStrings(source: object, prefix = ""): Record<string, string> {
-  const out: Record<string, string> = {};
+const stringGroupsSchema = z.record(z.string(), z.record(z.string(), z.string()));
 
-  for (const [key, value] of Object.entries(source)) {
-    const path = prefix ? `${prefix}.${key}` : key;
-    if (typeof value === "string") {
-      out[path] = value;
-    } else if (value && typeof value === "object") {
-      Object.assign(out, flattenStrings(value, path));
-    }
+export function flattenStrings(source: UiStrings | AdminStrings): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [group, entries] of Object.entries(stringGroupsSchema.parse(source))) {
+    for (const [key, value] of Object.entries(entries)) out.set(`${group}.${key}`, value);
   }
-
   return out;
 }
 
@@ -1376,20 +1413,18 @@ export function flattenStrings(source: object, prefix = ""): Record<string, stri
  * 키가 들어 있어도 화면이 기대하는 모양이 깨지지 않고, 없는 키는 자동으로
  * `base` 값(=빌트인)이 남는다.
  */
-export function applyStrings<T extends object>(base: T, overlay: Record<string, string>): T {
-  const walk = (node: unknown, prefix: string): unknown => {
-    if (typeof node === "string") {
-      const replacement = overlay[prefix];
-      return typeof replacement === "string" && replacement.trim() ? replacement : node;
+export function applyStrings<T extends UiStrings | AdminStrings>(
+  base: T,
+  overlay: ReadonlyMap<string, string>,
+): T {
+  const result = structuredClone(base);
+  const groups = stringGroupsSchema.parse(result);
+  for (const [group, entries] of Object.entries(groups)) {
+    for (const [key, value] of Object.entries(entries)) {
+      const replacement = overlay.get(`${group}.${key}`);
+      entries[key] = replacement?.trim() ? replacement : value;
     }
-    if (!node || typeof node !== "object") return node;
-
-    const out: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(node)) {
-      out[key] = walk(value, prefix ? `${prefix}.${key}` : key);
-    }
-    return out;
-  };
-
-  return walk(base, "") as T;
+  }
+  Object.assign(result, groups);
+  return result;
 }

@@ -11,10 +11,12 @@
     "electron": "npm run build && electron . --no-sandbox",
     "prepare:cloudflared": "node scripts/prepare-cloudflared.mjs",
     "dist:win": "npm run build && npm run prepare:cloudflared && electron-builder --win nsis portable --x64",
-    "lint": "eslint",
-    "typecheck": "tsc --noEmit"
+    "lint": "eslint && oxlint",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "node scripts/prepare-vad.mjs"
   },
   "dependencies": {
+    "@ricky0123/vad-web": "^0.0.30",
     "next": "16.3.1",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
@@ -24,6 +26,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@oxlint/plugins": "1.79.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^24.13.3",
     "@types/qrcode": "^1.5.6",
@@ -35,6 +38,7 @@
     "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
+    "oxlint": "1.79.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.12",
     "typescript": "^5"

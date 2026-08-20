@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppearanceControls } from "@/components/appearance-controls";
 import { TranslationEntry } from "@/components/translation-entry";
+import { VoiceLevelMeter } from "@/components/voice-level-meter";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import type { UiStrings } from "@/lib/i18n-builtin";
@@ -63,6 +64,10 @@ export function InputView({
     autoSubmit: voiceMode,
     speakerName: speakerName.trim() || null,
     onTranscript: appendTranscript,
+    lang: language.code,
+    // 페이지 진입 때 마이크 권한을 미리 확인한다 — 시작 버튼을 눌렀을 때
+    // 권한 팝업으로 멈추지 않게. 음성 입력이 없는 세션(키 미등록)에서는 묻지 않는다.
+    requestPermissionOnMount: voiceAvailable,
   });
   const { stop: stopVoice } = voice;
 
@@ -203,7 +208,7 @@ export function InputView({
   }, []);
 
   useEffect(() => {
-    if (!contentRef.current || typeof ResizeObserver === "undefined") return;
+    if (!contentRef.current || !("ResizeObserver" in globalThis)) return;
     const observer = new ResizeObserver(() => {
       requestAnimationFrame(() => {
         const container = scrollRef.current;
@@ -466,6 +471,9 @@ export function InputView({
               <span className="text-muted">
                 {voice.state === "active" ? strings.capture.listening : strings.capture.starting}
               </span>
+            ) : null}
+            {voice.state === "active" ? (
+              <VoiceLevelMeter meter={voice.meter} strings={strings.capture} />
             ) : null}
             {voice.error ? <span>{voice.error}</span> : null}
           </div>

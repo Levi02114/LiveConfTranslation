@@ -56,3 +56,6 @@ CLAUDE.md
 # SQLite 데이터베이스
 /data
 *.admin-auth.json
+
+# VAD 정적 자산(postinstall 로 node_modules 에서 복사)
+/public/vad

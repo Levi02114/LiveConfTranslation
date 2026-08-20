@@ -65,11 +65,12 @@ export function openaiBaseUrl(): string {
   return (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
 }
 
-/** 커스텀 서버가 OpenAI Realtime WebSocket에 연결할 주소. */
-export function openaiRealtimeWebSocketUrl(model: string): string {
+/** 커스텀 서버가 OpenAI Realtime 전사 WebSocket에 연결할 주소. */
+export function openaiRealtimeTranscribeUrl(): string {
   const url = new URL(`${openaiBaseUrl()}/realtime`);
   url.protocol = url.protocol === "http:" ? "ws:" : "wss:";
-  url.searchParams.set("model", model);
+  // 전사 세션은 모델명이 아니라 intent 로 연다. ?model=<전사 모델> 은 거부된다.
+  url.searchParams.set("intent", "transcription");
   return url.toString();
 }
 
