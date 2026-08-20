@@ -1,7 +1,11 @@
+import { cookies } from "next/headers";
+
+import { ADMIN_LANG_COOKIE, toAdminLang } from "@/lib/admin-lang";
 import { requireAdmin } from "@/lib/auth";
+import { getStrings } from "@/lib/i18n";
 import { isLanguageCode, type LanguageCode } from "@/lib/languages";
 import { renderLogFile } from "@/lib/log-format";
-import { getLogLines, getMeeting } from "@/lib/repo";
+import { getLogLines, getMeeting, listLanguages } from "@/lib/repo";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -37,7 +41,9 @@ export async function GET(request: Request, { params }: Params) {
     const suffix = langs ? `-${langs.join("-")}` : "";
     const fileName = `${safeFileName(meeting.title)}${suffix}.txt`;
 
-    return new Response(renderLogFile(lines), {
+    const registered = listLanguages().map((row) => row.code);
+    const uiLang = toAdminLang((await cookies()).get(ADMIN_LANG_COOKIE)?.value, registered);
+    return new Response(renderLogFile(lines, getStrings(uiLang).message.edited), {
       headers: {
         "content-type": "text/plain; charset=utf-8",
         // 비ASCII 제목을 위해 RFC 5987 형식을 함께 준다.

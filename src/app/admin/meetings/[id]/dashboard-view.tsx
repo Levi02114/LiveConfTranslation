@@ -17,11 +17,10 @@ import type {
   Meeting,
   MeetingLanguageConfig,
   Page,
-  SessionPreset,
 } from "@/lib/repo";
 
 import { AdminBusyOverlay } from "../../admin-busy-overlay";
-import { SessionSettings } from "./session-settings";
+import { TranscriptionContextSettings } from "./session-settings";
 
 /** 실시간 번역에 남겨 둘 줄 수. 대시보드는 기록이 아니라 감시용이다. */
 const FLOW_LIMIT = 60;
@@ -40,6 +39,9 @@ const getServerOrigin = () => "";
 
 type Flow = {
   key: string;
+  messageId: number;
+  revision: number;
+  editedAt: number | null;
   at: number;
   route: string;
   body: string;
@@ -51,8 +53,6 @@ export function DashboardView({
   languages,
   pages,
   languageConfigs,
-  presets,
-  configLocked: initiallyConfigLocked,
   history,
   coverage,
   fallbackCoverage,
@@ -65,8 +65,6 @@ export function DashboardView({
   languages: Language[];
   pages: Page[];
   languageConfigs: MeetingLanguageConfig[];
-  presets: SessionPreset[];
-  configLocked: boolean;
   history: CombinedEntry[];
   coverage: { engine: string; label: string; configured: boolean; unsupported: LanguageCode[] };
   fallbackCoverage: {
@@ -88,7 +86,6 @@ export function DashboardView({
   const [qrError, setQrError] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
-  const [configLocked, setConfigLocked] = useState(initiallyConfigLocked);
   const qrDialogRef = useRef<HTMLDialogElement>(null);
   const setLang = useSetAdminLang();
   const [navigating, startNavigation] = useTransition();
@@ -107,20 +104,29 @@ export function DashboardView({
   const onMessage = useCallback(
     (message: ServerMessage) => {
       if (message.t === "message") {
-        setConfigLocked(true);
-        setFlows((prev) =>
-          push(prev, {
+        setFlows((prev) => {
+          const current = prev.find((flow) => flow.key === `m${message.messageId}`);
+          const cleared = !current || message.revision <= current.revision
+            ? prev
+            : prev.filter((flow) => flow.messageId !== message.messageId || flow.status === "source");
+          return push(cleared, {
             key: `m${message.messageId}`,
+            messageId: message.messageId,
+            revision: message.revision,
+            editedAt: message.editedAt,
             at: message.createdAt,
             route: nameOf(message.lang),
             body: withSpeaker(message.body, message.speakerName),
             status: "source",
-          }),
-        );
+          });
+        });
       } else if (message.t === "translation") {
         setFlows((prev) =>
           push(prev, {
             key: `t${message.messageId}-${message.lang}`,
+            messageId: message.messageId,
+            revision: message.revision,
+            editedAt: message.editedAt,
             at: message.createdAt,
             route: `→ ${nameOf(message.lang)}`,
             body: withSpeaker(
@@ -225,15 +231,25 @@ export function DashboardView({
         }}
       />
 
-      <Link
-        href="/admin"
-        prefetch={false}
-        aria-label={strings.dashboard.backToAdmin}
-        title={strings.dashboard.backToAdmin}
-        className="mb-6 inline-flex h-8 w-8 items-center justify-center font-mono text-[22px] text-muted transition-colors hover:text-fg"
-      >
-        ←
-      </Link>
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <Link
+          href="/admin"
+          prefetch={false}
+          aria-label={strings.dashboard.backToAdmin}
+          title={strings.dashboard.backToAdmin}
+          className="inline-flex h-8 w-8 items-center justify-center font-mono text-[22px] text-muted transition-colors hover:text-fg"
+        >
+          ←
+        </Link>
+        <button
+          type="button"
+          onClick={openLog}
+          className="cursor-pointer border border-line px-3 py-2 font-mono text-[12px] text-muted transition-colors hover:border-fg hover:bg-fg hover:text-bg"
+        >
+          {strings.dashboard.log}
+        </button>
+        <span className="font-mono text-[11px] text-muted">{strings.dashboard.popup}</span>
+      </div>
 
       <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-baseline sm:justify-between sm:gap-5">
         <div className="min-w-0">
@@ -273,15 +289,9 @@ export function DashboardView({
 
       {closeError ? <div className="mt-4 font-mono text-[12px]">{closeError}</div> : null}
 
-      <SessionSettings
+      <TranscriptionContextSettings
         meetingId={meeting.id}
-        initialLanguages={languageConfigs}
-        initialSpeakerLabels={meeting.speakerLabels}
-        initialCombinedInputFallbackLang={combinedInput?.lang ?? null}
-        initialTranscriptionContext={meeting.transcriptionContext}
-        initialPresets={presets}
-        availableLanguages={displayLanguages}
-        locked={configLocked}
+        initialContext={meeting.transcriptionContext}
         strings={strings}
       />
 
@@ -300,7 +310,7 @@ export function DashboardView({
       <section className="mt-10">
         <div className="mb-1 font-mono text-[11px] text-muted">{strings.dashboard.pages}</div>
         <div
-          className={`hidden gap-x-5 gap-y-3 border-b border-line py-3 font-mono text-[11px] text-muted sm:grid ${
+          className={`hidden gap-x-5 gap-y-3 border-b border-line py-3 font-mono text-[11px] text-muted lg:grid ${
             "grid-cols-[110px_1fr_1fr]"
           }`}
         >
@@ -319,8 +329,8 @@ export function DashboardView({
           return (
             <div
               key={language.code}
-              className={`grid grid-cols-1 gap-4 border-b border-line py-4 sm:items-center sm:gap-x-5 sm:gap-y-3 sm:py-3.5 ${
-                "sm:grid-cols-[110px_1fr_1fr]"
+              className={`grid grid-cols-1 gap-4 border-b border-line py-4 lg:items-center lg:gap-x-5 lg:gap-y-3 lg:py-3.5 ${
+                "lg:grid-cols-[110px_1fr_1fr]"
               }`}
             >
               <div className="text-[15px]">{language.label}</div>
@@ -360,7 +370,7 @@ export function DashboardView({
 
         {combined ? (
           <>
-            <div className="grid grid-cols-1 gap-3 border-b border-line py-4 sm:grid-cols-[110px_1fr] sm:items-center sm:gap-x-5 sm:py-3.5">
+            <div className="grid grid-cols-1 gap-3 border-b border-line py-4 lg:grid-cols-[110px_1fr] lg:items-center lg:gap-x-5 lg:py-3.5">
               <div className="text-[15px]">{ui.role.combined}</div>
               <UrlCell
                 url={`${origin}/all/${combined.token}`}
@@ -372,7 +382,7 @@ export function DashboardView({
               />
             </div>
             {hasOutput ? (
-              <div className="grid grid-cols-1 gap-3 border-b border-line py-4 sm:grid-cols-[110px_1fr] sm:items-center sm:gap-x-5 sm:py-3.5">
+              <div className="grid grid-cols-1 gap-3 border-b border-line py-4 lg:grid-cols-[110px_1fr] lg:items-center lg:gap-x-5 lg:py-3.5">
                 <div className="text-[15px]">{strings.dashboard.participantGuide}</div>
                 <UrlCell
                   url={`${origin}/join/${combined.token}`}
@@ -387,7 +397,7 @@ export function DashboardView({
           </>
         ) : null}
         {combinedInput ? (
-          <div className="grid grid-cols-1 gap-3 border-b border-line py-4 sm:grid-cols-[110px_1fr] sm:items-center sm:gap-x-5 sm:py-3.5">
+          <div className="grid grid-cols-1 gap-3 border-b border-line py-4 lg:grid-cols-[110px_1fr] lg:items-center lg:gap-x-5 lg:py-3.5">
             <div className="text-[15px]">{ui.role.combinedInput}</div>
             <UrlCell
               url={`${origin}/in/all/${combinedInput.token}`}
@@ -419,6 +429,11 @@ export function DashboardView({
             </div>
             <div className="app-text col-start-2 col-end-4 row-start-2 [text-wrap:pretty] xl:col-start-3 xl:col-end-4 xl:row-start-1">
               {flow.body}
+              {flow.editedAt ? (
+                <span className="mt-1 block font-mono text-[11px] text-muted">
+                  ({ui.message.edited})
+                </span>
+              ) : null}
             </div>
             <div
               className={`col-start-3 row-start-1 font-mono text-[11px] xl:col-start-4 ${flow.status === "failed" ? "text-fg" : "text-muted"}`}
@@ -428,17 +443,6 @@ export function DashboardView({
           </div>
         ))}
       </section>
-
-      <div className="mt-10 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={openLog}
-          className="cursor-pointer border border-line px-4 py-2.5 font-mono text-[13px] transition-colors hover:border-fg hover:bg-fg hover:text-bg"
-        >
-          {strings.dashboard.log}
-        </button>
-        <span className="font-mono text-[11px] text-muted">{strings.dashboard.popup}</span>
-      </div>
 
       <dialog
         ref={qrDialogRef}
@@ -506,7 +510,7 @@ function UrlCell({
 }) {
   return (
     <div className="min-w-0">
-      {label ? <div className="mb-1.5 font-mono text-[11px] text-muted sm:hidden">{label}</div> : null}
+      {label ? <div className="mb-1.5 font-mono text-[11px] text-muted lg:hidden">{label}</div> : null}
       <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-2.5">
         {/*
           복사가 막힌 환경에서도 주소를 직접 긁어 갈 수 있어야 한다.
@@ -540,7 +544,13 @@ function UrlCell({
 }
 
 function push(prev: Flow[], next: Flow): Flow[] {
-  if (prev.some((flow) => flow.key === next.key)) return prev;
+  const index = prev.findIndex((flow) => flow.key === next.key);
+  if (index >= 0) {
+    if (prev[index]!.revision > next.revision) return prev;
+    const updated = prev.slice();
+    updated[index] = next;
+    return updated;
+  }
   return [next, ...prev].slice(0, FLOW_LIMIT);
 }
 
@@ -553,6 +563,9 @@ function seedFlows(history: CombinedEntry[], languages: Language[], failedText: 
   for (const entry of history) {
     flows.push({
       key: `m${entry.messageId}`,
+      messageId: entry.messageId,
+      revision: entry.revision,
+      editedAt: entry.editedAt,
       at: entry.createdAt,
       route: nameOf(entry.sourceLang),
       body: withSpeaker(entry.sourceBody, entry.speakerName),
@@ -561,6 +574,9 @@ function seedFlows(history: CombinedEntry[], languages: Language[], failedText: 
     for (const translation of entry.translations) {
       flows.push({
         key: `t${entry.messageId}-${translation.lang}`,
+        messageId: entry.messageId,
+        revision: entry.revision,
+        editedAt: entry.editedAt,
         at: entry.createdAt,
         route: `→ ${nameOf(translation.lang)}`,
         body: withSpeaker(

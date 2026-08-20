@@ -46,20 +46,34 @@ export function LogView({
   // 회의가 진행되는 동안 로그 창을 띄워 둘 수 있어야 한다.
   const onMessage = useCallback((message: ServerMessage) => {
     if (message.t === "message") {
-      setAll((prev) => [
-        ...prev,
-        {
+      setAll((prev) => {
+        const current = prev.find((line) => line.messageId === message.messageId);
+        if (current && current.revision > message.revision) return prev;
+        const next: LogLine = {
+          messageId: message.messageId,
+          revision: message.revision,
+          editedAt: message.editedAt,
           at: message.createdAt,
           lang: message.lang,
           kind: "source",
           text: formatSourceLine(message.createdAt, message.body, message.speakerName),
-        },
-      ]);
+        };
+        if (!current) return [...prev, next];
+        return prev
+          .filter((line) => line.messageId !== message.messageId || line.kind === "source")
+          .map((line) => line.messageId === message.messageId ? next : line);
+      });
     } else if (message.t === "translation" && message.status === "ok") {
       // 실패한 번역은 로그에 남기지 않는다 — 서버의 `getLogLines` 와 같은 규칙이다.
-      setAll((prev) => [
-        ...prev,
-        {
+      setAll((prev) => {
+        const source = prev.find(
+          (line) => line.messageId === message.messageId && line.kind === "source",
+        );
+        if (!source || source.revision !== message.revision) return prev;
+        const next: LogLine = {
+          messageId: message.messageId,
+          revision: message.revision,
+          editedAt: message.editedAt,
           at: message.createdAt,
           lang: message.lang,
           kind: "translation",
@@ -69,8 +83,16 @@ export function LogView({
             message.body,
             message.speakerName,
           ),
-        },
-      ]);
+        };
+        const index = prev.findIndex(
+          (line) => line.messageId === message.messageId &&
+            line.kind === "translation" && line.lang === message.lang,
+        );
+        if (index < 0) return [...prev, next];
+        const updated = prev.slice();
+        updated[index] = next;
+        return updated;
+      });
     }
   }, []);
 
@@ -167,6 +189,11 @@ export function LogView({
             }`}
           >
             {line.text}
+            {line.editedAt ? (
+              <span className="mt-1 block font-mono text-[11px] text-muted">
+                ({ui.message.edited})
+              </span>
+            ) : null}
           </div>
         </div>
       ))}

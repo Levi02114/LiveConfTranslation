@@ -53,6 +53,7 @@ export default async function InputPage({
   return (
     <InputView
       token={token}
+      pageId={page.id}
       language={getLanguage(pageLang)}
       languages={getMeetingActiveLangs(meeting.id).map((code) => getLanguage(code, pageLang))}
       strings={getStrings(pageLang)}

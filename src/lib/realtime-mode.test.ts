@@ -12,7 +12,14 @@ test("세션은 언어별 입력 페이지를 만들고 음성 전사를 멱등 
     const repo = await import("./repo");
     const meeting = repo.createMeeting({
       title: "AI 전사 테스트",
-      langs: ["ko", "vi"],
+      config: {
+        languages: [
+          { lang: "ko", inputEnabled: true, outputEnabled: true },
+          { lang: "vi", inputEnabled: true, outputEnabled: true },
+        ],
+        speakerLabels: true,
+        combinedInputFallbackLang: "ko",
+      },
       engine: "google",
       fallbackEngine: "openai",
     });
@@ -27,22 +34,11 @@ test("세션은 언어별 입력 페이지를 만들고 음성 전사를 멱등 
     const input = inputs[0];
 
     assert.deepEqual(repo.getMeetingLanguageConfigs(meeting.id), [
-      { lang: "ko", inputEnabled: true, outputEnabled: false },
-      { lang: "vi", inputEnabled: true, outputEnabled: false },
+      { lang: "ko", inputEnabled: true, outputEnabled: true },
+      { lang: "vi", inputEnabled: true, outputEnabled: true },
     ]);
     assert.equal(repo.getMeeting(meeting.id)?.speakerLabels, true);
-    assert.equal(repo.isPageEnabled(pages.find((page) => page.kind === "output")!), false);
-
-    const configured = repo.updateMeetingConfig(
-      meeting.id,
-      [
-        { lang: "ko", inputEnabled: true, outputEnabled: true },
-        { lang: "vi", inputEnabled: true, outputEnabled: true },
-      ],
-      true,
-      "ko",
-    );
-    assert.equal(configured.ok, true);
+    assert.equal(repo.isPageEnabled(pages.find((page) => page.kind === "output")!), true);
     assert.deepEqual(repo.getMeetingActiveLangs(meeting.id), ["ko", "vi"]);
     const combinedInput = repo.getMeetingPages(meeting.id).find(
       (page) => page.kind === "combined-input",
@@ -82,10 +78,6 @@ test("세션은 언어별 입력 페이지를 만들고 음성 전사를 멱등 
     assert.equal(repeated.message.speakerName, "김속기");
     assert.equal(repo.getRecentMessages(meeting.id).length, 1);
     assert.equal(repo.getRecentCombined(meeting.id)[0]?.speakerName, "김속기");
-    assert.deepEqual(
-      repo.updateMeetingConfig(meeting.id, repo.getMeetingLanguageConfigs(meeting.id), false),
-      { ok: false, reason: "locked" },
-    );
     assert.equal(repo.deleteSessionPreset(preset.id), true);
 
     const leases = await import("./realtime/capture-lease");

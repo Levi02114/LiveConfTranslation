@@ -82,6 +82,9 @@ export async function POST(request: Request, { params }: Params) {
       sourceLang: result.message.lang,
       body: result.message.body,
       speakerName: result.message.speakerName,
+      revision: result.message.revision,
+      editedAt: result.message.editedAt,
+      createdAt: result.message.createdAt,
     }).catch((error) => console.error("[translate] AI 전사 번역 오류", error));
   }
 

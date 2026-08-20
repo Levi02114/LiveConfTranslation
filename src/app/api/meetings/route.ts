@@ -2,14 +2,13 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireAdmin } from "@/lib/auth";
-import type { LanguageCode } from "@/lib/languages";
 import {
   createMeeting,
   hasLanguage,
-  listLanguages,
   listMeetings,
   touchEngineSetting,
 } from "@/lib/repo";
+import { sessionConfigSchema } from "@/lib/session-config";
 import { isEngineId } from "@/lib/translate";
 
 /*
@@ -18,10 +17,7 @@ import { isEngineId } from "@/lib/translate";
  */
 const createSchema = z.object({
   title: z.string().trim().min(1, "세션 제목을 입력해 주세요").max(200),
-  langs: z
-    .array(z.string().refine(hasLanguage, "등록되지 않은 언어입니다"))
-    .min(2, "최소 두 개 언어가 필요합니다")
-    .optional(),
+  config: sessionConfigSchema,
   engine: z.string().refine(isEngineId, "지원하지 않는 번역 엔진입니다").optional(),
   fallbackEngine: z
     .union([z.string().refine(isEngineId, "지원하지 않는 폴백 엔진입니다"), z.null()])
@@ -47,13 +43,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const { title, langs, engine, fallbackEngine = null } = parsed.data;
-
-  // 같은 언어를 두 번 고르면 페이지가 중복 생성되므로 걸러 낸다.
-  const requestedLangs = langs ?? listLanguages().map((row) => row.code);
-  const unique: LanguageCode[] = [...new Set(requestedLangs)];
-  if (unique.length < 2) {
-    return Response.json({ error: "서로 다른 언어를 두 개 이상 골라 주세요" }, { status: 400 });
+  const { title, config, engine, fallbackEngine = null } = parsed.data;
+  if (config.languages.some((row) => !hasLanguage(row.lang))) {
+    return Response.json({ error: "등록되지 않은 언어입니다" }, { status: 400 });
   }
 
   const requested = engine ?? "google";
@@ -72,7 +64,7 @@ export async function POST(request: Request) {
 
   const meeting = createMeeting({
     title,
-    langs: unique,
+    config,
     engine: requested,
     fallbackEngine,
   });

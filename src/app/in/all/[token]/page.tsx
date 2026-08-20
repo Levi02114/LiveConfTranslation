@@ -51,6 +51,7 @@ export default async function CombinedInputPage({
   return (
     <CombinedInputView
       token={token}
+      pageId={page.id}
       uiLang={uiLang}
       fallbackLang={page.lang}
       languages={activeLangs.map((code) => getLanguage(code, uiLang))}

@@ -10,7 +10,18 @@ test("종료된 세션만 하위 기록과 함께 실제 삭제한다", async ()
 
   try {
     const repo = await import("./repo");
-    const meeting = repo.createMeeting({ title: "삭제 테스트", langs: ["ko", "vi"], engine: "google" });
+    const meeting = repo.createMeeting({
+      title: "삭제 테스트",
+      config: {
+        languages: [
+          { lang: "ko", inputEnabled: true, outputEnabled: true },
+          { lang: "vi", inputEnabled: true, outputEnabled: true },
+        ],
+        speakerLabels: false,
+        combinedInputFallbackLang: null,
+      },
+      engine: "google",
+    });
     assert.equal(meeting.fallbackEngine, null);
     const page = repo.getMeetingPages(meeting.id).find((item) => item.kind === "input");
     assert.ok(page);
@@ -23,6 +34,7 @@ test("종료된 세션만 하위 기록과 함께 실제 삭제한다", async ()
     });
     repo.upsertTranslation({
       messageId: message.id,
+      revision: message.revision,
       lang: "vi",
       body: "Xin chào",
       engine: "google",

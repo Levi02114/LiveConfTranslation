@@ -23,9 +23,12 @@ export const serverMessageSchema = z.union([
   z.object({
     t: z.literal("message"),
     messageId: z.number(),
+    pageId: z.string().nullable(),
     lang: z.string(),
     body: z.string(),
     speakerName: z.string().nullable(),
+    revision: z.number().int().nonnegative(),
+    editedAt: z.number().nullable(),
     createdAt: z.number(),
   }),
   z.object({
@@ -38,6 +41,9 @@ export const serverMessageSchema = z.union([
     engine: z.string(),
     status: z.enum(["ok", "error"]),
     error: z.string().optional(),
+    revision: z.number().int().nonnegative(),
+    editedAt: z.number().nullable(),
+    sourceCreatedAt: z.number(),
     createdAt: z.number(),
   }),
   z.object({ t: z.literal("presence"), peers: z.array(peerSchema) }),

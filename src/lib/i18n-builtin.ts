@@ -35,6 +35,15 @@ export type UiStrings = {
     sending: string;
     hint: string;
   };
+  message: {
+    edit: string;
+    save: string;
+    cancel: string;
+    saving: string;
+    edited: string;
+    editFailed: string;
+    editConflict: string;
+  };
   capture: {
     toggle: string;
     keyRequired: string;
@@ -93,6 +102,15 @@ const ko: UiStrings = {
     send: "보내기",
     sending: "보내는 중",
     hint: "Enter 로 전송 · Shift+Enter 로 줄바꿈",
+  },
+  message: {
+    edit: "수정",
+    save: "저장",
+    cancel: "취소",
+    saving: "저장 중",
+    edited: "수정됨",
+    editFailed: "메시지를 수정하지 못했습니다",
+    editConflict: "다른 수정이 먼저 반영되었습니다. 최신 내용을 확인해 주세요",
   },
   capture: {
     toggle: "자동 음성 입력 사용",
@@ -160,6 +178,15 @@ const vi: UiStrings = {
     send: "Gửi",
     sending: "Đang gửi",
     hint: "Enter để gửi · Shift+Enter để xuống dòng",
+  },
+  message: {
+    edit: "Chỉnh sửa",
+    save: "Lưu",
+    cancel: "Hủy",
+    saving: "Đang lưu",
+    edited: "Đã chỉnh sửa",
+    editFailed: "Không chỉnh sửa được tin nhắn",
+    editConflict: "Một thay đổi khác đã được lưu trước. Hãy kiểm tra nội dung mới nhất",
   },
   capture: {
     toggle: "Sử dụng nhập liệu bằng giọng nói tự động",
@@ -232,6 +259,15 @@ const th: UiStrings = {
     sending: "กำลังส่ง",
     hint: "กด Enter เพื่อส่ง · Shift+Enter เพื่อขึ้นบรรทัดใหม่",
   },
+  message: {
+    edit: "แก้ไข",
+    save: "บันทึก",
+    cancel: "ยกเลิก",
+    saving: "กำลังบันทึก",
+    edited: "แก้ไขแล้ว",
+    editFailed: "แก้ไขข้อความไม่สำเร็จ",
+    editConflict: "มีการบันทึกการแก้ไขอื่นก่อนแล้ว โปรดตรวจสอบเนื้อหาล่าสุด",
+  },
   capture: {
     toggle: "ใช้การป้อนข้อมูลด้วยเสียงอัตโนมัติ",
     keyRequired: "ยังไม่ได้ลงทะเบียนคีย์ OpenAI API",
@@ -298,6 +334,15 @@ const si: UiStrings = {
     send: "යවන්න",
     sending: "යවමින්",
     hint: "යැවීමට Enter · නව පේළියකට Shift+Enter",
+  },
+  message: {
+    edit: "සංස්කරණය",
+    save: "සුරකින්න",
+    cancel: "අවලංගු කරන්න",
+    saving: "සුරකිමින්",
+    edited: "සංස්කරණය කළා",
+    editFailed: "පණිවිඩය සංස්කරණය කළ නොහැකි විය",
+    editConflict: "වෙනත් සංස්කරණයක් මුලින් සුරැකිණි. නවතම අන්තර්ගතය පරීක්ෂා කරන්න",
   },
   capture: {
     toggle: "ස්වයංක්‍රීය හඬ ආදානය භාවිත කරන්න",
@@ -500,6 +545,7 @@ export type AdminStrings = {
     deletePresetConfirm: string;
     presetSaved: string;
     presetFailed: string;
+    presetLanguageMismatch: string;
   };
   log: { notice: string; title: string; download: string; empty: string };
   keys: {
@@ -678,10 +724,10 @@ const adminKo: AdminStrings = {
     combinedInput: "통합 입력 사용",
     combinedInputNote: "한 페이지에서 타자 또는 마이크로 여러 입력 언어를 자동 감지합니다.",
     combinedInputFallback: "언어 감지 실패 시 기본 언어",
-    transcriptionContext: "전사 컨텍스트",
-    transcriptionContextNote: "안건, 분야, 화자 이름을 적어 전사 프롬프트에 반영합니다. 다음 마이크 시작부터 적용됩니다.",
-    transcriptionContextPlaceholder: "예: 3분기 제품 리뷰 · 화자: 김민수, Priya · 용어: SLA",
-    contextSave: "컨텍스트 저장",
+    transcriptionContext: "음성 인식 참고 정보",
+    transcriptionContextNote: "AI가 더 정확히 받아쓰도록 세션 주제, 사람 이름, 자주 나오는 용어를 적어 주세요. 다음 음성 인식 시작부터 적용됩니다.",
+    transcriptionContextPlaceholder: "예: 신제품 출시 회의 · 이름: 김민수, Priya · 자주 나오는 용어: LiveConfTranslation, SLA",
+    contextSave: "참고 정보 저장",
     save: "설정 저장",
     saving: "저장 중",
     saved: "설정이 저장되었습니다",
@@ -696,6 +742,7 @@ const adminKo: AdminStrings = {
     deletePresetConfirm: "이 프리셋을 삭제할까요?",
     presetSaved: "프리셋이 저장되었습니다",
     presetFailed: "프리셋을 처리하지 못했습니다",
+    presetLanguageMismatch: "선택한 세션 언어와 프리셋 언어가 일치하지 않습니다",
   },
   log: {
     notice: "이 창은 로그 전용입니다 · 네비게이션 없음",
@@ -880,10 +927,10 @@ const adminVi: AdminStrings = {
     combinedInput: "Dùng trang nhập liệu tổng hợp",
     combinedInputNote: "Tự động nhận diện nhiều ngôn ngữ nhập bằng bàn phím hoặc micrô trên một trang.",
     combinedInputFallback: "Ngôn ngữ mặc định khi không nhận diện được",
-    transcriptionContext: "Ngữ cảnh phiên âm",
-    transcriptionContextNote: "Ghi chương trình, lĩnh vực, tên người nói để đưa vào lời nhắc phiên âm. Áp dụng từ lần bật micrô tiếp theo.",
-    transcriptionContextPlaceholder: "VD: Đánh giá sản phẩm quý 3 · Người nói: Kim Min-su, Priya · Thuật ngữ: SLA",
-    contextSave: "Lưu ngữ cảnh",
+    transcriptionContext: "Thông tin hỗ trợ nhận dạng giọng nói",
+    transcriptionContextNote: "Nhập chủ đề phiên, tên người và các thuật ngữ thường gặp để AI ghi lại chính xác hơn. Áp dụng từ lần bắt đầu nhận dạng giọng nói tiếp theo.",
+    transcriptionContextPlaceholder: "Ví dụ: Họp ra mắt sản phẩm mới · Tên: Kim Min-su, Priya · Thuật ngữ thường gặp: LiveConfTranslation, SLA",
+    contextSave: "Lưu thông tin hỗ trợ",
     save: "Lưu cài đặt",
     saving: "Đang lưu",
     saved: "Đã lưu cài đặt",
@@ -898,6 +945,7 @@ const adminVi: AdminStrings = {
     deletePresetConfirm: "Xóa mẫu này?",
     presetSaved: "Đã lưu mẫu",
     presetFailed: "Không xử lý được mẫu",
+    presetLanguageMismatch: "Ngôn ngữ của phiên đã chọn không khớp với ngôn ngữ của mẫu",
   },
   log: {
     notice: "Cửa sổ chỉ dành cho nhật ký · Không có điều hướng",
@@ -1082,10 +1130,10 @@ const adminTh: AdminStrings = {
     combinedInput: "ใช้หน้าป้อนข้อมูลรวม",
     combinedInputNote: "ตรวจจับหลายภาษาจากการพิมพ์หรือไมโครโฟนโดยอัตโนมัติในหน้าเดียว",
     combinedInputFallback: "ภาษาเริ่มต้นเมื่อตรวจจับไม่ได้",
-    transcriptionContext: "บริบทการถอดเสียง",
-    transcriptionContextNote: "ระบุวาระ สาขา และชื่อผู้พูดเพื่อใส่ในพรอมป์ถอดเสียง มีผลตั้งแต่การเปิดไมโครโฟนครั้งถัดไป",
-    transcriptionContextPlaceholder: "เช่น ทบทวนผลิตภัณฑ์ไตรมาส 3 · ผู้พูด: คิม มินซู, Priya · คำศัพท์: SLA",
-    contextSave: "บันทึกบริบท",
+    transcriptionContext: "ข้อมูลช่วยการรู้จำเสียง",
+    transcriptionContextNote: "ระบุหัวข้อของเซสชัน ชื่อบุคคล และคำศัพท์ที่พบบ่อย เพื่อให้ AI ถอดเสียงได้แม่นยำขึ้น มีผลเมื่อเริ่มการรู้จำเสียงครั้งถัดไป",
+    transcriptionContextPlaceholder: "เช่น ประชุมเปิดตัวผลิตภัณฑ์ใหม่ · ชื่อ: Kim Min-su, Priya · คำที่พบบ่อย: LiveConfTranslation, SLA",
+    contextSave: "บันทึกข้อมูลช่วยเหลือ",
     save: "บันทึกการตั้งค่า",
     saving: "กำลังบันทึก",
     saved: "บันทึกการตั้งค่าแล้ว",
@@ -1100,6 +1148,7 @@ const adminTh: AdminStrings = {
     deletePresetConfirm: "ลบค่าที่ตั้งไว้นี้หรือไม่?",
     presetSaved: "บันทึกค่าที่ตั้งไว้แล้ว",
     presetFailed: "ดำเนินการกับค่าที่ตั้งไว้ไม่สำเร็จ",
+    presetLanguageMismatch: "ภาษาของเซสชันที่เลือกไม่ตรงกับภาษาของค่าที่ตั้งไว้",
   },
   log: {
     notice: "หน้าต่างนี้ใช้สำหรับบันทึกเท่านั้น · ไม่มีเมนูนำทาง",
@@ -1284,10 +1333,10 @@ const adminSi: AdminStrings = {
     combinedInput: "ඒකාබද්ධ ඇතුළත් කිරීම භාවිත කරන්න",
     combinedInputNote: "එක් පිටුවක යතුරු ලියනයෙන් හෝ මයික්‍රෆෝනයෙන් භාෂා කිහිපයක් ස්වයංක්‍රීයව හඳුනා ගනී.",
     combinedInputFallback: "භාෂාව හඳුනාගත නොහැකි විට පෙරනිමි භාෂාව",
-    transcriptionContext: "පිටපත් සන්දර්භය",
-    transcriptionContextNote: "වැඩසටහන, ක්ෂේත්‍රය, කථික නම් සඳහන් කරන්න — පිටපත් කිරීමේ විමසුමට එකතු වේ. ඊළඟ මයික්‍රෆෝන සැසියෙන් අදාළ වේ.",
-    transcriptionContextPlaceholder: "උදා: 3 වන කාර්තු නිෂ්පාදන සමාලෝචනය · කථිකයින්: Kim, Priya · පද: SLA",
-    contextSave: "සන්දර්භය සුරකින්න",
+    transcriptionContext: "හඬ හඳුනාගැනීම සඳහා උපකාරක තොරතුරු",
+    transcriptionContextNote: "AI හට වඩා නිවැරදිව පිටපත් කිරීමට, සැසියේ මාතෘකාව, පුද්ගල නම් සහ නිතර භාවිත වන පද ඇතුළත් කරන්න. ඊළඟ හඬ හඳුනාගැනීම ආරම්භයේ සිට යෙදේ.",
+    transcriptionContextPlaceholder: "උදා: නව නිෂ්පාදන හඳුන්වාදීමේ සැසිය · නම්: Kim Min-su, Priya · නිතර භාවිත වන පද: LiveConfTranslation, SLA",
+    contextSave: "උපකාරක තොරතුරු සුරකින්න",
     save: "සැකසුම් සුරකින්න",
     saving: "සුරකිමින්",
     saved: "සැකසුම් සුරැකිණි",
@@ -1302,6 +1351,7 @@ const adminSi: AdminStrings = {
     deletePresetConfirm: "මෙම පෙරසැකසුම මකන්නද?",
     presetSaved: "පෙරසැකසුම සුරැකිණි",
     presetFailed: "පෙරසැකසුම සැකසිය නොහැකි විය",
+    presetLanguageMismatch: "තෝරාගත් සැසි භාෂා පෙරසැකසුම් භාෂා සමඟ නොගැළපේ",
   },
   log: {
     notice: "මෙම කවුළුව ලොගය සඳහා පමණි · සංචාලනය නැත",

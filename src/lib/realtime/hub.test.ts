@@ -30,9 +30,12 @@ test("입력 페이지가 다른 언어 원문과 번역도 받는다", () => {
     publish(connection.meetingId, {
       t: "message",
       messageId: 1,
+      pageId: "ko-input",
       lang: "ko",
       body: "안녕하세요",
       speakerName: null,
+      revision: 0,
+      editedAt: null,
       createdAt: 1,
     });
     publish(connection.meetingId, {
@@ -44,6 +47,9 @@ test("입력 페이지가 다른 언어 원문과 번역도 받는다", () => {
       speakerName: null,
       engine: "openai",
       status: "ok",
+      revision: 0,
+      editedAt: null,
+      sourceCreatedAt: 1,
       createdAt: 2,
     });
 
@@ -174,9 +180,12 @@ test("통합 입력도 전체 원문·번역을 받고 일반 입력과 닉네�
     publish(combined.meetingId, {
       t: "message",
       messageId: 9,
+      pageId: "vi-input",
       lang: "vi",
       body: "Xin chào",
       speakerName: "Levi",
+      revision: 0,
+      editedAt: null,
       createdAt: 1,
     });
     assert.equal(received.at(-1)?.t, "message");

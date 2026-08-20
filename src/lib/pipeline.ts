@@ -8,6 +8,7 @@ import {
   insertMessage,
   insertMessageOnce,
   type Meeting,
+  type Message,
   upsertTranslation,
 } from "@/lib/repo";
 import { TranslationError, translateText } from "@/lib/translate";
@@ -20,6 +21,20 @@ import { TranslationError, translateText } from "@/lib/translate";
  */
 
 /** 원문을 받아 저장하고 즉시 배포한다. 번역은 호출부가 이어서 돌린다. */
+export function publishMessage(meetingId: string, message: Message): void {
+  publish(meetingId, {
+    t: "message",
+    messageId: message.id,
+    pageId: message.pageId,
+    lang: message.lang,
+    body: message.body,
+    speakerName: message.speakerName,
+    revision: message.revision,
+    editedAt: message.editedAt,
+    createdAt: message.createdAt,
+  });
+}
+
 export function acceptMessage(input: {
   meeting: Meeting;
   pageId: string | null;
@@ -35,14 +50,7 @@ export function acceptMessage(input: {
     speakerName: input.speakerName,
   });
 
-  publish(input.meeting.id, {
-    t: "message",
-    messageId: message.id,
-    lang: message.lang,
-    body: message.body,
-    speakerName: message.speakerName,
-    createdAt: message.createdAt,
-  });
+  publishMessage(input.meeting.id, message);
 
   return message;
 }
@@ -66,14 +74,7 @@ export function acceptTranscript(input: {
   });
 
   if (result.inserted) {
-    publish(input.meeting.id, {
-      t: "message",
-      messageId: result.message.id,
-      lang: result.message.lang,
-      body: result.message.body,
-      speakerName: result.message.speakerName,
-      createdAt: result.message.createdAt,
-    });
+    publishMessage(input.meeting.id, result.message);
   }
 
   return result;
@@ -92,6 +93,9 @@ export async function translateMessage(input: {
   sourceLang: LanguageCode;
   body: string;
   speakerName?: string | null;
+  revision: number;
+  editedAt?: number | null;
+  createdAt: number;
 }): Promise<void> {
   const targets = getMeetingActiveLangs(input.meeting.id).filter(
     (lang) => lang !== input.sourceLang,
@@ -119,11 +123,13 @@ export async function translateMessage(input: {
 
         const createdAt = upsertTranslation({
           messageId: input.messageId,
+          revision: input.revision,
           lang: target,
           body: result.text,
           engine: result.engine,
           status: "ok",
         });
+        if (createdAt === null) return;
 
         publish(input.meeting.id, {
           t: "translation",
@@ -134,6 +140,9 @@ export async function translateMessage(input: {
           speakerName: input.speakerName ?? null,
           engine: result.engine,
           status: "ok",
+          revision: input.revision,
+          editedAt: input.editedAt ?? null,
+          sourceCreatedAt: input.createdAt,
           createdAt,
         });
       } catch (cause) {
@@ -146,12 +155,14 @@ export async function translateMessage(input: {
 
         const createdAt = upsertTranslation({
           messageId: input.messageId,
+          revision: input.revision,
           lang: target,
           body: "",
           engine: input.meeting.engine,
           status: "error",
           error: reason,
         });
+        if (createdAt === null) return;
 
         publish(input.meeting.id, {
           t: "translation",
@@ -163,6 +174,9 @@ export async function translateMessage(input: {
           engine: input.meeting.engine,
           status: "error",
           error: reason,
+          revision: input.revision,
+          editedAt: input.editedAt ?? null,
+          sourceCreatedAt: input.createdAt,
           createdAt,
         });
       }

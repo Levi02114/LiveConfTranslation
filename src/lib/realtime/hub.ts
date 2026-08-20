@@ -69,7 +69,8 @@ function shouldDeliver(connection: Connection, message: ServerMessage): boolean 
     case "output":
       // 참석자는 자기 언어 번역만 본다.
       return (
-        (message.t === "message" && message.lang === connection.lang) ||
+        (message.t === "message" &&
+          (message.lang === connection.lang || message.revision > 0)) ||
         (message.t === "translation" && message.lang === connection.lang)
       );
 

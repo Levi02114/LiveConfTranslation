@@ -13,6 +13,7 @@ import {
   listLanguages,
   listMeetings,
   listOpenaiModels,
+  listSessionPresets,
 } from "@/lib/repo";
 import { engineKeyStatus, resolveOpenaiModel } from "@/lib/secrets";
 import { getEngine, listEngines, refreshEngineSupport } from "@/lib/translate";
@@ -95,6 +96,7 @@ export default async function AdminPage() {
       defaultEngine={selectedEngine}
       openaiModel={resolveOpenaiModel()}
       openaiModels={listOpenaiModels()}
+      presets={listSessionPresets()}
     />
   );
 }

@@ -80,6 +80,8 @@ CREATE TABLE IF NOT EXISTS messages (
   body        TEXT NOT NULL,
   speaker_name TEXT,                          -- 닉네임 기능을 쓰지 않으면 NULL
   ingest_key  TEXT,                           -- AI 전사 재전송 멱등 키
+  revision    INTEGER NOT NULL DEFAULT 0,     -- 원문 수정 시 증가하는 낙관적 잠금 번호
+  edited_at   INTEGER,                        -- 한 번이라도 수정했으면 마지막 수정 시각
   created_at  INTEGER NOT NULL
 );
 
@@ -247,6 +249,8 @@ function open(): DatabaseSync {
   ensureColumn(db, "meeting_langs", "output_enabled", "INTEGER NOT NULL DEFAULT 1");
   ensureColumn(db, "messages", "speaker_name", "TEXT");
   ensureColumn(db, "messages", "ingest_key", "TEXT");
+  ensureColumn(db, "messages", "revision", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "messages", "edited_at", "INTEGER");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_ingest_key ON messages (ingest_key)");
   seedLanguages(db);
   backfillRealtimeCapturePages(db);

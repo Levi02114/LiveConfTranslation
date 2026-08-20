@@ -32,6 +32,7 @@ import {
   maxPositionRowSchema,
   meetingLanguageConfigRowSchema,
   meetingRowSchema,
+  meetingStatusSchema,
   messageCountRowSchema,
   messageRowSchema,
   openaiModelRowSchema,
@@ -98,6 +99,8 @@ export type Message = {
   lang: LanguageCode;
   body: string;
   speakerName: string | null;
+  revision: number;
+  editedAt: number | null;
   createdAt: number;
 };
 
@@ -182,7 +185,7 @@ function toPage(row: PageRow): Page {
  */
 export function createMeeting(input: {
   title: string;
-  langs: readonly LanguageCode[];
+  config: SessionPresetConfig;
   engine: EngineId;
   fallbackEngine?: EngineId | null;
 }): Meeting {
@@ -193,34 +196,51 @@ export function createMeeting(input: {
     getDb().prepare(
       `INSERT INTO meetings
          (id, title, status, engine, fallback_engine, input_mode, speaker_labels, created_at)
-       VALUES (?, ?, 'open', ?, ?, ?, 1, ?)`,
+       VALUES (?, ?, 'open', ?, ?, ?, ?, ?)`,
     ).run(
       id,
       input.title,
       input.engine,
       input.fallbackEngine ?? null,
       "human",
+      Number(input.config.speakerLabels),
       now,
     );
 
     const insertLang = getDb().prepare(
       `INSERT INTO meeting_langs
          (meeting_id, lang, position, input_enabled, output_enabled)
-       VALUES (?, ?, ?, 1, 0)`,
+       VALUES (?, ?, ?, ?, ?)`,
     );
     const insertPage = getDb().prepare(
       `INSERT INTO pages (id, meeting_id, kind, lang, token, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
     );
 
-    input.langs.forEach((lang, position) => {
-      insertLang.run(id, lang, position);
-      insertPage.run(newId(), id, "input", lang, newPageToken(), now);
-      insertPage.run(newId(), id, "output", lang, newPageToken(), now);
+    input.config.languages.forEach((language, position) => {
+      insertLang.run(
+        id,
+        language.lang,
+        position,
+        Number(language.inputEnabled),
+        Number(language.outputEnabled),
+      );
+      insertPage.run(newId(), id, "input", language.lang, newPageToken(), now);
+      insertPage.run(newId(), id, "output", language.lang, newPageToken(), now);
     });
 
     // 모든 언어를 한 화면에서 보는 페이지. 회의당 하나.
     insertPage.run(newId(), id, "combined", NO_LANG, newPageToken(), now);
+    if (input.config.combinedInputFallbackLang) {
+      insertPage.run(
+        newId(),
+        id,
+        "combined-input",
+        input.config.combinedInputFallbackLang,
+        newPageToken(),
+        now,
+      );
+    }
 
     return {
       id,
@@ -229,7 +249,7 @@ export function createMeeting(input: {
       engine: input.engine,
       fallbackEngine: input.fallbackEngine ?? null,
       inputMode: "human",
-      speakerLabels: true,
+      speakerLabels: input.config.speakerLabels,
       transcriptionContext: null,
       createdAt: now,
       closedAt: null,
@@ -304,112 +324,6 @@ export function closeMeeting(id: string): void {
     Date.now(),
     id,
   );
-}
-
-export type MeetingConfigUpdateResult =
-  | { ok: true; meeting: Meeting }
-  | { ok: false; reason: "not-found" | "closed" | "locked" };
-
-/** 첫 확정 입력 전까지만 언어별 페이지 역할과 닉네임 사용 여부를 바꾼다. */
-export function updateMeetingConfig(
-  meetingId: string,
-  languages: readonly MeetingLanguageConfig[],
-  speakerLabels: boolean,
-  combinedInputFallbackLang: LanguageCode | null = null,
-): MeetingConfigUpdateResult {
-  return transaction(() => {
-    const meeting = getMeeting(meetingId);
-    if (!meeting) return { ok: false, reason: "not-found" };
-    if (meeting.status !== "open") return { ok: false, reason: "closed" };
-
-    const activity = getDb()
-      .prepare(`SELECT 1 FROM messages WHERE meeting_id = ? LIMIT 1`)
-      .get(meetingId);
-    if (activity) return { ok: false, reason: "locked" };
-
-    const current = new Set(getMeetingLangs(meetingId));
-    const requested = new Set(languages.map((row) => row.lang));
-
-    const deletePages = getDb().prepare(
-      `DELETE FROM pages
-       WHERE meeting_id = ? AND lang = ? AND kind IN ('input', 'output', 'capture')`,
-    );
-    const deleteLang = getDb().prepare(
-      `DELETE FROM meeting_langs WHERE meeting_id = ? AND lang = ?`,
-    );
-    for (const lang of current) {
-      if (requested.has(lang)) continue;
-      deletePages.run(meetingId, lang);
-      deleteLang.run(meetingId, lang);
-    }
-
-    const updateLang = getDb().prepare(
-      `UPDATE meeting_langs SET position = ?, input_enabled = ?, output_enabled = ?
-       WHERE meeting_id = ? AND lang = ?`,
-    );
-    const insertLang = getDb().prepare(
-      `INSERT INTO meeting_langs
-         (meeting_id, lang, position, input_enabled, output_enabled)
-       VALUES (?, ?, ?, ?, ?)`,
-    );
-    const insertPage = getDb().prepare(
-      `INSERT INTO pages (id, meeting_id, kind, lang, token, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    );
-    const now = Date.now();
-
-    languages.forEach((row, position) => {
-      if (current.has(row.lang)) {
-        updateLang.run(
-          position,
-          Number(row.inputEnabled),
-          Number(row.outputEnabled),
-          meetingId,
-          row.lang,
-        );
-        return;
-      }
-      insertLang.run(
-        meetingId,
-        row.lang,
-        position,
-        Number(row.inputEnabled),
-        Number(row.outputEnabled),
-      );
-      insertPage.run(newId(), meetingId, "input", row.lang, newPageToken(), now);
-      insertPage.run(newId(), meetingId, "output", row.lang, newPageToken(), now);
-      if (meeting.inputMode === "realtime") {
-        insertPage.run(newId(), meetingId, "capture", row.lang, newPageToken(), now);
-      }
-    });
-
-    const combinedInput = getMeetingPages(meetingId).find(
-      (page) => page.kind === "combined-input",
-    );
-    if (combinedInputFallbackLang) {
-      if (combinedInput) {
-        getDb()
-          .prepare(`UPDATE pages SET lang = ? WHERE id = ?`)
-          .run(combinedInputFallbackLang, combinedInput.id);
-      } else {
-        insertPage.run(
-          newId(),
-          meetingId,
-          "combined-input",
-          combinedInputFallbackLang,
-          newPageToken(),
-          now,
-        );
-      }
-    } else if (combinedInput) {
-      getDb().prepare(`DELETE FROM pages WHERE id = ?`).run(combinedInput.id);
-    }
-
-    getDb()
-      .prepare(`UPDATE meetings SET speaker_labels = ? WHERE id = ?`)
-      .run(Number(speakerLabels), meetingId);
-    return { ok: true, meeting: getMeeting(meetingId)! };
-  });
 }
 
 /**
@@ -559,6 +473,8 @@ export function insertMessageOnce(input: {
         lang: existing.lang,
         body: existing.body,
         speakerName: existing.speaker_name,
+        revision: existing.revision,
+        editedAt: existing.edited_at,
         createdAt: existing.created_at,
       },
     };
@@ -573,9 +489,63 @@ export function insertMessageOnce(input: {
       lang: input.lang,
       body: input.body,
       speakerName: input.speakerName ?? null,
+      revision: 0,
+      editedAt: null,
       createdAt: now,
     },
   };
+}
+
+export type EditMessageResult =
+  | { ok: true; message: Message }
+  | { ok: false; reason: "not-found" | "closed" | "conflict" };
+
+/** 입력 URL이 만든 원문만 revision 일치 시 수정하고 기존 번역을 원자적으로 지운다. */
+export function editMessage(input: {
+  pageId: string;
+  messageId: number;
+  body: string;
+  revision: number;
+}): EditMessageResult {
+  return transaction(() => {
+    const row = parseSqlRow(
+      messageRowSchema.extend({ meeting_status: meetingStatusSchema }),
+      getDb().prepare(
+        `SELECT m.*, mt.status AS meeting_status
+         FROM messages m
+         JOIN meetings mt ON mt.id = m.meeting_id
+         WHERE m.id = ? AND m.page_id = ?`,
+      ).get(input.messageId, input.pageId),
+      "수정할 원문",
+    );
+    if (!row) return { ok: false, reason: "not-found" };
+    if (row.meeting_status !== "open") return { ok: false, reason: "closed" };
+    if (row.revision !== input.revision) return { ok: false, reason: "conflict" };
+
+    const editedAt = Date.now();
+    const revision = row.revision + 1;
+    const updated = getDb().prepare(
+      `UPDATE messages SET body = ?, revision = ?, edited_at = ?
+       WHERE id = ? AND page_id = ? AND revision = ?`,
+    ).run(input.body, revision, editedAt, row.id, input.pageId, row.revision);
+    if (updated.changes === 0) return { ok: false, reason: "conflict" };
+    getDb().prepare(`DELETE FROM translations WHERE message_id = ?`).run(row.id);
+
+    return {
+      ok: true,
+      message: {
+        id: row.id,
+        meetingId: row.meeting_id,
+        pageId: row.page_id,
+        lang: row.lang,
+        body: input.body,
+        speakerName: row.speaker_name,
+        revision,
+        editedAt,
+        createdAt: row.created_at,
+      },
+    };
+  });
 }
 
 export type OutputEntry = {
@@ -583,7 +553,10 @@ export type OutputEntry = {
   body: string;
   speakerName: string | null;
   status: "ok" | "error";
+  revision: number;
+  editedAt: number | null;
   createdAt: number;
+  updatedAt: number;
 };
 
 /** 대상 언어 번역과 같은 언어 원문을 하나의 참석자 타임라인으로 읽는다. */
@@ -595,11 +568,15 @@ export function getRecentOutput(
   const rows = parseSqlRows(
     outputRowSchema,
     getDb().prepare(
-      `SELECT message_id, body, speaker_name, status, created_at FROM (
-         SELECT m.id AS message_id, m.body, m.speaker_name, 'ok' AS status, m.created_at
+      `SELECT message_id, body, speaker_name, status, revision, edited_at, created_at, updated_at FROM (
+         SELECT m.id AS message_id, m.body, m.speaker_name, 'ok' AS status,
+                m.revision, m.edited_at, m.created_at,
+                COALESCE(m.edited_at, m.created_at) AS updated_at
          FROM messages m WHERE m.meeting_id = ? AND m.lang = ?
          UNION ALL
-         SELECT t.message_id, t.body, m.speaker_name, t.status, t.created_at
+         SELECT t.message_id, t.body, m.speaker_name, t.status,
+                m.revision, m.edited_at, m.created_at,
+                MAX(COALESCE(m.edited_at, m.created_at), t.created_at) AS updated_at
          FROM translations t
          JOIN messages m ON m.id = t.message_id
          WHERE m.meeting_id = ? AND t.lang = ?
@@ -613,7 +590,10 @@ export function getRecentOutput(
     body: row.body,
     speakerName: row.speaker_name,
     status: row.status,
+    revision: row.revision,
+    editedAt: row.edited_at,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
   }));
 }
 
@@ -625,13 +605,21 @@ export function getRecentOutput(
  */
 export function upsertTranslation(input: {
   messageId: number;
+  revision: number;
   lang: LanguageCode;
   body: string;
   engine: string;
   status: "ok" | "error";
   error?: string | null;
-}): number {
+}): number | null {
   const now = Date.now();
+  const current = parseSqlRow(
+    messageRowSchema.pick({ revision: true }),
+    getDb().prepare(`SELECT revision FROM messages WHERE id = ?`).get(input.messageId),
+    "번역 대상 revision",
+  );
+  if (!current || current.revision !== input.revision) return null;
+
   getDb().prepare(
     `INSERT INTO translations (message_id, lang, body, engine, status, error, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -671,6 +659,8 @@ export function getRecentMessages(meetingId: string, limit: number | null = 200)
     lang: row.lang,
     body: row.body,
     speakerName: row.speaker_name,
+    revision: row.revision,
+    editedAt: row.edited_at,
     createdAt: row.created_at,
   }));
 }
@@ -771,7 +761,7 @@ export function getLogLines(
   const messages = parseSqlRows(
     logMessageRowSchema,
     getDb().prepare(
-      `SELECT id, lang, body, speaker_name, created_at FROM messages
+      `SELECT id, lang, body, speaker_name, revision, edited_at, created_at FROM messages
        WHERE meeting_id = ? ORDER BY id`,
     ).all(meetingId),
     "로그 원문",
@@ -780,7 +770,7 @@ export function getLogLines(
   const translations = parseSqlRows(
     logTranslationRowSchema,
     getDb().prepare(
-      `SELECT t.message_id, t.lang, t.body, t.status, t.created_at
+      `SELECT t.message_id, t.lang, t.body, t.status, m.revision, m.edited_at, t.created_at
        FROM translations t
        JOIN messages m ON m.id = t.message_id
        WHERE m.meeting_id = ? AND t.status = 'ok'
@@ -803,6 +793,9 @@ export function getLogLines(
     const sourceLang = message.lang;
     if (!wanted || wanted.has(sourceLang)) {
       lines.push({
+        messageId: message.id,
+        revision: message.revision,
+        editedAt: message.edited_at,
         at: message.created_at,
         lang: sourceLang,
         kind: "source",
@@ -814,6 +807,9 @@ export function getLogLines(
       const lang = translation.lang;
       if (wanted && !wanted.has(lang)) continue;
       lines.push({
+        messageId: message.id,
+        revision: translation.revision,
+        editedAt: translation.edited_at,
         at: translation.created_at,
         lang,
         kind: "translation",
@@ -860,7 +856,11 @@ export type CombinedEntry = {
   sourceLang: LanguageCode;
   sourceBody: string;
   speakerName: string | null;
+  pageId: string | null;
+  revision: number;
+  editedAt: number | null;
   createdAt: number;
+  updatedAt: number;
   translations: {
     lang: LanguageCode;
     body: string;
@@ -878,7 +878,7 @@ export function getRecentCombined(meetingId: string, limit: number | null = null
   const rows = parseSqlRows(
     combinedTranslationRowSchema,
     getDb().prepare(
-      `SELECT message_id, lang, body, status, error FROM translations
+      `SELECT message_id, lang, body, status, error, created_at FROM translations
        WHERE message_id IN (${placeholders})
        ORDER BY message_id, lang`,
     ).all(...messages.map((message) => message.id)),
@@ -886,6 +886,7 @@ export function getRecentCombined(meetingId: string, limit: number | null = null
   );
 
   const byMessage = new Map<number, CombinedEntry["translations"]>();
+  const translatedAt = new Map<number, number>();
   for (const row of rows) {
     const entry = {
       lang: row.lang,
@@ -896,6 +897,7 @@ export function getRecentCombined(meetingId: string, limit: number | null = null
     const bucket = byMessage.get(row.message_id);
     if (bucket) bucket.push(entry);
     else byMessage.set(row.message_id, [entry]);
+    translatedAt.set(row.message_id, Math.max(translatedAt.get(row.message_id) ?? 0, row.created_at));
   }
 
   return messages.map((message) => ({
@@ -903,7 +905,11 @@ export function getRecentCombined(meetingId: string, limit: number | null = null
     sourceLang: message.lang,
     sourceBody: message.body,
     speakerName: message.speakerName,
+    pageId: message.pageId,
+    revision: message.revision,
+    editedAt: message.editedAt,
     createdAt: message.createdAt,
+    updatedAt: Math.max(message.editedAt ?? message.createdAt, translatedAt.get(message.id) ?? 0),
     translations: byMessage.get(message.id) ?? [],
   }));
 }

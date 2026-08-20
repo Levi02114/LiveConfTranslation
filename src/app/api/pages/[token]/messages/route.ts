@@ -86,6 +86,9 @@ export async function POST(request: Request, { params }: Params) {
     sourceLang: detected.lang,
     body: message.body,
     speakerName: message.speakerName,
+    revision: message.revision,
+    editedAt: message.editedAt,
+    createdAt: message.createdAt,
   }).catch((error) => {
     // 개별 언어 실패는 파이프라인 안에서 이미 저장·배포된다.
     // 여기까지 올라온 건 예상 못 한 오류라 서버 로그에만 남긴다.

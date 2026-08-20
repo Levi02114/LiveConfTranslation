@@ -8,6 +8,7 @@ import { TranslationEntry } from "@/components/translation-entry";
 import { VoiceLevelMeter } from "@/components/voice-level-meter";
 import { useServerVoiceInput } from "@/hooks/use-combined-voice-input";
 import { useRealtime } from "@/hooks/use-realtime";
+import { upsertSource, upsertTranslation } from "@/lib/combined-entry";
 import type { UiStrings } from "@/lib/i18n-builtin";
 import { parseJsonResponse } from "@/lib/json-response";
 import { type Language, type LanguageCode, textDirection } from "@/lib/languages";
@@ -18,6 +19,7 @@ const DRAFT_INTERVAL_MS = 180;
 
 export function CombinedInputView({
   token,
+  pageId,
   uiLang,
   fallbackLang,
   languages,
@@ -29,6 +31,7 @@ export function CombinedInputView({
   speakerLabels,
 }: {
   token: string;
+  pageId: string;
   uiLang: LanguageCode;
   fallbackLang: LanguageCode;
   languages: Language[];
@@ -97,33 +100,9 @@ export function CombinedInputView({
         try { localStorage.removeItem(`lct.speaker.${token}`); } catch {}
       }
     } else if (message.t === "message") {
-      setEntries((current) =>
-        current.some((entry) => entry.messageId === message.messageId)
-          ? current
-          : [...current, {
-              messageId: message.messageId,
-              sourceLang: message.lang,
-              sourceBody: message.body,
-              speakerName: message.speakerName,
-              createdAt: message.createdAt,
-              translations: [],
-            }],
-      );
+      setEntries((current) => upsertSource(current, message));
     } else if (message.t === "translation") {
-      setEntries((current) => current.map((entry) =>
-        entry.messageId !== message.messageId ||
-        entry.translations.some((translation) => translation.lang === message.lang)
-          ? entry
-          : {
-              ...entry,
-              translations: [...entry.translations, {
-                lang: message.lang,
-                body: message.body,
-                status: message.status,
-                error: message.error ?? null,
-              }],
-            },
-      ));
+      setEntries((current) => upsertTranslation(current, message));
     } else if (message.t === "presence") {
       setPeers(message.peers);
     } else if (message.t === "meeting-closed") {
@@ -236,6 +215,21 @@ export function CombinedInputView({
     setSpeakerClaimed(false);
     setSpeakerName(name);
   };
+  const edit = useCallback(async (messageId: number, body: string, revision: number) => {
+    try {
+      const response = await fetch(
+        `/api/pages/${encodeURIComponent(token)}/messages/${messageId}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ body, revision }),
+        },
+      );
+      return response.ok ? "ok" as const : response.status === 409 ? "conflict" as const : "error" as const;
+    } catch {
+      return "error" as const;
+    }
+  }, [token]);
 
   const connectionText =
     state === "open"
@@ -307,6 +301,8 @@ export function CombinedInputView({
                 targetLanguages={languages.filter((language) => language.code !== entry.sourceLang)}
                 strings={strings}
                 showSourceLanguage
+                editable={!closed && entry.pageId === pageId}
+                onEdit={(body, revision) => edit(entry.messageId, body, revision)}
               />
             ))}
             {typing.map((peer) => (

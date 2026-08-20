@@ -63,6 +63,8 @@ export const messageRowSchema = z.object({
   lang: languageCodeSchema,
   body: z.string(),
   speaker_name: z.string().nullable(),
+  revision: z.number().int().nonnegative(),
+  edited_at: z.number().nullable(),
   created_at: z.number(),
 });
 export const outputRowSchema = z.object({
@@ -70,7 +72,10 @@ export const outputRowSchema = z.object({
   body: z.string(),
   speaker_name: z.string().nullable(),
   status: translationStatusSchema,
+  revision: z.number().int().nonnegative(),
+  edited_at: z.number().nullable(),
   created_at: z.number(),
+  updated_at: z.number(),
 });
 export const recentTranslationRowSchema = z.object({
   id: z.number(),
@@ -94,6 +99,8 @@ export const logMessageRowSchema = messageRowSchema.pick({
   lang: true,
   body: true,
   speaker_name: true,
+  revision: true,
+  edited_at: true,
   created_at: true,
 });
 export const logTranslationRowSchema = z.object({
@@ -101,6 +108,8 @@ export const logTranslationRowSchema = z.object({
   lang: languageCodeSchema,
   body: z.string(),
   status: translationStatusSchema,
+  revision: z.number().int().nonnegative(),
+  edited_at: z.number().nullable(),
   created_at: z.number(),
 });
 export const bodyRowSchema = z.object({ body: z.string() });
@@ -110,6 +119,7 @@ export const combinedTranslationRowSchema = z.object({
   body: z.string(),
   status: translationStatusSchema,
   error: z.string().nullable(),
+  created_at: z.number(),
 });
 
 export const engineSecretRowSchema = z.object({

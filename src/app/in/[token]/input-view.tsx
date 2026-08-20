@@ -7,6 +7,7 @@ import { TranslationEntry } from "@/components/translation-entry";
 import { VoiceLevelMeter } from "@/components/voice-level-meter";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useVoiceInput } from "@/hooks/use-voice-input";
+import { upsertSource, upsertTranslation } from "@/lib/combined-entry";
 import type { UiStrings } from "@/lib/i18n-builtin";
 import { type Language, textDirection } from "@/lib/languages";
 import type { Peer, ServerMessage } from "@/lib/realtime/protocol";
@@ -18,6 +19,7 @@ const DRAFT_INTERVAL_MS = 180;
 
 export function InputView({
   token,
+  pageId,
   language,
   languages,
   strings,
@@ -28,6 +30,7 @@ export function InputView({
   speakerLabels,
 }: {
   token: string;
+  pageId: string;
   language: Language;
   languages: Language[];
   strings: UiStrings;
@@ -98,41 +101,9 @@ export function InputView({
         }
       }
     } else if (message.t === "message") {
-      setEntries((prev) =>
-        prev.some((entry) => entry.messageId === message.messageId)
-          ? prev
-          : [
-              ...prev,
-              {
-                messageId: message.messageId,
-                sourceLang: message.lang,
-                sourceBody: message.body,
-                speakerName: message.speakerName,
-                createdAt: message.createdAt,
-                translations: [],
-              },
-            ],
-      );
+      setEntries((prev) => upsertSource(prev, message));
     } else if (message.t === "translation") {
-      setEntries((prev) =>
-        prev.map((entry) =>
-          entry.messageId !== message.messageId ||
-          entry.translations.some((translation) => translation.lang === message.lang)
-            ? entry
-            : {
-                ...entry,
-                translations: [
-                  ...entry.translations,
-                  {
-                    lang: message.lang,
-                    body: message.body,
-                    status: message.status,
-                    error: message.error ?? null,
-                  },
-                ],
-              },
-        ),
-      );
+      setEntries((prev) => upsertTranslation(prev, message));
     } else if (message.t === "presence") {
       setPeers(message.peers);
     } else if (message.t === "meeting-closed") {
@@ -289,6 +260,22 @@ export function InputView({
     send({ t: "draft", text: enabled ? "" : text });
   };
 
+  const edit = useCallback(async (messageId: number, body: string, revision: number) => {
+    try {
+      const response = await fetch(
+        `/api/pages/${encodeURIComponent(token)}/messages/${messageId}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ body, revision }),
+        },
+      );
+      return response.ok ? "ok" as const : response.status === 409 ? "conflict" as const : "error" as const;
+    } catch {
+      return "error" as const;
+    }
+  }, [token]);
+
   const connText =
     state === "open"
       ? strings.connection.connected
@@ -403,6 +390,8 @@ export function InputView({
                 targetLanguages={entry.sourceLang === language.code ? [] : [language]}
                 strings={strings}
                 showSourceLanguage
+                editable={!closed && entry.pageId === pageId}
+                onEdit={(body, revision) => edit(entry.messageId, body, revision)}
               />
             ))}
 

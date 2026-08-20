@@ -44,22 +44,23 @@ export function CaptureView({
   const onMessage = useCallback(
     (message: ServerMessage) => {
       if (message.t === "message" && message.lang === language.code) {
-        setMessages((previous) =>
-          previous.some((item) => item.id === message.messageId)
-            ? previous
-            : [
-                ...previous,
-                {
-                  id: message.messageId,
-                  meetingId: "",
-                  pageId: null,
-                  lang: message.lang,
-                  body: message.body,
-                  speakerName: message.speakerName,
-                  createdAt: message.createdAt,
-                },
-              ],
-        );
+        setMessages((previous) => {
+          const next: Message = {
+            id: message.messageId,
+            meetingId: "",
+            pageId: message.pageId,
+            lang: message.lang,
+            body: message.body,
+            speakerName: message.speakerName,
+            revision: message.revision,
+            editedAt: message.editedAt,
+            createdAt: message.createdAt,
+          };
+          const index = previous.findIndex((item) => item.id === message.messageId);
+          if (index < 0) return [...previous, next];
+          if (previous[index]!.revision >= next.revision) return previous;
+          return previous.map((item, itemIndex) => (itemIndex === index ? next : item));
+        });
       } else if (message.t === "meeting-closed") {
         setClosed(true);
         stopVoice(false);
@@ -135,6 +136,11 @@ export function CaptureView({
                 </time>
                 <p className="app-text min-w-0 whitespace-pre-wrap [text-wrap:pretty]">
                   {message.speakerName ? `(${message.speakerName}) ` : ""}{message.body}
+                  {message.editedAt ? (
+                    <small className="mt-1 block font-mono text-[11px] text-muted">
+                      ({strings.message.edited})
+                    </small>
+                  ) : null}
                 </p>
               </div>
             ))}

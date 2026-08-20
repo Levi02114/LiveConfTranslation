@@ -9,12 +9,10 @@ import { getLanguage } from "@/lib/languages";
 import {
   getMeeting,
   getMeetingActiveLangs,
-  getMeetingActivity,
   getMeetingLanguageConfigs,
   getMeetingLangs,
   getMeetingPages,
   getRecentCombined,
-  listSessionPresets,
   listLanguages,
 } from "@/lib/repo";
 import { engineCoverage, refreshEngineSupport } from "@/lib/translate";
@@ -63,8 +61,6 @@ export default async function DashboardPage({
       languages={langs.map((code) => getLanguage(code, lang))}
       pages={getMeetingPages(id)}
       languageConfigs={getMeetingLanguageConfigs(id)}
-      presets={listSessionPresets()}
-      configLocked={getMeetingActivity(id).messageCount > 0 || meeting.status === "closed"}
       history={getRecentCombined(id, 40)}
       coverage={engineCoverage(meeting.engine, activeLangs)}
       fallbackCoverage={

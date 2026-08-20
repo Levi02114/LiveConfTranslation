@@ -10,6 +10,9 @@ import { type LanguageCode, languageLogName } from "@/lib/languages";
  */
 
 export type LogLine = {
+  messageId: number;
+  revision: number;
+  editedAt: number | null;
   /** 정렬용 정렬 키 */
   at: number;
   /** 이 줄이 속한 언어. 필터링에 쓴다. */
@@ -51,8 +54,10 @@ export function formatTranslationLine(
 }
 
 /** 로그 줄들을 `.txt` 본문으로 합친다. */
-export function renderLogFile(lines: LogLine[]): string {
-  return lines.map((line) => line.text).join("\n") + "\n";
+export function renderLogFile(lines: LogLine[], editedLabel?: string): string {
+  return lines
+    .map((line) => line.editedAt && editedLabel ? `${line.text} (${editedLabel})` : line.text)
+    .join("\n") + "\n";
 }
 
 /** 화면에 뿌리는 짧은 시각 `HH:mm:ss`. 로그 파일이 아니라 실시간 목록용이다. */

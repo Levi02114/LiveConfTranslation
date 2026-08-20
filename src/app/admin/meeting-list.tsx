@@ -10,7 +10,7 @@ import type { AdminStrings, UiStrings } from "@/lib/i18n-builtin";
 import type { Language, LanguageCode } from "@/lib/languages";
 import { formatTimestamp } from "@/lib/log-format";
 import { parseJsonResponse } from "@/lib/json-response";
-import type { Meeting } from "@/lib/repo";
+import type { Meeting, SessionPreset, SessionPresetConfig } from "@/lib/repo";
 import { engineIdSchema, isEngineId, type EngineId } from "@/lib/translate/types";
 
 import { AdminBusyOverlay } from "./admin-busy-overlay";
@@ -20,6 +20,7 @@ import { LanguageDialog } from "./language-dialog";
 import { OpenaiModelSelect } from "./openai-model-select";
 import { PasswordChangeDialog } from "./password-change-dialog";
 import { UiStringsDialog } from "./ui-strings-dialog";
+import { SessionConfigEditor } from "./meetings/[id]/session-settings";
 
 type Row = Meeting & { langs: LanguageCode[] };
 const meetingResponseSchema = z.object({
@@ -50,6 +51,7 @@ export function MeetingList({
   defaultEngine,
   openaiModel,
   openaiModels,
+  presets,
 }: {
   lang: LanguageCode;
   strings: AdminStrings;
@@ -65,13 +67,22 @@ export function MeetingList({
   openaiModel: string;
   /** 마지막으로 성공한 OpenAI 모델 목록. */
   openaiModels: string[];
+  presets: SessionPreset[];
 }) {
   const router = useRouter();
   const setLang = useSetAdminLang();
   const [navigating, startNavigation] = useTransition();
 
   const [title, setTitle] = useState("");
-  const [langs, setLangs] = useState<LanguageCode[]>(defaultLangs);
+  const [config, setConfig] = useState<SessionPresetConfig>(() => ({
+    languages: defaultLangs.map((code) => ({
+      lang: code,
+      inputEnabled: true,
+      outputEnabled: false,
+    })),
+    speakerLabels: true,
+    combinedInputFallbackLang: null,
+  }));
   const [engine, setEngine] = useState<EngineId>(defaultEngine);
   const [fallbackEngine, setFallbackEngine] = useState<EngineId | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +120,12 @@ export function MeetingList({
         setError(strings.languages.removeFailed);
         return;
       }
-      setLangs((prev) => prev.filter((value) => value !== code));
+      setConfig((current) => ({
+        ...current,
+        languages: current.languages.filter((row) => row.lang !== code),
+        combinedInputFallbackLang:
+          current.combinedInputFallbackLang === code ? null : current.combinedInputFallbackLang,
+      }));
       startNavigation(() => router.refresh());
     } catch {
       setError(strings.languages.removeFailed);
@@ -119,9 +135,19 @@ export function MeetingList({
   };
 
   const toggle = (code: LanguageCode) => {
-    setLangs((prev) =>
-      prev.includes(code) ? prev.filter((value) => value !== code) : [...prev, code],
-    );
+    setConfig((current) => {
+      const exists = current.languages.some((row) => row.lang === code);
+      return {
+        ...current,
+        languages: exists
+          ? current.languages.filter((row) => row.lang !== code)
+          : [...current.languages, { lang: code, inputEnabled: true, outputEnabled: false }],
+        combinedInputFallbackLang:
+          exists && current.combinedInputFallbackLang === code
+            ? null
+            : current.combinedInputFallbackLang,
+      };
+    });
   };
 
   const selectEngine = async (next: EngineId) => {
@@ -150,8 +176,13 @@ export function MeetingList({
       setError(strings.list.needTitle);
       return;
     }
-    if (langs.length < 2) {
+    const active = config.languages.filter((row) => row.inputEnabled || row.outputEnabled);
+    if (active.length < 2) {
       setError(strings.list.needLanguages);
+      return;
+    }
+    if (!active.some((row) => row.inputEnabled)) {
+      setError(strings.settings.needInput);
       return;
     }
     setPending(true);
@@ -162,7 +193,7 @@ export function MeetingList({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           title: title.trim(),
-          langs,
+          config,
           engine,
           fallbackEngine,
         }),
@@ -264,6 +295,7 @@ export function MeetingList({
     codes
       .map((code) => languages.find((language) => language.code === code)?.nativeName ?? code)
       .join(" · ");
+  const langs = config.languages.map((row) => row.lang);
 
   return (
     <div className="mx-auto max-w-[840px] px-4 pt-20 pb-12 sm:px-8 sm:pb-16">
@@ -360,6 +392,15 @@ export function MeetingList({
             })}
           </div>
         </div>
+
+        <SessionConfigEditor
+          value={config}
+          onChange={setConfig}
+          initialPresets={presets}
+          availableLanguages={languages}
+          strings={strings}
+          disabled={pending}
+        />
 
         <div className="flex flex-wrap items-center gap-3.5">
           <div className="font-mono text-[11px] text-muted">{strings.list.engine}</div>

@@ -21,23 +21,26 @@ export async function GET(request: Request, { params }: Params) {
 
   const strings = getStrings(page.lang);
   const language = getLanguage(page.lang);
+  const snapshotAt = Date.now();
   const history = getRecentOutput(meeting.id, page.lang);
-  const afterParam = new URL(request.url).searchParams.get("after");
-  const after = Number(afterParam);
-  if (afterParam !== null && Number.isSafeInteger(after) && after >= 0) {
+  const sinceParam = new URL(request.url).searchParams.get("since");
+  const since = Number(sinceParam);
+  if (sinceParam !== null && Number.isSafeInteger(since) && since >= 0) {
     return Response.json(
       {
         lines: history
-          .filter((line) => line.messageId > after)
-          .map((line) => [line.messageId, line.body, line.status, line.createdAt, line.speakerName]),
+          .filter((line) => line.updatedAt >= since)
+          .map((line) => [line.messageId, line.body, line.status, line.createdAt, line.speakerName, line.revision, line.editedAt, line.updatedAt]),
         closed: meeting.status === "closed",
+        snapshotAt,
       },
       { headers: { "cache-control": "private, no-store" } },
     );
   }
   const data = json({
     token,
-    ids: history.map((line) => line.messageId),
+    lang: page.lang,
+    snapshotAt,
     closed: meeting.status === "closed",
     strings: {
       connected: strings.connection.connected,
@@ -47,6 +50,7 @@ export async function GET(request: Request, { params }: Params) {
       failed: strings.status.failed,
       waiting: strings.status.waiting,
       newMessages: strings.status.newMessages,
+      edited: strings.message.edited,
       light: strings.appearance.light,
       dark: strings.appearance.dark,
       theme: strings.appearance.theme,
@@ -56,9 +60,9 @@ export async function GET(request: Request, { params }: Params) {
   });
   const lines = history
     .map(
-      (line) => `<div class="line" data-id="${line.messageId}">
+      (line) => `<div class="line" data-id="${line.messageId}" data-revision="${line.revision}">
         <time>${formatClock(line.createdAt)}</time>
-        <p${line.status === "error" ? ' class="failed"' : ""}>${html(`${line.speakerName ? `(${line.speakerName}) ` : ""}${line.status === "ok" ? line.body : strings.status.failed}`)}</p>
+        <p${line.status === "error" ? ' class="failed"' : ""}>${html(`${line.speakerName ? `(${line.speakerName}) ` : ""}${line.status === "ok" ? line.body : strings.status.failed}`)}${line.editedAt ? `<small class="edited">(${html(strings.message.edited)})</small>` : ""}</p>
       </div>`,
     )
     .join("");
@@ -111,18 +115,20 @@ const CSS = String.raw`
 *{box-sizing:border-box}html,body{height:100%;margin:0}body{display:flex;flex-direction:column;overflow:hidden;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
 nav{position:fixed;z-index:2;top:10px;right:14px;display:flex;align-items:center;gap:8px;background:var(--bg);color:var(--muted);font:.6875rem ui-monospace,monospace}button,#size{height:1.3rem}button{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);background:var(--bg);color:inherit;padding:0 8px;font:inherit;cursor:pointer}#theme{width:calc(5.75em + 18px);flex:none;font-size:clamp(10px,.5rem,16px)}#size{display:inline-flex;min-width:44px;align-items:center;justify-content:center}button:hover{background:var(--fg);color:var(--bg)}
 header{flex:none;border-bottom:1px solid var(--line);padding:3.375rem 32px 20px}header>*{display:block;max-width:1040px;margin-left:auto;margin-right:auto}h1{margin-top:0;margin-bottom:6px;font-size:1.6875rem;font-weight:500}header div,small,#waiting{color:var(--muted);font:.75rem ui-monospace,monospace}small{margin-top:5px;font-size:.6875rem}
-main{min-height:0;flex:1;overflow-y:auto;padding:0 32px}section,#waiting{width:100%;max-width:1040px;margin:auto;padding:24px 0 64px}section{display:flex;min-height:100%;flex-direction:column;justify-content:flex-end}section:empty{min-height:0;padding:0}.line{display:grid;grid-template-columns:auto minmax(0,1fr);gap:18px;padding:10px 0;content-visibility:auto;contain-intrinsic-size:0 54px}.line time{white-space:nowrap;padding-top:.35em;color:var(--muted);font:.75rem ui-monospace,monospace}.line p{min-width:0;margin:0;white-space:pre-wrap;text-wrap:pretty;font-size:var(--text);line-height:1.5}.line .failed{color:var(--muted);font-style:italic}
+main{min-height:0;flex:1;overflow-y:auto;padding:0 32px}section,#waiting{width:100%;max-width:1040px;margin:auto;padding:24px 0 64px}section{display:flex;min-height:100%;flex-direction:column;justify-content:flex-end}section:empty{min-height:0;padding:0}.line{display:grid;grid-template-columns:auto minmax(0,1fr);gap:18px;padding:10px 0;content-visibility:auto;contain-intrinsic-size:0 54px}.line time{white-space:nowrap;padding-top:.35em;color:var(--muted);font:.75rem ui-monospace,monospace}.line p{min-width:0;margin:0;white-space:pre-wrap;text-wrap:pretty;font-size:var(--text);line-height:1.5}.line .failed{color:var(--muted);font-style:italic}.line .waiting{color:var(--muted)}
+.edited{display:block;margin-top:.35rem;color:var(--muted);font:.6875rem ui-monospace,monospace}
 #latest{position:fixed;bottom:max(28px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);border-color:var(--fg);font-size:.8125rem}
 [hidden]{display:none!important}@media(max-width:640px){nav{left:12px;right:12px;justify-content:flex-end}header{padding:3.375rem 16px 18px}main{padding:0 16px}.line{grid-template-columns:1fr;gap:2px}.line time{padding-top:0}section,#waiting{padding-bottom:48px}}
 `;
 
 const CLIENT = String.raw`
 const root=document.documentElement,scroll=document.getElementById('scroll'),lines=document.getElementById('lines'),waiting=document.getElementById('waiting'),connection=document.getElementById('connection'),closed=document.getElementById('closed'),latest=document.getElementById('latest'),theme=document.getElementById('theme'),size=document.getElementById('size');
-const ids=new Set(DATA.ids),sizes=['sm','md','lg','xl','xxl'],labels=['80%','100%','125%','150%','200%'];let stick=true,pending=0,retry=0,timer,ended=DATA.closed,maxId=Math.max(0,...DATA.ids);
+const rows=new Map(),sizes=['sm','md','lg','xl','xxl'],labels=['80%','100%','125%','150%','200%'];let stick=true,pending=0,retry=0,timer,ended=DATA.closed,watermark=DATA.snapshotAt;document.querySelectorAll('.line').forEach(row=>rows.set(Number(row.dataset.id),row));
 function clock(at){const d=new Date(at),p=n=>String(n).padStart(2,'0');return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())}
 function follow(){scroll.scrollTop=scroll.scrollHeight}function followSoon(){requestAnimationFrame(()=>requestAnimationFrame(follow))}function refollow(){stick=true;pending=0;latest.hidden=true;followSoon()}
-function add(message){if(ids.has(message.messageId))return;ids.add(message.messageId);maxId=Math.max(maxId,message.messageId);waiting.hidden=true;const row=document.createElement('div');row.className='line';row.dataset.id=message.messageId;const time=document.createElement('time');time.textContent=clock(message.createdAt);const body=document.createElement('p');const ok=message.t==='message'||message.status==='ok',speaker=message.speakerName?'('+message.speakerName+') ':'';body.textContent=speaker+(ok?message.body:DATA.strings.failed);if(!ok)body.className='failed';row.append(time,body);lines.append(row);if(stick)followSoon();else{pending++;latest.hidden=false;latest.lastElementChild.textContent=pending}}
-async function sync(){try{const response=await fetch(location.pathname+'?after='+maxId,{cache:'no-store'}),data=await response.json();for(const line of data.lines)add({t:'translation',messageId:line[0],body:line[1],status:line[2],createdAt:line[3],speakerName:line[4]});if(data.closed){ended=true;closed.textContent=' · '+DATA.strings.closed}}catch(e){}}
+function mark(body,edited){body.querySelector('.edited')?.remove();if(edited){const note=document.createElement('small');note.className='edited';note.textContent='('+DATA.strings.edited+')';body.append(note)}}
+function add(message){let row=rows.get(message.messageId),fresh=!row,previous=row?Number(row.dataset.revision||0):-1;if(row&&message.revision<previous)return;if(!row&&message.t==='message'&&message.lang!==DATA.lang)return;waiting.hidden=true;if(!row){row=document.createElement('div');row.className='line';row.dataset.id=message.messageId;row.append(document.createElement('time'),document.createElement('p'));lines.append(row);rows.set(message.messageId,row)}row.dataset.revision=message.revision;const time=row.querySelector('time'),body=row.querySelector('p'),isOwn=message.t==='message'&&message.lang===DATA.lang,ok=isOwn||message.t==='translation'&&message.status==='ok';time.textContent=clock(message.sourceCreatedAt||message.createdAt);body.className=ok?'':message.t==='message'?'waiting':'failed';body.textContent=(message.speakerName?'('+message.speakerName+') ':'')+(ok?message.body:message.t==='message'?DATA.strings.waiting:DATA.strings.failed);mark(body,message.editedAt);if(stick)followSoon();else if(fresh){pending++;latest.hidden=false;latest.lastElementChild.textContent=pending}}
+async function sync(){try{const response=await fetch(location.pathname+'?since='+watermark,{cache:'no-store'}),data=await response.json();for(const line of data.lines)add({t:'translation',messageId:line[0],body:line[1],status:line[2],createdAt:line[3],speakerName:line[4],revision:line[5],editedAt:line[6]});watermark=data.snapshotAt;if(data.closed){ended=true;closed.textContent=' · '+DATA.strings.closed}}catch(e){}}
 function connect(){connection.textContent=DATA.strings.reconnecting;const scheme=location.protocol==='https:'?'wss':'ws',socket=new WebSocket(scheme+'://'+location.host+'/ws?token='+encodeURIComponent(DATA.token));socket.onopen=()=>{retry=0;connection.textContent=DATA.strings.connected;sync()};socket.onmessage=event=>{try{const message=JSON.parse(event.data);if(message.t==='message'||message.t==='translation')add(message);else if(message.t==='meeting-closed'){ended=true;closed.textContent=' · '+DATA.strings.closed;socket.close()}}catch(e){}};socket.onclose=()=>{connection.textContent=DATA.strings.disconnected;if(!ended)timer=setTimeout(connect,Math.min(10000,500*2**retry++))};socket.onerror=()=>socket.close()}
 scroll.addEventListener('scroll',()=>{stick=scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<=80;if(stick){pending=0;latest.hidden=true}},{passive:true});addEventListener('resize',refollow,{passive:true});window.visualViewport?.addEventListener('resize',refollow,{passive:true});latest.onclick=()=>{stick=true;pending=0;latest.hidden=true;follow()};
 function applyTheme(){const dark=root.dataset.theme==='dark'||(!root.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);theme.textContent=dark?DATA.strings.light:DATA.strings.dark}theme.onclick=()=>{const dark=root.dataset.theme==='dark'||(!root.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);root.dataset.theme=dark?'light':'dark';try{localStorage.setItem('lct.theme',root.dataset.theme)}catch(e){}applyTheme()};
