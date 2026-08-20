@@ -2,8 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { z } from "zod";
 
 import type { AdminStrings } from "@/lib/i18n-builtin";
+import { parseJsonResponse } from "@/lib/json-response";
 
 import { AdminBusyOverlay } from "./admin-busy-overlay";
 
@@ -14,6 +16,17 @@ type ErrorCode =
   | "same-password"
   | "failed"
   | "invalid-request";
+const passwordResponseSchema = z.object({
+  error: z.enum([
+    "invalid-current",
+    "too-short",
+    "too-long",
+    "same-password",
+    "failed",
+    "invalid-request",
+    "auth-required",
+  ]).optional(),
+});
 
 export function PasswordChangeDialog({
   strings,
@@ -80,9 +93,7 @@ export function PasswordChangeDialog({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ currentPassword, newPassword }),
       });
-      const payload = (await response.json().catch(() => null)) as {
-        error?: ErrorCode | "auth-required";
-      } | null;
+      const payload = await parseJsonResponse(response, passwordResponseSchema);
 
       if (response.status === 401) {
         router.replace("/admin/login");
@@ -90,7 +101,8 @@ export function PasswordChangeDialog({
         return;
       }
       if (!response.ok) {
-        setError(messageFor(payload?.error as ErrorCode));
+        const code = payload?.error;
+        setError(messageFor(code && code !== "auth-required" ? code : "failed"));
         return;
       }
 

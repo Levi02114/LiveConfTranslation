@@ -39,7 +39,7 @@ function describe(code: LanguageCode, display: LanguageCode) {
     builtin: isBuiltinLanguage(code),
     engines: Object.fromEntries(
       ENGINE_IDS.map((id) => [id, getEngine(id).supports(code)]),
-    ) as Record<string, boolean>,
+    ),
   };
 }
 

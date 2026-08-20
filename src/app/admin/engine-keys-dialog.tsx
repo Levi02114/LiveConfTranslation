@@ -1,17 +1,21 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { z } from "zod";
 
 import type { AdminStrings } from "@/lib/i18n-builtin";
+import { parseJsonResponse } from "@/lib/json-response";
 import { formatTimestamp } from "@/lib/log-format";
-import type { EngineId } from "@/lib/translate/types";
+import { engineIdSchema, type EngineId } from "@/lib/translate/types";
 
-export type EngineKeyStatus = {
-  engine: EngineId;
-  configured: boolean;
-  hint: string | null;
-  updatedAt: number | null;
-};
+const engineKeyStatusSchema = z.object({
+  engine: engineIdSchema,
+  configured: z.boolean(),
+  hint: z.string().nullable(),
+  updatedAt: z.number().nullable(),
+});
+export type EngineKeyStatus = z.infer<typeof engineKeyStatusSchema>;
+const keyResponseSchema = z.object({ key: engineKeyStatusSchema.optional(), error: z.string().optional() });
 
 /**
  * 번역 엔진 API 키 등록.
@@ -59,9 +63,9 @@ export function EngineKeysDialog({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ engine, key }),
       });
-      const payload = (await response.json()) as { key?: EngineKeyStatus; error?: string };
+      const payload = await parseJsonResponse(response, keyResponseSchema);
 
-      if (!response.ok || !payload.key) {
+      if (!response.ok || !payload?.key) {
         setError(strings.saveFailed);
         return;
       }
@@ -84,9 +88,9 @@ export function EngineKeysDialog({
       const response = await fetch(`/api/admin/engine-keys?engine=${engine}`, {
         method: "DELETE",
       });
-      const payload = (await response.json()) as { key?: EngineKeyStatus; error?: string };
+      const payload = await parseJsonResponse(response, keyResponseSchema);
 
-      if (!response.ok || !payload.key) {
+      if (!response.ok || !payload?.key) {
         setError(strings.removeFailed);
         return;
       }

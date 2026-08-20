@@ -15,6 +15,8 @@ import {
 } from "node:fs";
 import { dirname } from "node:path";
 
+import { z } from "zod";
+
 import { adminPassword, databasePath, sessionSecret } from "@/lib/env";
 
 const MIN_PASSWORD_LENGTH = 12;
@@ -29,6 +31,13 @@ type StoredAdminPassword = {
   hash: string;
   revision: string;
 };
+
+const storedAdminPasswordSchema = z.object({
+  version: z.literal(1),
+  salt: z.string(),
+  hash: z.string(),
+  revision: z.string(),
+});
 
 export type ChangeAdminPasswordResult =
   | "ok"
@@ -54,20 +63,15 @@ function readStored(): StoredAdminPassword | null {
   const file = adminPasswordOverridePath();
   if (!existsSync(file)) return null;
 
-  const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<StoredAdminPassword>;
-  if (
-    parsed.version !== 1 ||
-    typeof parsed.salt !== "string" ||
-    typeof parsed.hash !== "string" ||
-    typeof parsed.revision !== "string"
-  ) {
+  const parsed = storedAdminPasswordSchema.safeParse(JSON.parse(readFileSync(file, "utf8")));
+  if (!parsed.success) {
     throw new Error("관리자 비밀번호 파일 형식이 올바르지 않습니다.");
   }
 
-  decode(parsed.salt, SALT_BYTES);
-  decode(parsed.hash, HASH_BYTES);
-  decode(parsed.revision, REVISION_BYTES);
-  return parsed as StoredAdminPassword;
+  decode(parsed.data.salt, SALT_BYTES);
+  decode(parsed.data.hash, HASH_BYTES);
+  decode(parsed.data.revision, REVISION_BYTES);
+  return parsed.data;
 }
 
 function safeEquals(a: Buffer, b: Buffer): boolean {

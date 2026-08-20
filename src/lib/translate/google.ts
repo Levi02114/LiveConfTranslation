@@ -1,6 +1,9 @@
 import "server-only";
 
+import { z } from "zod";
+
 import { isCatalogLanguage } from "@/lib/language-catalog";
+import { parseJsonResponse } from "@/lib/json-response";
 import type { LanguageCode } from "@/lib/languages";
 import { engineKey } from "@/lib/secrets";
 
@@ -19,6 +22,9 @@ import {
  */
 
 const ENDPOINT = "https://translation.googleapis.com/language/translate/v2";
+const googleResponseSchema = z.object({
+  data: z.object({ translations: z.array(z.object({ translatedText: z.string() })) }),
+});
 
 /**
  * Google 은 `format: "text"` 로 보내도 응답에 HTML 엔티티를 섞어 준다
@@ -74,21 +80,13 @@ async function callGoogle(
     );
   }
 
-  const payload = (await response.json()) as {
-    data?: { translations?: { translatedText?: string }[] };
-  };
-
-  const translations = payload.data?.translations;
+  const payload = await parseJsonResponse(response, googleResponseSchema);
+  const translations = payload?.data.translations;
   if (!translations || translations.length !== texts.length) {
     throw new TranslationError("Google 번역 응답의 번역문 개수가 요청과 다릅니다", "google");
   }
 
-  return translations.map((item) => {
-    if (typeof item.translatedText !== "string") {
-      throw new TranslationError("Google 번역 응답에 번역문이 없습니다", "google");
-    }
-    return decodeHtmlEntities(item.translatedText);
-  });
+  return translations.map((item) => decodeHtmlEntities(item.translatedText));
 }
 
 export const googleEngine: TranslationEngine = {

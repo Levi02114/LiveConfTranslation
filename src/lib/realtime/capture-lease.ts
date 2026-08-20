@@ -13,10 +13,12 @@ type Lease = {
 
 type LeaseState = { leases: Map<string, Lease>; clients: Map<string, string> };
 
-const shared = globalThis as unknown as { __captureLeases?: LeaseState };
+declare global {
+  var __captureLeases: LeaseState | undefined;
+}
 
 function state(): LeaseState {
-  return (shared.__captureLeases ??= { leases: new Map(), clients: new Map() });
+  return (globalThis.__captureLeases ??= { leases: new Map(), clients: new Map() });
 }
 
 const clientKey = (pageId: string, clientId: string) => `${pageId}:${clientId}`;

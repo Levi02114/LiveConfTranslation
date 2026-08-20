@@ -1,6 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { z } from "zod";
+
+import { parseJsonResponse } from "@/lib/json-response";
+
+const modelsResponseSchema = z.object({ models: z.array(z.string()).optional() });
+const modelResponseSchema = z.object({
+  model: z.string().nullable().optional(),
+  error: z.string().optional(),
+});
 
 function withCurrent(models: readonly string[], current: string): string[] {
   return [...new Set([current, ...models].filter(Boolean))];
@@ -36,10 +45,10 @@ export function OpenaiModelSelect({
     let active = true;
 
     void fetch("/api/admin/openai-models", { cache: "no-store" })
-      .then((response) => response.json() as Promise<{ models?: string[] }>)
+      .then((response) => parseJsonResponse(response, modelsResponseSchema))
       .then((payload) => {
         if (!active) return;
-        const fresh = withCurrent(payload.models ?? [], saved.current);
+        const fresh = withCurrent(payload?.models ?? [], saved.current);
         setModels((cached) => (sameModels(cached, fresh) ? cached : fresh));
       })
       .catch(() => {
@@ -62,11 +71,11 @@ export function OpenaiModelSelect({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ engine: "openai", model: next }),
       });
-      const payload = (await response.json()) as { model?: string | null; error?: string };
+      const payload = await parseJsonResponse(response, modelResponseSchema);
 
-      if (!response.ok || !payload.model) {
+      if (!response.ok || !payload?.model) {
         setValue(saved.current);
-        onError(payload.error ?? null);
+        onError(payload?.error ?? null);
         return;
       }
 

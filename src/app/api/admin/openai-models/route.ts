@@ -1,5 +1,8 @@
+import { z } from "zod";
+
 import { requireAdmin } from "@/lib/auth";
 import { openaiBaseUrl } from "@/lib/env";
+import { parseJsonResponse } from "@/lib/json-response";
 import { listOpenaiModels, replaceOpenaiModels } from "@/lib/repo";
 import { engineKey, resolveOpenaiModel } from "@/lib/secrets";
 
@@ -16,6 +19,7 @@ import { engineKey, resolveOpenaiModel } from "@/lib/secrets";
 /** 번역에 쓸 수 없는 모델을 걸러 낸다. 목록에 100개가 뜨면 고를 수가 없다. */
 const EXCLUDE = /embedding|tts|whisper|dall-e|audio|realtime|image|moderation|transcribe/i;
 const INCLUDE = /^(gpt|chatgpt|o\d)/i;
+const modelsResponseSchema = z.object({ data: z.array(z.object({ id: z.string() })) });
 
 export async function GET() {
   const denied = await requireAdmin();
@@ -40,11 +44,10 @@ export async function GET() {
 
     if (!response.ok) return Response.json(fallback);
 
-    const payload = (await response.json()) as { data?: { id?: unknown }[] };
-
-    const models = (payload.data ?? [])
+    const payload = await parseJsonResponse(response, modelsResponseSchema);
+    if (!payload) return Response.json(fallback);
+    const models = payload.data
       .map((item) => item.id)
-      .filter((id): id is string => typeof id === "string")
       .filter((id) => INCLUDE.test(id) && !EXCLUDE.test(id))
       .sort();
 

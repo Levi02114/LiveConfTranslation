@@ -1,6 +1,9 @@
 import "server-only";
 
+import { z } from "zod";
+
 import { openaiBaseUrl } from "@/lib/env";
+import { parseJsonResponse } from "@/lib/json-response";
 import { ensureLanguagePromptCue } from "@/lib/prompt-cue";
 import { engineKey, resolveOpenaiModel } from "@/lib/secrets";
 import { type LanguageCode, languageLogName } from "@/lib/languages";
@@ -16,6 +19,9 @@ import { hasHangulLeak } from "./quality";
 import { STYLE_CUE_SOURCE, targetLanguageRules } from "./prompt";
 
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+const chatResponseSchema = z.object({
+  choices: z.array(z.object({ message: z.object({ content: z.string() }) })),
+});
 
 /**
  * OpenAI 모델을 쓰는 LLM 번역.
@@ -132,11 +138,10 @@ async function requestChat(
         authorization: `Bearer ${key}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({
+      body: JSON.stringify(Object.assign({
         model: resolveOpenaiModel(),
         messages,
-        ...(json ? { response_format: { type: "json_object" } } : {}),
-      }),
+      }, json ? { response_format: { type: "json_object" } } : undefined)),
       signal,
     });
   } catch (cause) {
@@ -152,11 +157,9 @@ async function requestChat(
     );
   }
 
-  const payload = (await response.json()) as {
-    choices?: { message?: { content?: string } }[];
-  };
-  const content = payload.choices?.[0]?.message?.content;
-  if (typeof content !== "string" || !content.trim()) {
+  const payload = await parseJsonResponse(response, chatResponseSchema);
+  const content = payload?.choices[0]?.message.content;
+  if (!content?.trim()) {
     throw new TranslationError("OpenAI 응답에 번역문이 없습니다", "openai");
   }
   return content;
@@ -248,22 +251,21 @@ export const openaiEngine: TranslationEngine = {
       true,
     );
 
-    let items: unknown;
+    let value;
     try {
-      items = (JSON.parse(content) as { items?: unknown }).items;
+      value = JSON.parse(content);
     } catch (cause) {
       throw new TranslationError("OpenAI 응답을 JSON 으로 읽지 못했습니다", "openai", cause);
     }
 
-    if (!Array.isArray(items) || items.length !== texts.length) {
+    const parsed = z.object({ items: z.array(z.string()) }).safeParse(value);
+    if (!parsed.success || parsed.data.items.length !== texts.length) {
       throw new TranslationError(
-        `OpenAI 가 ${texts.length}개를 요청했는데 ${Array.isArray(items) ? items.length : 0}개를 돌려주었습니다`,
+        `OpenAI 가 ${texts.length}개를 요청했는데 ${parsed.success ? parsed.data.items.length : 0}개를 돌려주었습니다`,
         "openai",
       );
     }
 
-    return items.map((item, index) =>
-      typeof item === "string" && item.trim() ? stripWrapper(item) : texts[index],
-    );
+    return parsed.data.items.map((item, index) => item.trim() ? stripWrapper(item) : texts[index]);
   },
 };

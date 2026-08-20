@@ -1,10 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { z } from "zod";
 
 import type { AdminStrings } from "@/lib/i18n-builtin";
+import { parseJsonResponse } from "@/lib/json-response";
 import type { Language, LanguageCode } from "@/lib/languages";
-import type { EngineId } from "@/lib/translate/types";
+import { isEngineId, type EngineId } from "@/lib/translate/types";
 
 /** `/api/admin/ui-strings` 가 내려 주는 한 줄 */
 export type StringRow = {
@@ -14,6 +16,16 @@ export type StringRow = {
   text: string;
   origin: "manual" | "machine" | "builtin" | "fallback";
 };
+const stringsResponseSchema = z.object({
+  entries: z.array(z.object({
+    key: z.string(),
+    source: z.string(),
+    text: z.string(),
+    origin: z.enum(["manual", "machine", "builtin", "fallback"]),
+  })).optional(),
+  failed: z.number().optional(),
+  error: z.string().optional(),
+});
 
 /**
  * UI 문구 수정.
@@ -56,9 +68,9 @@ export function UiStringsDialog({
     setDrafts({});
     try {
       const response = await fetch(`/api/admin/ui-strings?lang=${encodeURIComponent(target)}`);
-      const payload = (await response.json()) as { entries?: StringRow[]; error?: string };
+      const payload = await parseJsonResponse(response, stringsResponseSchema);
 
-      if (!response.ok) {
+      if (!response.ok || !payload) {
         setError(strings.saveFailed);
         return;
       }
@@ -96,9 +108,9 @@ export function UiStringsDialog({
           entries: changed.map(([key, text]) => ({ key, text })),
         }),
       });
-      const payload = (await response.json()) as { entries?: StringRow[]; error?: string };
+      const payload = await parseJsonResponse(response, stringsResponseSchema);
 
-      if (!response.ok) {
+      if (!response.ok || !payload) {
         setError(strings.saveFailed);
         return;
       }
@@ -122,9 +134,9 @@ export function UiStringsDialog({
         `/api/admin/ui-strings?lang=${encodeURIComponent(lang)}&key=${encodeURIComponent(key)}`,
         { method: "DELETE" },
       );
-      const payload = (await response.json()) as { entries?: StringRow[]; error?: string };
+      const payload = await parseJsonResponse(response, stringsResponseSchema);
 
-      if (!response.ok) {
+      if (!response.ok || !payload) {
         setError(strings.saveFailed);
         return;
       }
@@ -151,13 +163,9 @@ export function UiStringsDialog({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ lang, engine }),
       });
-      const payload = (await response.json()) as {
-        entries?: StringRow[];
-        failed?: number;
-        error?: string;
-      };
+      const payload = await parseJsonResponse(response, stringsResponseSchema);
 
-      if (!response.ok) {
+      if (!response.ok || !payload) {
         setError(strings.saveFailed);
         return;
       }
@@ -290,7 +298,9 @@ export function UiStringsDialog({
             <div className="ml-auto flex items-center gap-3">
               <select
                 value={engine}
-                onChange={(event) => setEngine(event.target.value as EngineId)}
+                onChange={(event) => {
+                  if (isEngineId(event.target.value)) setEngine(event.target.value);
+                }}
                 className="border border-line bg-bg px-2.5 py-1.5 font-mono text-[12px] outline-none"
               >
                 {engines.map((item) => (

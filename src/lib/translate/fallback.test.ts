@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { z } from "zod";
 
 test("선택한 폴백만 미지원 언어 번역을 대신한다", async () => {
   const directory = mkdtempSync(join(tmpdir(), "liveconf-fallback-"));
@@ -29,9 +30,10 @@ test("선택한 폴백만 미지원 언어 번역을 대신한다", async () => 
     }
     if (url.includes("/chat/completions")) {
       openaiCalls += 1;
-      openaiSystemPrompt = (
-        JSON.parse(String(init?.body)) as { messages: { content: string }[] }
-      ).messages[0].content;
+      const body = z.object({
+        messages: z.array(z.object({ content: z.string() })).min(1),
+      }).parse(JSON.parse(String(init?.body)));
+      openaiSystemPrompt = body.messages[0].content;
       return Response.json({ choices: [{ message: { content: "안녕하세요" } }] });
     }
     throw new Error(`예상하지 못한 요청: ${url}`);

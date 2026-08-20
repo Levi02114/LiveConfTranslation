@@ -25,15 +25,17 @@ export function engineKey(engine: EngineId): string | undefined {
   return undefined;
 }
 
-/**
- * 관리자 화면에 내려 줄 상태. **평문 키는 절대 포함하지 않는다.**
- */
-export function engineKeyStatus(engine: EngineId): {
+export type EngineKeyStatus = {
   engine: EngineId;
   configured: boolean;
   hint: string | null;
   updatedAt: number | null;
-} {
+};
+
+/**
+ * 관리자 화면에 내려 줄 상태. **평문 키는 절대 포함하지 않는다.**
+ */
+export function engineKeyStatus(engine: EngineId): EngineKeyStatus {
   const stored = getEngineSecret(engine);
   const configured = Boolean(engineKey(engine));
 

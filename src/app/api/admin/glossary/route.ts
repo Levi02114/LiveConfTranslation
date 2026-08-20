@@ -42,10 +42,8 @@ export async function PUT(request: Request) {
   const expected = new Set(languages);
   const entries: { id?: string; terms: Record<LanguageCode, string> }[] = [];
   for (const entry of parsed.data.entries) {
-    const terms = Object.fromEntries(entry.terms.map((item) => [item.lang, item.term])) as Record<
-      LanguageCode,
-      string
-    >;
+    const terms: Record<LanguageCode, string> = {};
+    for (const item of entry.terms) terms[item.lang] = item.term;
     if (
       entry.terms.length !== languages.length ||
       Object.keys(terms).some((lang) => !expected.has(lang)) ||

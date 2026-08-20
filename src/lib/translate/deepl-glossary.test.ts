@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { z } from "zod";
 
 test("DeepL 지원 언어쌍에는 동기화한 단어집 ID를 붙인다", async () => {
   const directory = mkdtempSync(join(tmpdir(), "liveconf-deepl-glossary-"));
@@ -11,7 +12,7 @@ test("DeepL 지원 언어쌍에는 동기화한 단어집 ID를 붙인다", asyn
   const originalFetch = globalThis.fetch;
   process.env.DATABASE_PATH = join(directory, "test.db");
   process.env.SESSION_SECRET = "test-session-secret-for-encrypted-engine-keys";
-  let translateBody: Record<string, unknown> | null = null;
+  let glossaryId: string | undefined;
 
   globalThis.fetch = async (input, init) => {
     const url = String(input);
@@ -35,7 +36,8 @@ test("DeepL 지원 언어쌍에는 동기화한 단어집 ID를 붙인다", asyn
       return Response.json({ entry_count: 1 });
     }
     if (url.endsWith("/v2/translate")) {
-      translateBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      glossaryId = z.object({ glossary_id: z.string().optional() })
+        .parse(JSON.parse(String(init?.body))).glossary_id;
       return Response.json({ translations: [{ text: "bản dịch trực tiếp" }] });
     }
     throw new Error(`예상하지 못한 요청: ${url}`);
@@ -61,7 +63,7 @@ test("DeepL 지원 언어쌍에는 동기화한 단어집 ID를 붙인다", asyn
     });
 
     assert.equal(result.text, "bản dịch trực tiếp");
-    assert.equal((translateBody as Record<string, unknown> | null)?.glossary_id, "glossary-1");
+    assert.equal(glossaryId, "glossary-1");
   } finally {
     globalThis.fetch = originalFetch;
     if (originalDatabasePath === undefined) delete process.env.DATABASE_PATH;

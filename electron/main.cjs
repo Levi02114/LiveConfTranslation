@@ -99,8 +99,8 @@ function createDesktopSettings() {
     desktopSettings = {
       adminPassword: randomBytes(9).toString("base64url"),
       sessionSecret: randomBytes(32).toString("base64url"),
-      ...(preferredShareOrigin ? { preferredOrigin: preferredShareOrigin } : {}),
     };
+    if (preferredShareOrigin) desktopSettings.preferredOrigin = preferredShareOrigin;
     writeDesktopSettings();
   }
 

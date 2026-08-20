@@ -1,11 +1,13 @@
+import { z } from "zod";
+
 import type { LanguageCode } from "@/lib/languages";
 
-export type EngineId = "google" | "deepl" | "openai";
+export const ENGINE_IDS = ["google", "deepl", "openai"] as const;
+export const engineIdSchema = z.enum(ENGINE_IDS);
+export type EngineId = z.infer<typeof engineIdSchema>;
 
-export const ENGINE_IDS: readonly EngineId[] = ["google", "deepl", "openai"] as const;
-
-export function isEngineId(value: unknown): value is EngineId {
-  return typeof value === "string" && (ENGINE_IDS as readonly string[]).includes(value);
+export function isEngineId(value: string | null): value is EngineId {
+  return engineIdSchema.safeParse(value).success;
 }
 
 export type GlossaryTermPair = { source: string; target: string };

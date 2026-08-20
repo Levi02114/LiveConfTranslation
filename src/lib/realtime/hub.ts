@@ -31,10 +31,12 @@ export type Connection = {
 
 type HubState = { rooms: Map<string, Set<Connection>> };
 
-const globalForHub = globalThis as unknown as { __meetingHub?: HubState };
+declare global {
+  var __meetingHub: HubState | undefined;
+}
 
 function state(): HubState {
-  return (globalForHub.__meetingHub ??= { rooms: new Map() });
+  return (globalThis.__meetingHub ??= { rooms: new Map() });
 }
 
 function room(meetingId: string): Set<Connection> {

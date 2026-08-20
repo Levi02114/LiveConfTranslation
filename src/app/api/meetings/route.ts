@@ -51,7 +51,7 @@ export async function POST(request: Request) {
 
   // 같은 언어를 두 번 고르면 페이지가 중복 생성되므로 걸러 낸다.
   const requestedLangs = langs ?? listLanguages().map((row) => row.code);
-  const unique = [...new Set(requestedLangs)] as LanguageCode[];
+  const unique: LanguageCode[] = [...new Set(requestedLangs)];
   if (unique.length < 2) {
     return Response.json({ error: "서로 다른 언어를 두 개 이상 골라 주세요" }, { status: 400 });
   }

@@ -39,12 +39,12 @@ export const BUILTIN_LANGUAGES: readonly LanguageCode[] = ["ko", "vi", "th", "si
 
 // Electron은 일부 ICU 로케일(현재 si)을 싣지 않아 원어명도 영어로 폴백한다.
 // 기본 지원 언어만큼은 실행 환경과 무관하게 검수된 이름을 사용한다.
-const BUILTIN_NATIVE_NAMES: Readonly<Record<string, string>> = {
-  ko: "한국어",
-  vi: "Tiếng Việt",
-  th: "ไทย",
-  si: "සිංහල",
-};
+const BUILTIN_NATIVE_NAMES = new Map<LanguageCode, string>([
+  ["ko", "한국어"],
+  ["vi", "Tiếng Việt"],
+  ["th", "ไทย"],
+  ["si", "සිංහල"],
+]);
 
 /** 회의를 새로 만들 때 기본으로 채워지는 언어 세트 */
 export const DEFAULT_LANGUAGES: readonly LanguageCode[] = BUILTIN_LANGUAGES;
@@ -60,8 +60,8 @@ export function isBuiltinLanguage(code: LanguageCode): boolean {
  * 이 함수는 사용자 입력이 언어 코드 모양인지만 본다. 이 파일은 클라이언트에서도
  * 불릴 수 있어야 하므로 DB 를 건드리지 않는다.
  */
-export function isLanguageCode(value: unknown): value is LanguageCode {
-  return typeof value === "string" && /^[a-z]{2,3}(-[a-z0-9]{2,8})*$/i.test(value);
+export function isLanguageCode(value: string | null): value is LanguageCode {
+  return value !== null && /^[a-z]{2,3}(-[a-z0-9]{2,8})*$/i.test(value);
 }
 
 /*
@@ -119,7 +119,7 @@ export function getLanguage(code: LanguageCode, displayLang: LanguageCode = "ko"
   return {
     code,
     label: displayName(code, displayLang),
-    nativeName: BUILTIN_NATIVE_NAMES[code] ?? displayName(code, code),
+    nativeName: BUILTIN_NATIVE_NAMES.get(code) ?? displayName(code, code),
     logName: displayName(code, "en"),
   };
 }
@@ -142,11 +142,8 @@ export function textDirection(code: LanguageCode): "ltr" | "rtl" {
      * 최신 브라우저)에는 있으므로 좁은 형태로만 단언한다. 초안 단계에 이름이
      * `textInfo` 속성이었던 런타임도 있어 둘 다 본다.
      */
-    const locale = new Intl.Locale(code) as Intl.Locale & {
-      getTextInfo?: () => { direction?: string };
-      textInfo?: { direction?: string };
-    };
-    const info = typeof locale.getTextInfo === "function" ? locale.getTextInfo() : locale.textInfo;
+    const locale = new Intl.Locale(code);
+    const info = locale.getTextInfo?.() ?? locale.textInfo;
     return info?.direction === "rtl" ? "rtl" : "ltr";
   } catch {
     return "ltr";

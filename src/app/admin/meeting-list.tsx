@@ -2,14 +2,16 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
+import { z } from "zod";
 
 import { AppearanceControls } from "@/components/appearance-controls";
 import { useSetAdminLang } from "@/hooks/use-admin-lang";
 import type { AdminStrings, UiStrings } from "@/lib/i18n-builtin";
 import type { Language, LanguageCode } from "@/lib/languages";
 import { formatTimestamp } from "@/lib/log-format";
+import { parseJsonResponse } from "@/lib/json-response";
 import type { Meeting } from "@/lib/repo";
-import type { EngineId } from "@/lib/translate/types";
+import { engineIdSchema, isEngineId, type EngineId } from "@/lib/translate/types";
 
 import { AdminBusyOverlay } from "./admin-busy-overlay";
 import { EngineKeysDialog, type EngineKeyStatus } from "./engine-keys-dialog";
@@ -20,6 +22,21 @@ import { PasswordChangeDialog } from "./password-change-dialog";
 import { UiStringsDialog } from "./ui-strings-dialog";
 
 type Row = Meeting & { langs: LanguageCode[] };
+const meetingResponseSchema = z.object({
+  meeting: z.object({
+    id: z.string(),
+    title: z.string(),
+    status: z.enum(["open", "closed"]),
+    engine: engineIdSchema,
+    fallbackEngine: engineIdSchema.nullable(),
+    inputMode: z.enum(["human", "realtime"]),
+    speakerLabels: z.boolean(),
+    transcriptionContext: z.string().nullable(),
+    createdAt: z.number(),
+    closedAt: z.number().nullable(),
+  }).optional(),
+  error: z.string().optional(),
+});
 
 export function MeetingList({
   lang,
@@ -150,9 +167,9 @@ export function MeetingList({
           fallbackEngine,
         }),
       });
-      const payload = (await response.json()) as { meeting?: Meeting; error?: string };
+      const payload = await parseJsonResponse(response, meetingResponseSchema);
 
-      if (!response.ok || !payload.meeting) {
+      if (!response.ok || !payload?.meeting) {
         setError(strings.list.createFailed);
         return;
       }
@@ -209,8 +226,8 @@ export function MeetingList({
     setError(null);
     try {
       const response = await fetch(`/api/meetings/${meeting.id}`, { method: "POST" });
-      const payload = (await response.json()) as { meeting?: Meeting; error?: string };
-      if (!response.ok || !payload.meeting) {
+      const payload = await parseJsonResponse(response, meetingResponseSchema);
+      if (!response.ok || !payload?.meeting) {
         setError(strings.list.closeFailed);
         return;
       }
@@ -490,9 +507,10 @@ function EngineSelect({
   return (
     <select
       value={value ?? ""}
-      onChange={(event) =>
-        onChange(event.target.value ? (event.target.value as EngineId) : null)
-      }
+      onChange={(event) => {
+        const next = event.target.value;
+        onChange(isEngineId(next) ? next : null);
+      }}
       className="max-w-full border border-line bg-bg px-2.5 py-1.5 font-mono text-[13px] outline-none"
     >
       {noneLabel ? <option value="">{noneLabel}</option> : null}

@@ -1,11 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { z } from "zod";
 
 import type { AdminStrings } from "@/lib/i18n-builtin";
+import { parseJsonResponse } from "@/lib/json-response";
 import { matchesLanguageQuery } from "@/lib/language-catalog";
 import type { Language, LanguageCode } from "@/lib/languages";
-import type { EngineId } from "@/lib/translate/types";
+import { isEngineId, type EngineId } from "@/lib/translate/types";
 
 /** `/api/admin/languages` 가 내려 주는 한 줄 */
 export type CatalogLanguage = Language & {
@@ -13,6 +15,17 @@ export type CatalogLanguage = Language & {
   /** 엔진별 지원 여부. */
   engines: Record<string, boolean>;
 };
+const catalogResponseSchema = z.object({
+  catalog: z.array(z.object({
+    code: z.string(),
+    label: z.string(),
+    nativeName: z.string(),
+    logName: z.string(),
+    builtin: z.boolean(),
+    engines: z.record(z.string(), z.boolean()),
+  })).optional(),
+});
+const addResponseSchema = z.object({ failed: z.number().optional(), error: z.string().optional() });
 
 /**
  * 언어 추가.
@@ -56,8 +69,8 @@ export function LanguageDialog({
       const response = await fetch(
         `/api/admin/languages?display=${encodeURIComponent(display)}`,
       );
-      const payload = (await response.json()) as { catalog?: CatalogLanguage[] };
-      setCatalog(payload.catalog ?? []);
+      const payload = await parseJsonResponse(response, catalogResponseSchema);
+      setCatalog(payload?.catalog ?? []);
       setLoaded(true);
     } catch {
       setError(strings.addFailed);
@@ -75,9 +88,9 @@ export function LanguageDialog({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ code: selected, engine }),
       });
-      const payload = (await response.json()) as { failed?: number; error?: string };
+      const payload = await parseJsonResponse(response, addResponseSchema);
 
-      if (!response.ok) {
+      if (!response.ok || !payload) {
         setError(strings.addFailed);
         return;
       }
@@ -177,7 +190,9 @@ export function LanguageDialog({
             <div className="font-mono text-[11px] text-muted">{strings.translateWith}</div>
             <select
               value={engine}
-              onChange={(event) => setEngine(event.target.value as EngineId)}
+              onChange={(event) => {
+                if (isEngineId(event.target.value)) setEngine(event.target.value);
+              }}
               className="border border-line bg-bg px-2.5 py-1.5 font-mono text-[13px] outline-none"
             >
               {engines.map((item) => (

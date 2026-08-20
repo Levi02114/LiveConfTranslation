@@ -2,9 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { ClientMessage, ServerMessage } from "@/lib/realtime/protocol";
+import {
+  parseServerMessage,
+  type ClientMessage,
+  type ServerMessage,
+} from "@/lib/realtime/protocol";
 
 export type ConnectionState = "connecting" | "open" | "closed";
+export type RealtimeConnection = {
+  state: ConnectionState;
+  send: (message: ClientMessage) => void;
+};
 
 /**
  * 서버(`server.ts`)의 `/ws` 에 붙어 실시간 메시지를 받는다.
@@ -18,7 +26,7 @@ export type ConnectionState = "connecting" | "open" | "closed";
 export function useRealtime(
   query: string,
   onMessage: (message: ServerMessage) => void,
-): { state: ConnectionState; send: (message: ClientMessage) => void } {
+): RealtimeConnection {
   const [state, setState] = useState<ConnectionState>("connecting");
   const socketRef = useRef<WebSocket | null>(null);
 
@@ -48,11 +56,9 @@ export function useRealtime(
 
       socket.onmessage = (event) => {
         if (disposed) return;
-        try {
-          handlerRef.current(JSON.parse(String(event.data)) as ServerMessage);
-        } catch {
-          // 알 수 없는 프레임 하나 때문에 연결을 끊지는 않는다.
-        }
+        const message = parseServerMessage(String(event.data));
+        // 알 수 없는 프레임 하나 때문에 연결을 끊지는 않는다.
+        if (message) handlerRef.current(message);
       };
 
       socket.onclose = () => {

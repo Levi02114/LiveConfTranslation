@@ -1,7 +1,10 @@
 import "server-only";
 
+import { z } from "zod";
+
 import { deeplApiUrl } from "@/lib/env";
 import { engineKey } from "@/lib/secrets";
+import { parseJsonResponse } from "@/lib/json-response";
 import type { LanguageCode } from "@/lib/languages";
 
 import {
@@ -26,32 +29,45 @@ type DeepLGlossaryState = {
   pending: Map<string, Promise<string>>;
 };
 
-type DeepLGlobal = typeof globalThis & {
-  __lctDeepLSupport?: DeepLSupport;
-  __lctDeepLSupportPromise?: Promise<DeepLSupport>;
-  __lctDeepLGlossary?: DeepLGlossaryState;
-};
+declare global {
+  var __lctDeepLSupport: DeepLSupport | undefined;
+  var __lctDeepLSupportPromise: Promise<DeepLSupport> | undefined;
+  var __lctDeepLGlossary: DeepLGlossaryState | undefined;
+}
 
-const supportGlobal = globalThis as DeepLGlobal;
 const SUPPORT_TTL = 24 * 60 * 60 * 1_000;
 
-const SOURCE_ALIASES: Record<string, string> = {
-  fil: "TL",
-  no: "NB",
-  "pt-BR": "PT",
-  "zh-CN": "ZH",
-  "zh-TW": "ZH",
-};
+const SOURCE_ALIASES = new Map<string, string>([
+  ["fil", "TL"],
+  ["no", "NB"],
+  ["pt-BR", "PT"],
+  ["zh-CN", "ZH"],
+  ["zh-TW", "ZH"],
+]);
 
-const TARGET_ALIASES: Record<string, string> = {
-  en: "EN-US",
-  fil: "TL",
-  no: "NB",
-  pt: "PT-PT",
-  "pt-BR": "PT-BR",
-  "zh-CN": "ZH-HANS",
-  "zh-TW": "ZH-HANT",
-};
+const TARGET_ALIASES = new Map<string, string>([
+  ["en", "EN-US"],
+  ["fil", "TL"],
+  ["no", "NB"],
+  ["pt", "PT-PT"],
+  ["pt-BR", "PT-BR"],
+  ["zh-CN", "ZH-HANS"],
+  ["zh-TW", "ZH-HANT"],
+]);
+
+const supportResponseSchema = z.array(z.object({
+  lang: z.string(),
+  usable_as_source: z.boolean().optional(),
+  usable_as_target: z.boolean().optional(),
+  features: z.object({ glossary: z.json().optional() }).optional(),
+}));
+const glossaryListSchema = z.object({
+  glossaries: z.array(z.object({ glossary_id: z.string().optional(), name: z.string().optional() })),
+});
+const glossaryCreatedSchema = z.object({ glossary_id: z.string() });
+const translationResponseSchema = z.object({
+  translations: z.array(z.object({ text: z.string() })),
+});
 
 async function fetchSupport(key: string): Promise<DeepLSupport> {
   let response: Response;
@@ -70,13 +86,8 @@ async function fetchSupport(key: string): Promise<DeepLSupport> {
     );
   }
 
-  const payload = (await response.json()) as {
-    lang?: unknown;
-    usable_as_source?: unknown;
-    usable_as_target?: unknown;
-    features?: Record<string, unknown>;
-  }[];
-  if (!Array.isArray(payload)) {
+  const payload = await parseJsonResponse(response, supportResponseSchema);
+  if (!payload) {
     throw new TranslationError("DeepL 지원 언어 응답이 올바르지 않습니다", "deepl");
   }
 
@@ -84,29 +95,28 @@ async function fetchSupport(key: string): Promise<DeepLSupport> {
   const target = new Set<string>();
   const glossary = new Set<string>();
   for (const item of payload) {
-    if (typeof item.lang !== "string") continue;
     const code = item.lang.toUpperCase();
     if (item.usable_as_source === true) source.add(code);
     if (item.usable_as_target === true) target.add(code);
-    if (item.features && "glossary" in item.features) glossary.add(code);
+    if (item.features?.glossary !== undefined) glossary.add(code);
   }
   return { source, target, glossary, expiresAt: Date.now() + SUPPORT_TTL };
 }
 
 async function loadSupport(): Promise<DeepLSupport> {
-  const cached = supportGlobal.__lctDeepLSupport;
+  const cached = globalThis.__lctDeepLSupport;
   if (cached && cached.expiresAt > Date.now()) return cached;
-  if (supportGlobal.__lctDeepLSupportPromise) return supportGlobal.__lctDeepLSupportPromise;
+  if (globalThis.__lctDeepLSupportPromise) return globalThis.__lctDeepLSupportPromise;
 
   const key = engineKey("deepl");
   if (!key) throw new TranslationError("DeepL API 키가 등록되지 않았습니다", "deepl");
 
-  supportGlobal.__lctDeepLSupportPromise = fetchSupport(key);
+  globalThis.__lctDeepLSupportPromise = fetchSupport(key);
 
   try {
-    return (supportGlobal.__lctDeepLSupport = await supportGlobal.__lctDeepLSupportPromise);
+    return (globalThis.__lctDeepLSupport = await globalThis.__lctDeepLSupportPromise);
   } finally {
-    delete supportGlobal.__lctDeepLSupportPromise;
+    delete globalThis.__lctDeepLSupportPromise;
   }
 }
 
@@ -117,7 +127,7 @@ function languageCode(
 ) {
   const exact = lang.toUpperCase();
   if (supported.has(exact)) return exact;
-  const alias = (type === "source" ? SOURCE_ALIASES : TARGET_ALIASES)[lang];
+  const alias = (type === "source" ? SOURCE_ALIASES : TARGET_ALIASES).get(lang);
   return alias && supported.has(alias) ? alias : undefined;
 }
 
@@ -127,9 +137,9 @@ const BATCH_LIMIT = 40;
 const GLOSSARY_NAME = "LiveConfTranslation";
 
 function glossaryState(key: string): DeepLGlossaryState {
-  const current = supportGlobal.__lctDeepLGlossary;
+  const current = globalThis.__lctDeepLGlossary;
   if (current?.key === key) return current;
-  return (supportGlobal.__lctDeepLGlossary = {
+  return (globalThis.__lctDeepLGlossary = {
     key,
     synced: new Map(),
     pending: new Map(),
@@ -151,10 +161,9 @@ async function glossaryId(
     const headers = { authorization: `DeepL-Auth-Key ${key}` };
     const listed = await fetch(`${base}/v3/glossaries`, { headers });
     if (!listed.ok) throw new Error(`DeepL 용어집 조회가 ${listed.status} 를 반환했습니다`);
-    const payload = (await listed.json()) as {
-      glossaries?: { glossary_id?: string; name?: string }[];
-    };
-    const existing = payload.glossaries?.find(
+    const payload = await parseJsonResponse(listed, glossaryListSchema);
+    if (!payload) throw new Error("DeepL 용어집 목록 응답이 올바르지 않습니다");
+    const existing = payload.glossaries.find(
       (item) => item.name === GLOSSARY_NAME && item.glossary_id,
     );
     if (existing?.glossary_id) return existing.glossary_id;
@@ -175,8 +184,8 @@ async function glossaryId(
       }),
     });
     if (!created.ok) throw new Error(`DeepL 용어집 생성이 ${created.status} 를 반환했습니다`);
-    const result = (await created.json()) as { glossary_id?: string };
-    if (!result.glossary_id) throw new Error("DeepL 용어집 ID가 없습니다");
+    const result = await parseJsonResponse(created, glossaryCreatedSchema);
+    if (!result) throw new Error("DeepL 용어집 ID가 없습니다");
     return result.glossary_id;
   })();
 
@@ -266,12 +275,11 @@ async function callDeepl(
         authorization: `DeepL-Auth-Key ${key}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({
+      body: JSON.stringify(Object.assign({
         text: texts,
         source_lang: sourceLang,
         target_lang: targetLang,
-        ...(glossaryId ? { glossary_id: glossaryId } : {}),
-      }),
+      }, glossaryId ? { glossary_id: glossaryId } : undefined)),
       signal,
     });
   } catch (cause) {
@@ -288,19 +296,14 @@ async function callDeepl(
     );
   }
 
-  const payload = (await response.json()) as { translations?: { text?: string }[] };
-  const translations = payload.translations;
+  const payload = await parseJsonResponse(response, translationResponseSchema);
+  const translations = payload?.translations;
 
   if (!translations || translations.length !== texts.length) {
     throw new TranslationError("DeepL 응답의 번역문 개수가 요청과 다릅니다", "deepl");
   }
 
-  return translations.map((item) => {
-    if (typeof item.text !== "string") {
-      throw new TranslationError("DeepL 응답에 번역문이 없습니다", "deepl");
-    }
-    return item.text;
-  });
+  return translations.map((item) => item.text);
 }
 
 export const deeplEngine: TranslationEngine = {
@@ -308,7 +311,7 @@ export const deeplEngine: TranslationEngine = {
   label: "DeepL",
 
   supports(lang: LanguageCode) {
-    const support = supportGlobal.__lctDeepLSupport;
+    const support = globalThis.__lctDeepLSupport;
     return Boolean(
       support &&
         languageCode(lang, "source", support.source) &&

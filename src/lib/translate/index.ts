@@ -16,11 +16,11 @@ import {
 
 export * from "./types";
 
-const ENGINES: Record<EngineId, TranslationEngine> = {
+const ENGINES = {
   google: googleEngine,
   deepl: deeplEngine,
   openai: openaiEngine,
-};
+} satisfies Record<EngineId, TranslationEngine>;
 
 export function getEngine(id: EngineId): TranslationEngine {
   return ENGINES[id];

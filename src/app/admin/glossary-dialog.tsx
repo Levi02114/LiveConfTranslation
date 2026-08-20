@@ -1,9 +1,11 @@
 "use client";
 
 import { type ChangeEvent, useRef, useState } from "react";
+import { z } from "zod";
 
 import { parseGlossaryCsv, serializeGlossaryCsv } from "@/lib/glossary-csv";
 import type { AdminStrings } from "@/lib/i18n-builtin";
+import { parseJsonResponse } from "@/lib/json-response";
 import type { Language, LanguageCode } from "@/lib/languages";
 
 type GlossaryRow = {
@@ -13,6 +15,12 @@ type GlossaryRow = {
 };
 
 let newRow = 0;
+const glossaryResponseSchema = z.object({
+  entries: z.array(z.object({
+    id: z.string(),
+    terms: z.record(z.string(), z.string()),
+  })).optional(),
+});
 
 export function GlossaryDialog({
   strings,
@@ -39,10 +47,8 @@ export function GlossaryDialog({
     setNotice(null);
     try {
       const response = await fetch("/api/admin/glossary");
-      const payload = (await response.json()) as {
-        entries?: { id: string; terms: Record<LanguageCode, string> }[];
-      };
-      if (!response.ok) throw new Error();
+      const payload = await parseJsonResponse(response, glossaryResponseSchema);
+      if (!response.ok || !payload) throw new Error();
       setRows(
         (payload.entries ?? []).map((entry) => ({
           ...entry,
@@ -126,19 +132,19 @@ export function GlossaryDialog({
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          entries: rows.map((row) => ({
-            ...(row.id ? { id: row.id } : {}),
-            terms: languages.map((language) => ({
+          entries: rows.map((row) => {
+            const entry = {
+              terms: languages.map((language) => ({
               lang: language.code,
               term: row.terms[language.code].trim(),
-            })),
-          })),
+              })),
+            };
+            return row.id ? Object.assign(entry, { id: row.id }) : entry;
+          }),
         }),
       });
-      const payload = (await response.json()) as {
-        entries?: { id: string; terms: Record<LanguageCode, string> }[];
-      };
-      if (!response.ok || !payload.entries) throw new Error();
+      const payload = await parseJsonResponse(response, glossaryResponseSchema);
+      if (!response.ok || !payload?.entries) throw new Error();
       setRows(payload.entries.map((entry) => ({ ...entry, clientId: entry.id })));
     } catch {
       setError(strings.saveFailed);

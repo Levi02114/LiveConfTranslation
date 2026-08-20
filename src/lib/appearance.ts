@@ -11,13 +11,13 @@ export type Theme = (typeof THEMES)[number];
 export const FONT_SIZES = ["sm", "md", "lg", "xl", "xxl"] as const;
 export type FontSize = (typeof FONT_SIZES)[number];
 
-export const FONT_SIZE_LABELS: Record<FontSize, string> = {
+export const FONT_SIZE_LABELS = {
   sm: "80%",
   md: "100%",
   lg: "125%",
   xl: "150%",
   xxl: "200%",
-};
+} satisfies Record<FontSize, string>;
 
 export const THEME_KEY = "lct.theme";
 export const FONT_SIZE_KEY = "lct.fontSize";
@@ -45,10 +45,14 @@ export const APPEARANCE_INIT_SCRIPT = `
 })();
 `.trim();
 
-export function isTheme(value: unknown): value is Theme {
-  return typeof value === "string" && (THEMES as readonly string[]).includes(value);
+const themeSchema = z.enum(THEMES);
+const fontSizeSchema = z.enum(FONT_SIZES);
+
+export function isTheme(value: string | null): value is Theme {
+  return themeSchema.safeParse(value).success;
 }
 
-export function isFontSize(value: unknown): value is FontSize {
-  return typeof value === "string" && (FONT_SIZES as readonly string[]).includes(value);
+export function isFontSize(value: string | null): value is FontSize {
+  return fontSizeSchema.safeParse(value).success;
 }
+import { z } from "zod";

@@ -28,10 +28,8 @@ export const ADMIN_LANG_MAX_AGE = 60 * 60 * 24 * 365;
  * 나중에 제거해도 화면이 깨지지 않는다.
  */
 export function toAdminLang(
-  value: unknown,
+  value: string | undefined,
   registered: readonly LanguageCode[],
 ): LanguageCode {
-  return typeof value === "string" && registered.includes(value)
-    ? value
-    : DEFAULT_ADMIN_LANG;
+  return value && registered.includes(value) ? value : DEFAULT_ADMIN_LANG;
 }
