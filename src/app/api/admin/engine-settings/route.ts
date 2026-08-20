@@ -2,15 +2,16 @@ import { z } from "zod";
 
 import { requireAdmin } from "@/lib/auth";
 import { getEngineSetting, touchEngineSetting, upsertEngineSetting } from "@/lib/repo";
+import { OPENAI_TRANSLATION_MODEL } from "@/lib/secrets";
 import { ENGINE_IDS, isEngineId } from "@/lib/translate";
 
 /**
- * 엔진별 설정. 지금은 OpenAI 언어모델 하나뿐이다.
+ * 엔진별 마지막 선택 시각을 저장한다. OpenAI 모델은 단일 고정값이다.
  *
  * API 키(`engine-keys`)와 나눠 둔 이유는 비밀이 아니기 때문이다. 키는 암호화해
  * 저장하고 절대 되돌려 주지 않지만, 모델 이름은 화면에 그대로 보여야 한다.
  *
- * **전역 설정이다.** 회의마다 다른 모델을 쓰지 않는다.
+ * **전역 설정이다.** 회의마다 다른 OpenAI 모델을 쓰지 않는다.
  */
 
 const saveSchema = z.object({
@@ -26,7 +27,7 @@ export async function GET() {
   return Response.json({
     settings: ENGINE_IDS.map((engine) => ({
       engine,
-      model: getEngineSetting(engine)?.model ?? null,
+      model: engine === "openai" ? OPENAI_TRANSLATION_MODEL : getEngineSetting(engine)?.model ?? null,
     })),
   });
 }
@@ -44,8 +45,12 @@ export async function PUT(request: Request) {
   }
 
   const { engine, model } = parsed.data;
-  if (model === undefined) touchEngineSetting(engine);
+  if (engine === "openai") upsertEngineSetting(engine, OPENAI_TRANSLATION_MODEL);
+  else if (model === undefined) touchEngineSetting(engine);
   else upsertEngineSetting(engine, model || null);
 
-  return Response.json({ engine, model: getEngineSetting(engine)?.model ?? null });
+  return Response.json({
+    engine,
+    model: engine === "openai" ? OPENAI_TRANSLATION_MODEL : getEngineSetting(engine)?.model ?? null,
+  });
 }

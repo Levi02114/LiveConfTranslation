@@ -12,13 +12,13 @@ import {
   isLanguageUsed,
   listLanguages,
   listMeetings,
-  listOpenaiModels,
   listSessionPresets,
 } from "@/lib/repo";
 import { engineKeyStatus, resolveOpenaiModel } from "@/lib/secrets";
 import { getEngine, listEngines, refreshEngineSupport } from "@/lib/translate";
 import type { EngineId } from "@/lib/translate/types";
 import { translateUiStrings } from "@/lib/ui-translate";
+import { localTranscriptionConfigured } from "@/lib/local-runtime";
 
 import { MeetingList } from "./meeting-list";
 
@@ -92,10 +92,10 @@ export default async function AdminPage() {
         label: engine.label,
         configured: engine.isConfigured(),
       }))}
-      engineKeys={listEngines().map((engine) => engineKeyStatus(engine.id))}
+      engineKeys={listEngines().filter((engine) => engine.id !== "local").map((engine) => engineKeyStatus(engine.id))}
+      localTranscriptionAvailable={localTranscriptionConfigured()}
       defaultEngine={selectedEngine}
       openaiModel={resolveOpenaiModel()}
-      openaiModels={listOpenaiModels()}
       presets={listSessionPresets()}
     />
   );

@@ -14,7 +14,11 @@
  */
 
 import { createServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
+import type { Server as HttpServer } from "node:http";
+import type { Server as HttpsServer } from "node:https";
 import { createHash, randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 
 import next from "next";
 import { WebSocket as WsSocket, WebSocketServer, type WebSocket } from "ws";
@@ -22,8 +26,16 @@ import { z } from "zod";
 
 import { isAdminFromCookieHeader } from "@/lib/auth-core";
 import { matchDetectedLanguage } from "@/lib/detected-language";
-import { openaiRealtimeTranscribeUrl } from "@/lib/env";
+import {
+  localHttpsCaPath,
+  localHttpsPfxPassword,
+  localHttpsPfxPath,
+  localHttpsPort,
+  openaiRealtimeTranscribeUrl,
+} from "@/lib/env";
 import { hasScriptEvidence, scriptLanguageOf } from "@/lib/script-language";
+import { ensureLocalTranscriptionRuntime, localTranscriptionConfigured } from "@/lib/local-runtime";
+import { transcribeLocalPcm } from "@/lib/local-transcription";
 import type { LanguageCode } from "@/lib/languages";
 import {
   broadcastPresence,
@@ -73,7 +85,7 @@ const handle = app.getRequestHandler();
 /** 이름을 안 준 속기사에게 붙일 순번. 사람이 서로를 구분할 수 있으면 충분하다. */
 let anonymousCounter = 0;
 
-const server = createServer((req, res) => {
+const requestHandler = (req: Parameters<typeof handle>[0], res: Parameters<typeof handle>[1]) => {
   if (req.method === "GET" && req.url === "/api/health") {
     res.writeHead(200, {
       "cache-control": "no-store",
@@ -88,17 +100,31 @@ const server = createServer((req, res) => {
     return;
   }
 
+  const caPath = localHttpsCaPath();
+  if (req.method === "GET" && req.url === "/local-ca.cer" && caPath && existsSync(caPath)) {
+    res.writeHead(200, {
+      "cache-control": "no-store",
+      "content-disposition": 'attachment; filename="live-conf-translation-local-ca.cer"',
+      "content-type": "application/pkix-cert",
+    });
+    res.end(readFileSync(caPath));
+    return;
+  }
+
   handle(req, res).catch((error) => {
     console.error("[http] 요청 처리 실패", error);
     res.statusCode = 500;
     res.end("Internal Server Error");
   });
-});
+};
+
+const server = createServer(requestHandler);
 
 const wss = new WebSocketServer({ noServer: true });
 const transcriptionWss = new WebSocketServer({ noServer: true });
 
-server.on("upgrade", (request, socket, head) => {
+function attachUpgrade(serverInstance: HttpServer | HttpsServer) {
+serverInstance.on("upgrade", (request, socket, head) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
   if (url.pathname === "/ws/transcribe") {
@@ -130,6 +156,9 @@ server.on("upgrade", (request, socket, head) => {
     attach(ws, resolved);
   });
 });
+}
+
+attachUpgrade(server);
 
 type Target = {
   meetingId: string;
@@ -193,7 +222,8 @@ function resolveTranscriptionTarget(url: URL): TranscriptionTarget | null {
   }
   if (
     (page.kind !== "input" && page.kind !== "capture") ||
-    singleTranscriptionProfile(lang).transport !== "websocket" ||
+    (meeting.transcriptionProvider === "openai" &&
+      singleTranscriptionProfile(lang).transport !== "websocket") ||
     (page.kind === "capture" && meeting.inputMode !== "realtime")
   ) return null;
   return {
@@ -223,7 +253,7 @@ const transcriptionClientMessageSchema = z.union([
 ]);
 
 type TranscriptionServerMessage =
-  | { t: "error"; reason: "busy" | "key-required" | "speaker-required" | "lost" }
+  | { t: "error"; reason: "busy" | "key-required" | "local-unavailable" | "speaker-required" | "lost" }
   | { t: "ready"; leaseId: string | null }
   | { t: "partial"; text: string }
   | {
@@ -245,6 +275,7 @@ type OpenAiTranscriptionSettings = {
 };
 
 function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
+  const local = target.meeting.transcriptionProvider === "local";
   let upstream: WsSocket | null = null;
   let leaseId: string | null = null;
   let speakerName: string | null = null;
@@ -255,10 +286,17 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   const partials = new Map<string, string>();
   let nextTranscript = 0;
   let draining = false;
+  let localPcm: Buffer[] = [];
+  let localBytes = 0;
+  let localGeneration = 0;
+  let localPreviewTimer: ReturnType<typeof setInterval> | null = null;
+  let localPreviewQueued = false;
+  let localQueue = Promise.resolve();
 
   // 2차 전사(rescue)는 힌트 미지원 언어가 있는 세션에서만 의미가 있다 —
   // 그런 언어가 없으면 문자 교차 검증으로 충분하므로 PCM 을 쌓지 않는다.
   const rescueEnabled =
+    !local &&
     target.mode === "combined" &&
     splitTranscribeHintLangs(target.languages).unsupported.length > 0;
   let sessionKey: string | null = null;
@@ -272,12 +310,73 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
     if (closed) return;
     closed = true;
     if (leaseId) releaseCapture(target.page.id, leaseId);
+    if (localPreviewTimer) clearInterval(localPreviewTimer);
+    localPreviewTimer = null;
     upstream?.close();
     upstream = null;
   };
-  const fail = (reason: "busy" | "key-required" | "speaker-required" | "lost") => {
+  const fail = (reason: "busy" | "key-required" | "local-unavailable" | "speaker-required" | "lost") => {
     send({ t: "error", reason });
     ws.close(1011, reason);
+  };
+
+  const localParams = () => target.mode === "combined"
+    ? buildCombinedSessionParams(
+        target.languages,
+        target.page.lang,
+        target.meeting.title,
+        { context: target.meeting.transcriptionContext, speaker: speakerName },
+      )
+    : buildSingleSessionParams(target.page.lang, target.meeting.title, {
+        farField: target.page.kind === "capture",
+        context: target.meeting.transcriptionContext,
+        speaker: speakerName,
+      });
+
+  const queueLocalPreview = () => {
+    if (localBytes < 38_400 || localPreviewQueued) return; // 0.8초 미만은 Whisper 환각이 많다.
+    localPreviewQueued = true;
+    const pcm = Buffer.concat(localPcm, localBytes);
+    const generation = localGeneration;
+    const params = localParams();
+    localQueue = localQueue.then(async () => {
+      const result = await transcribeLocalPcm({ pcm, languages: target.languages, prompt: params.prompt });
+      if (!closed && generation === localGeneration) send({ t: "partial", text: result.body });
+    }).catch((error) => {
+      console.warn("[local-transcribe] 미리보기 실패", error);
+    }).finally(() => {
+      localPreviewQueued = false;
+    });
+  };
+
+  const commitLocal = () => {
+    const pcm = Buffer.concat(localPcm, localBytes);
+    localPcm = [];
+    localBytes = 0;
+    localGeneration += 1;
+    send({ t: "partial", text: "" });
+    const itemId = randomUUID();
+    const params = localParams();
+    localQueue = localQueue.then(async () => {
+      if (pcm.byteLength < 9_600) {
+        send({ t: "transcript", itemId, contentIndex: 0, body: "", lang: target.page.lang, usedFallback: false, leaseId });
+        return;
+      }
+      const result = await transcribeLocalPcm({ pcm, languages: target.languages, prompt: params.prompt });
+      const lang = result.lang ?? target.page.lang;
+      send({
+        t: "transcript",
+        itemId,
+        contentIndex: 0,
+        body: result.body,
+        lang,
+        usedFallback: !result.lang,
+        leaseId,
+      });
+    }).catch((error) => {
+      console.error("[local-transcribe] 확정 전사 실패", error);
+      if (!closed) fail("lost");
+    });
   };
   const handleCompleted = async (itemId: string, event: OpenAiTranscriptionEvent) => {
     let body = event.transcript?.trim() ?? "";
@@ -368,9 +467,8 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   };
 
   const start = () => {
-    const key = engineKey("openai");
-    if (!key) {
-      fail("key-required");
+    if (local && !localTranscriptionConfigured()) {
+      fail("local-unavailable");
       return;
     }
     const lease = target.mode === "combined"
@@ -381,6 +479,25 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
       return;
     }
     leaseId = lease.leaseId;
+    if (local) {
+      void ensureLocalTranscriptionRuntime().then(() => {
+        if (closed) return;
+        localPreviewTimer = setInterval(queueLocalPreview, 1_500);
+        send({ t: "ready", leaseId });
+      }).catch((error) => {
+        console.error("[local-transcribe] 시작 실패", error);
+        if (!closed) fail("local-unavailable");
+      });
+      return;
+    }
+
+    const key = engineKey("openai");
+    if (!key) {
+      releaseCapture(target.page.id, leaseId);
+      leaseId = null;
+      fail("key-required");
+      return;
+    }
     sessionKey = key;
     const params = target.mode === "combined"
       ? buildCombinedSessionParams(
@@ -476,7 +593,7 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
 
   ws.on("message", (raw, binary) => {
     if (binary) {
-      if (!started || !upstream || upstream.readyState !== WsSocket.OPEN) return;
+      if (!started) return;
       const audio = Buffer.isBuffer(raw)
         ? raw
         : Array.isArray(raw)
@@ -486,6 +603,12 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
         ws.close(1009, "Audio frame too large");
         return;
       }
+      if (local) {
+        localPcm.push(audio);
+        localBytes += audio.byteLength;
+        return;
+      }
+      if (!upstream || upstream.readyState !== WsSocket.OPEN) return;
       // 2차 전사(rescue)용으로 원시 PCM 을 세션 동안만 보관한다.
       rescueAudio?.append(audio);
       upstream.send(JSON.stringify({
@@ -514,9 +637,12 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
       start();
     } else if (message.t === "heartbeat" && leaseId) {
       if (!renewCapture(target.page.id, leaseId)) fail("lost");
-    } else if (message.t === "commit" && upstream?.readyState === WsSocket.OPEN) {
-      rescueAudio?.markCommit();
-      upstream.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+    } else if (message.t === "commit") {
+      if (local) commitLocal();
+      else if (upstream?.readyState === WsSocket.OPEN) {
+        rescueAudio?.markCommit();
+        upstream.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+      }
     }
   });
   ws.on("close", cleanup);
@@ -599,6 +725,19 @@ async function main() {
     console.log(`▲ 실시간 세션 번역 서버: http://${hostname}:${port}`);
     if (dev) console.log("  개발 모드");
   });
+
+  const pfxPath = localHttpsPfxPath();
+  const pfxPassword = localHttpsPfxPassword();
+  if (pfxPath && pfxPassword && existsSync(pfxPath)) {
+    const httpsServer = createHttpsServer(
+      { pfx: readFileSync(pfxPath), passphrase: pfxPassword },
+      requestHandler,
+    );
+    attachUpgrade(httpsServer);
+    httpsServer.listen(localHttpsPort(), hostname, () => {
+      console.log(`▲ 로컬 HTTPS: https://${hostname}:${localHttpsPort()}`);
+    });
+  }
 }
 
 main().catch((error) => {

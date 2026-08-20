@@ -3,6 +3,7 @@ import "server-only";
 import { z } from "zod";
 
 import { matchDetectedLanguage } from "@/lib/detected-language";
+import { detectLocalTextLanguage } from "@/lib/local-language-detect";
 import { openaiBaseUrl } from "@/lib/env";
 import { type LanguageCode, languageLogName } from "@/lib/languages";
 import { engineKey, resolveOpenaiModel } from "@/lib/secrets";
@@ -17,7 +18,17 @@ export async function detectTextLanguage(
   text: string,
   candidates: readonly LanguageCode[],
   fallback: LanguageCode,
-): Promise<{ lang: LanguageCode; usedFallback: boolean }> {
+  provider: "openai" | "local" = "openai",
+): Promise<{ lang: LanguageCode | null; usedFallback: boolean; confidence?: number }> {
+  if (provider === "local") {
+    try {
+      const detected = await detectLocalTextLanguage(text, candidates);
+      return { lang: detected.lang, usedFallback: false, confidence: detected.confidence };
+    } catch (error) {
+      console.warn("[language-detection] 로컬 텍스트 언어 감지 실패", error);
+      return { lang: null, usedFallback: false, confidence: 0 };
+    }
+  }
   const key = engineKey("openai");
   if (!key) return { lang: fallback, usedFallback: true };
 

@@ -57,6 +57,7 @@ import { parseRequiredSqlRow, parseSqlRow, parseSqlRows } from "@/lib/sqlite-sch
 
 export type MeetingStatus = "open" | "closed";
 export type InputMode = "human" | "realtime";
+export type TranscriptionProvider = "openai" | "local";
 export type PageKind = "input" | "output" | "combined" | "combined-input" | "capture";
 
 /**
@@ -76,6 +77,8 @@ export type Meeting = {
   fallbackEngine: EngineId | null;
   inputMode: InputMode;
   speakerLabels: boolean;
+  translationModel: string | null;
+  transcriptionProvider: TranscriptionProvider;
   /** 전사 프롬프트에 붙는 관리자 지정 문맥(의제·분야·화자 이름 등). */
   transcriptionContext: string | null;
   createdAt: number;
@@ -158,6 +161,8 @@ function toMeeting(row: MeetingRow): Meeting {
     fallbackEngine: row.fallback_engine,
     inputMode: row.input_mode,
     speakerLabels: Boolean(row.speaker_labels),
+    translationModel: row.translation_model,
+    transcriptionProvider: row.transcription_provider,
     transcriptionContext: row.transcription_context,
     createdAt: row.created_at,
     closedAt: row.closed_at,
@@ -188,6 +193,8 @@ export function createMeeting(input: {
   config: SessionPresetConfig;
   engine: EngineId;
   fallbackEngine?: EngineId | null;
+  translationModel?: string | null;
+  transcriptionProvider?: TranscriptionProvider;
 }): Meeting {
   const now = Date.now();
   const id = newId();
@@ -195,8 +202,9 @@ export function createMeeting(input: {
   return transaction(() => {
     getDb().prepare(
       `INSERT INTO meetings
-         (id, title, status, engine, fallback_engine, input_mode, speaker_labels, created_at)
-       VALUES (?, ?, 'open', ?, ?, ?, ?, ?)`,
+         (id, title, status, engine, fallback_engine, input_mode, speaker_labels,
+          translation_model, transcription_provider, created_at)
+       VALUES (?, ?, 'open', ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       input.title,
@@ -204,6 +212,8 @@ export function createMeeting(input: {
       input.fallbackEngine ?? null,
       "human",
       Number(input.config.speakerLabels),
+      input.translationModel ?? null,
+      input.transcriptionProvider ?? "openai",
       now,
     );
 
@@ -250,6 +260,8 @@ export function createMeeting(input: {
       fallbackEngine: input.fallbackEngine ?? null,
       inputMode: "human",
       speakerLabels: input.config.speakerLabels,
+      translationModel: input.translationModel ?? null,
+      transcriptionProvider: input.transcriptionProvider ?? "openai",
       transcriptionContext: null,
       createdAt: now,
       closedAt: null,
@@ -1272,7 +1284,7 @@ export function getLastEngineSetting(): EngineSetting | null {
     engineSettingRowSchema,
     getDb().prepare(
       `SELECT engine, model, updated_at FROM engine_settings
-       WHERE engine IN ('google', 'deepl', 'openai')
+       WHERE engine IN ('google', 'deepl', 'openai', 'local')
        ORDER BY updated_at DESC LIMIT 1`,
     ).get(),
     "마지막 번역 엔진 설정",

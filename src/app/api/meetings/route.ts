@@ -9,7 +9,10 @@ import {
   touchEngineSetting,
 } from "@/lib/repo";
 import { sessionConfigSchema } from "@/lib/session-config";
-import { isEngineId } from "@/lib/translate";
+import { localTranscriptionConfigured } from "@/lib/local-runtime";
+import { transcriptionProviderSchema } from "@/lib/repo-schema";
+import { resolveOpenaiModel } from "@/lib/secrets";
+import { getEngine, isEngineId } from "@/lib/translate";
 
 /*
  * 언어 검증이 상수 대조가 아니라 DB 조회다. 쓸 수 있는 언어는 관리자가 화면에서
@@ -22,6 +25,7 @@ const createSchema = z.object({
   fallbackEngine: z
     .union([z.string().refine(isEngineId, "지원하지 않는 폴백 엔진입니다"), z.null()])
     .optional(),
+  transcriptionProvider: transcriptionProviderSchema.optional(),
 });
 
 export async function GET() {
@@ -43,7 +47,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { title, config, engine, fallbackEngine = null } = parsed.data;
+  const { title, config, engine, fallbackEngine = null, transcriptionProvider = "openai" } = parsed.data;
   if (config.languages.some((row) => !hasLanguage(row.lang))) {
     return Response.json({ error: "등록되지 않은 언어입니다" }, { status: 400 });
   }
@@ -61,12 +65,33 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+  if (transcriptionProvider === "local" && !localTranscriptionConfigured()) {
+    return Response.json({ error: "로컬 음성 인식 모델이 설치되지 않았습니다" }, { status: 400 });
+  }
+
+  const activeLanguages = config.languages
+    .filter((row) => row.inputEnabled || row.outputEnabled)
+    .map((row) => row.lang);
+  const primary = getEngine(requested);
+  const fallback = fallbackEngine ? getEngine(fallbackEngine) : null;
+  const unsupported = activeLanguages.filter(
+    (lang) => !primary.supports(lang) && !fallback?.supports(lang),
+  );
+  if (unsupported.length) {
+    return Response.json(
+      { error: `선택한 번역 엔진이 지원하지 않는 언어입니다: ${unsupported.join(", ")}` },
+      { status: 400 },
+    );
+  }
 
   const meeting = createMeeting({
     title,
     config,
     engine: requested,
     fallbackEngine,
+    translationModel:
+      requested === "openai" || fallbackEngine === "openai" ? resolveOpenaiModel() : null,
+    transcriptionProvider,
   });
   touchEngineSetting(requested);
   revalidatePath("/admin");

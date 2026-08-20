@@ -13,6 +13,7 @@ type Params = { params: Promise<{ token: string }> };
 
 const schema = z.object({
   body: z.string().trim().min(1, "내용을 입력해 주세요").max(5000),
+  lang: z.string().trim().min(1).max(35).optional(),
   speakerName: z.string().trim().min(1).max(40).regex(/^[^\r\n]+$/).optional(),
 });
 
@@ -61,16 +62,31 @@ export async function POST(request: Request, { params }: Params) {
     return Response.json({ error: "닉네임을 입력해 주세요" }, { status: 400 });
   }
 
-  const detected =
-    page.kind === "combined-input"
-      ? await detectTextLanguage(
+  const candidates = getMeetingLanguageConfigs(meeting.id)
+    .filter((row) => row.inputEnabled)
+    .map((row) => row.lang);
+  const selected = parsed.data.lang && candidates.includes(parsed.data.lang)
+    ? parsed.data.lang
+    : null;
+  const detected = page.kind === "combined-input"
+    ? selected
+      ? { lang: selected, usedFallback: false }
+      : await detectTextLanguage(
           parsed.data.body,
-          getMeetingLanguageConfigs(meeting.id)
-            .filter((row) => row.inputEnabled)
-            .map((row) => row.lang),
+          candidates,
           fallbackLang,
+          meeting.engine === "local" || meeting.transcriptionProvider === "local"
+            ? "local"
+            : "openai",
         )
-      : { lang: fallbackLang, usedFallback: false };
+    : { lang: fallbackLang, usedFallback: false };
+
+  if (!detected.lang) {
+    return Response.json(
+      { error: "language-ambiguous", candidates, confidence: detected.confidence ?? 0 },
+      { status: 422 },
+    );
+  }
 
   const message = acceptMessage({
     meeting,

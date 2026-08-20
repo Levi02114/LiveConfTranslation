@@ -12,6 +12,7 @@ const RANGES: readonly { lang: string; re: RegExp }[] = [
   { lang: "ko", re: /[\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]/g },
   { lang: "th", re: /[\u0E00-\u0E7F]/g },
   { lang: "si", re: /[\u0D80-\u0DFF]/g },
+  { lang: "ja", re: /[\u3040-\u30FF\u31F0-\u31FF]/g },
 ];
 
 /**
@@ -45,7 +46,12 @@ export function scriptLanguageOf(
       winnerCount = count;
     }
   }
-  if (!winner) return null;
+  if (!winner) {
+    if (/[\u3400-\u4DBF\u4E00-\u9FFF]/.test(text)) {
+      return candidates.find((code) => code.toLowerCase().split("-")[0] === "zh") ?? null;
+    }
+    return null;
+  }
 
   // 가장 많이 나온 문자 영역을 고른다. 후보에 있는 코드만 인정한다.
   const match = candidates.find(

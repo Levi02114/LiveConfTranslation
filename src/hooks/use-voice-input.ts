@@ -42,6 +42,7 @@ export function useVoiceInput({
   onTranscript,
   requestPermissionOnMount = false,
   lang,
+  forceServerTransport = false,
 }: {
   token: string;
   strings: UiStrings["capture"];
@@ -52,9 +53,11 @@ export function useVoiceInput({
   requestPermissionOnMount?: boolean;
   /** VAD 무음 관용을 언어별로 맞춘다(타이어·싱할라어는 더 길게). */
   lang?: LanguageCode;
+  /** 로컬 whisper.cpp는 모든 언어가 서버 WebSocket 경로를 쓴다. */
+  forceServerTransport?: boolean;
 }) {
   const serverTransport = Boolean(
-    lang && singleTranscriptionProfile(lang).transport === "websocket",
+    forceServerTransport || (lang && singleTranscriptionProfile(lang).transport === "websocket"),
   );
   const serverVoice = useServerVoiceInput({
     token,

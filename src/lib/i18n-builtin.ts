@@ -34,6 +34,9 @@ export type UiStrings = {
     send: string;
     sending: string;
     hint: string;
+    chooseLanguage: string;
+    chooseLanguageNote: string;
+    cancelLanguage: string;
   };
   message: {
     edit: string;
@@ -47,6 +50,7 @@ export type UiStrings = {
   capture: {
     toggle: string;
     keyRequired: string;
+    localUnavailable: string;
     microphone: string;
     start: string;
     starting: string;
@@ -102,6 +106,9 @@ const ko: UiStrings = {
     send: "보내기",
     sending: "보내는 중",
     hint: "Enter 로 전송 · Shift+Enter 로 줄바꿈",
+    chooseLanguage: "입력 언어 선택",
+    chooseLanguageNote: "언어를 확실히 감지하지 못했습니다. 이 문장의 언어를 골라 주세요.",
+    cancelLanguage: "취소",
   },
   message: {
     edit: "수정",
@@ -115,6 +122,7 @@ const ko: UiStrings = {
   capture: {
     toggle: "자동 음성 입력 사용",
     keyRequired: "OpenAI API 키가 등록되지 않았습니다",
+    localUnavailable: "로컬 음성 인식 모델이 설치되지 않았습니다",
     microphone: "마이크",
     start: "전사 시작",
     starting: "시작하는 중",
@@ -178,6 +186,9 @@ const vi: UiStrings = {
     send: "Gửi",
     sending: "Đang gửi",
     hint: "Enter để gửi · Shift+Enter để xuống dòng",
+    chooseLanguage: "Chọn ngôn ngữ nhập",
+    chooseLanguageNote: "Không thể xác định chắc chắn ngôn ngữ. Hãy chọn ngôn ngữ của câu này.",
+    cancelLanguage: "Hủy",
   },
   message: {
     edit: "Chỉnh sửa",
@@ -191,6 +202,7 @@ const vi: UiStrings = {
   capture: {
     toggle: "Sử dụng nhập liệu bằng giọng nói tự động",
     keyRequired: "Chưa đăng ký khóa API OpenAI",
+    localUnavailable: "Chưa cài đặt mô hình nhận dạng giọng nói cục bộ",
     microphone: "Micrô",
     start: "Bắt đầu phiên âm",
     starting: "Đang bắt đầu",
@@ -258,6 +270,9 @@ const th: UiStrings = {
     send: "ส่ง",
     sending: "กำลังส่ง",
     hint: "กด Enter เพื่อส่ง · Shift+Enter เพื่อขึ้นบรรทัดใหม่",
+    chooseLanguage: "เลือกภาษาที่ป้อน",
+    chooseLanguageNote: "ไม่สามารถระบุภาษาได้อย่างมั่นใจ โปรดเลือกภาษาของประโยคนี้",
+    cancelLanguage: "ยกเลิก",
   },
   message: {
     edit: "แก้ไข",
@@ -271,6 +286,7 @@ const th: UiStrings = {
   capture: {
     toggle: "ใช้การป้อนข้อมูลด้วยเสียงอัตโนมัติ",
     keyRequired: "ยังไม่ได้ลงทะเบียนคีย์ OpenAI API",
+    localUnavailable: "ยังไม่ได้ติดตั้งโมเดลรู้จำเสียงภายในเครื่อง",
     microphone: "ไมโครโฟน",
     start: "เริ่มถอดเสียง",
     starting: "กำลังเริ่ม",
@@ -334,6 +350,9 @@ const si: UiStrings = {
     send: "යවන්න",
     sending: "යවමින්",
     hint: "යැවීමට Enter · නව පේළියකට Shift+Enter",
+    chooseLanguage: "ආදාන භාෂාව තෝරන්න",
+    chooseLanguageNote: "භාෂාව විශ්වාසයෙන් හඳුනාගත නොහැකි විය. මෙම වාක්‍යයේ භාෂාව තෝරන්න.",
+    cancelLanguage: "අවලංගු කරන්න",
   },
   message: {
     edit: "සංස්කරණය",
@@ -347,6 +366,7 @@ const si: UiStrings = {
   capture: {
     toggle: "ස්වයංක්‍රීය හඬ ආදානය භාවිත කරන්න",
     keyRequired: "OpenAI API යතුර ලියාපදිංචි කර නැත",
+    localUnavailable: "දේශීය හඬ හඳුනාගැනීමේ ආකෘතිය ස්ථාපනය කර නැත",
     microphone: "මයික්‍රෆෝනය",
     start: "පිටපත් කිරීම අරඹන්න",
     starting: "අරඹමින්",
@@ -463,8 +483,13 @@ export type AdminStrings = {
     fallbackEngine: string;
     noFallback: string;
     engineNoKey: string;
-    /** OpenAI 를 골랐을 때만 나오는 언어모델 선택 라벨 */
+    /** OpenAI 를 골랐을 때만 나오는 고정 언어모델 라벨 */
     model: string;
+    transcriptionProvider: string;
+    transcriptionOpenai: string;
+    transcriptionLocal: string;
+    notInstalled: string;
+    localGlossaryUnsupported: string;
     create: string;
     creating: string;
     loading: string;
@@ -661,6 +686,11 @@ const adminKo: AdminStrings = {
     noFallback: "사용 안 함",
     engineNoKey: "키 없음",
     model: "언어모델",
+    transcriptionProvider: "음성 인식 엔진",
+    transcriptionOpenai: "OpenAI 실시간 전사",
+    transcriptionLocal: "로컬 AI (Whisper)",
+    notInstalled: "설치되지 않음",
+    localGlossaryUnsupported: "Local AI 번역에는 단어집이 적용되지 않습니다",
     create: "세션 만들기",
     creating: "만드는 중",
     loading: "처리 중",
@@ -864,6 +894,11 @@ const adminVi: AdminStrings = {
     noFallback: "Không dùng",
     engineNoKey: "chưa có khóa",
     model: "Mô hình ngôn ngữ",
+    transcriptionProvider: "Công cụ nhận dạng giọng nói",
+    transcriptionOpenai: "Phiên âm thời gian thực OpenAI",
+    transcriptionLocal: "AI cục bộ (Whisper)",
+    notInstalled: "Chưa cài đặt",
+    localGlossaryUnsupported: "Bản dịch AI cục bộ không áp dụng bảng thuật ngữ",
     create: "Tạo phiên",
     creating: "Đang tạo",
     loading: "Đang xử lý",
@@ -1067,6 +1102,11 @@ const adminTh: AdminStrings = {
     noFallback: "ไม่ใช้",
     engineNoKey: "ไม่มีคีย์",
     model: "โมเดลภาษา",
+    transcriptionProvider: "เครื่องมือรู้จำเสียง",
+    transcriptionOpenai: "ถอดเสียงแบบเรียลไทม์ OpenAI",
+    transcriptionLocal: "AI ภายในเครื่อง (Whisper)",
+    notInstalled: "ยังไม่ได้ติดตั้ง",
+    localGlossaryUnsupported: "การแปลด้วย AI ภายในเครื่องไม่ใช้คลังคำศัพท์",
     create: "สร้างเซสชัน",
     creating: "กำลังสร้าง",
     loading: "กำลังดำเนินการ",
@@ -1270,6 +1310,11 @@ const adminSi: AdminStrings = {
     noFallback: "භාවිත නොකරන්න",
     engineNoKey: "යතුරක් නැත",
     model: "භාෂා ආකෘතිය",
+    transcriptionProvider: "හඬ හඳුනාගැනීමේ එන්ජිම",
+    transcriptionOpenai: "OpenAI සජීවී පිටපත් කිරීම",
+    transcriptionLocal: "දේශීය AI (Whisper)",
+    notInstalled: "ස්ථාපනය කර නැත",
+    localGlossaryUnsupported: "දේශීය AI පරිවර්තනයට පදකෝෂය යෙදෙන්නේ නැත",
     create: "සැසියක් සාදන්න",
     creating: "සාදමින්",
     loading: "සකසමින්",

@@ -11,6 +11,7 @@ import {
   isPageEnabled,
 } from "@/lib/repo";
 import { engineKey } from "@/lib/secrets";
+import { localTranscriptionConfigured } from "@/lib/local-runtime";
 
 import { InputView } from "./input-view";
 
@@ -60,7 +61,8 @@ export default async function InputPage({
       meetingTitle={meeting.title}
       history={getRecentCombined(meeting.id)}
       initiallyClosed={meeting.status === "closed"}
-      voiceAvailable={Boolean(engineKey("openai"))}
+      voiceAvailable={meeting.transcriptionProvider === "local" ? localTranscriptionConfigured() : Boolean(engineKey("openai"))}
+      localTranscription={meeting.transcriptionProvider === "local"}
       speakerLabels={meeting.speakerLabels}
     />
   );

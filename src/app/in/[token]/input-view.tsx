@@ -27,6 +27,7 @@ export function InputView({
   history,
   initiallyClosed,
   voiceAvailable,
+  localTranscription,
   speakerLabels,
 }: {
   token: string;
@@ -38,6 +39,7 @@ export function InputView({
   history: CombinedEntry[];
   initiallyClosed: boolean;
   voiceAvailable: boolean;
+  localTranscription: boolean;
   speakerLabels: boolean;
 }) {
   const [entries, setEntries] = useState<CombinedEntry[]>(history);
@@ -71,6 +73,7 @@ export function InputView({
     // 페이지 진입 때 마이크 권한을 미리 확인한다 — 시작 버튼을 눌렀을 때
     // 권한 팝업으로 멈추지 않게. 음성 입력이 없는 세션(키 미등록)에서는 묻지 않는다.
     requestPermissionOnMount: voiceAvailable,
+    forceServerTransport: localTranscription,
   });
   const { stop: stopVoice } = voice;
 

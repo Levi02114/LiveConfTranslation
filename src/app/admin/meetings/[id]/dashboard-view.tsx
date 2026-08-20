@@ -264,6 +264,8 @@ export function DashboardView({
             {fallbackCoverage && !fallbackCoverage.configured
               ? ` (${strings.list.engineNoKey})`
               : ""}
+            {" · "}
+            {strings.list.transcriptionProvider}: {meeting.transcriptionProvider === "local" ? strings.list.transcriptionLocal : strings.list.transcriptionOpenai}
           </div>
         </div>
         {closed ? (

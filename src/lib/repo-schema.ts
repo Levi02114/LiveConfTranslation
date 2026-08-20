@@ -6,6 +6,7 @@ import { engineIdSchema } from "@/lib/translate/types";
 export const languageCodeSchema = z.string().trim().min(1).max(35);
 export const meetingStatusSchema = z.enum(["open", "closed"]);
 export const inputModeSchema = z.enum(["human", "realtime"]);
+export const transcriptionProviderSchema = z.enum(["openai", "local"]);
 export const pageKindSchema = z.enum(["input", "output", "combined", "combined-input", "capture"]);
 export const translationStatusSchema = z.enum(["ok", "error"]);
 
@@ -17,6 +18,8 @@ export const meetingRowSchema = z.object({
   fallback_engine: engineIdSchema.nullable(),
   input_mode: inputModeSchema,
   speaker_labels: z.number().int(),
+  translation_model: z.string().nullable(),
+  transcription_provider: transcriptionProviderSchema,
   transcription_context: z.string().nullable(),
   created_at: z.number(),
   closed_at: z.number().nullable(),

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { LanguageCode } from "@/lib/languages";
 
-export const ENGINE_IDS = ["google", "deepl", "openai"] as const;
+export const ENGINE_IDS = ["google", "deepl", "openai", "local"] as const;
 export const engineIdSchema = z.enum(ENGINE_IDS);
 export type EngineId = z.infer<typeof engineIdSchema>;
 
@@ -25,6 +25,8 @@ export type TranslateInput = {
   context?: readonly string[];
   /** 관리자가 등록한 현재 원문/대상 언어의 단어집. */
   glossary?: readonly GlossaryTermPair[];
+  /** 세션을 만들 때 확정한 모델. 전역 설정이 바뀌어도 진행 중인 세션은 유지한다. */
+  model?: string | null;
   signal?: AbortSignal;
 };
 

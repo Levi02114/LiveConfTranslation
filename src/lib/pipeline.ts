@@ -117,6 +117,7 @@ export async function translateMessage(input: {
             from: input.sourceLang,
             to: target,
             context,
+            model: input.meeting.translationModel,
           },
           input.meeting.fallbackEngine,
         );

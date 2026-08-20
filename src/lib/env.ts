@@ -80,3 +80,46 @@ export function sessionTtlSeconds(): number {
   const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 12 * 60 * 60;
 }
+
+/** Electron 첫 실행 마법사가 설치한 로컬 AI 파일 경로. */
+export function localLlamaServerPath(): string | undefined {
+  return process.env.LOCAL_LLAMA_SERVER_PATH?.trim() || undefined;
+}
+
+export function localTranslationModelPath(): string | undefined {
+  return process.env.LOCAL_TRANSLATION_MODEL_PATH?.trim() || undefined;
+}
+
+export function localTranslationModelId(): string | undefined {
+  return process.env.LOCAL_TRANSLATION_MODEL_ID?.trim() || undefined;
+}
+
+export function localWhisperServerPath(): string | undefined {
+  return process.env.LOCAL_WHISPER_SERVER_PATH?.trim() || undefined;
+}
+
+export function localTranscriptionModelPath(): string | undefined {
+  return process.env.LOCAL_TRANSCRIPTION_MODEL_PATH?.trim() || undefined;
+}
+
+export function localAiUseGpu(): boolean {
+  return process.env.LOCAL_AI_USE_GPU !== "0";
+}
+
+/** Electron이 만든 로컬 HTTPS PFX와 모바일 설치용 CA 인증서. */
+export function localHttpsPfxPath(): string | undefined {
+  return process.env.LOCAL_HTTPS_PFX_PATH?.trim() || undefined;
+}
+
+export function localHttpsPfxPassword(): string | undefined {
+  return process.env.LOCAL_HTTPS_PFX_PASSWORD?.trim() || undefined;
+}
+
+export function localHttpsCaPath(): string | undefined {
+  return process.env.LOCAL_HTTPS_CA_PATH?.trim() || undefined;
+}
+
+export function localHttpsPort(): number {
+  const value = Number.parseInt(process.env.LOCAL_HTTPS_PORT ?? "3443", 10);
+  return Number.isFinite(value) && value > 0 && value < 65536 ? value : 3443;
+}

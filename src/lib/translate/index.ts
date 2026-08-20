@@ -6,6 +6,7 @@ import { listGlossaryPairs } from "@/lib/repo";
 import { deeplEngine } from "./deepl";
 import { googleEngine } from "./google";
 import { openaiEngine } from "./openai";
+import { localEngine } from "./local";
 import {
   type BatchTranslateInput,
   type EngineId,
@@ -20,6 +21,7 @@ const ENGINES = {
   google: googleEngine,
   deepl: deeplEngine,
   openai: openaiEngine,
+  local: localEngine,
 } satisfies Record<EngineId, TranslationEngine>;
 
 export function getEngine(id: EngineId): TranslationEngine {
@@ -27,7 +29,7 @@ export function getEngine(id: EngineId): TranslationEngine {
 }
 
 export function listEngines(): TranslationEngine[] {
-  return [googleEngine, deeplEngine, openaiEngine];
+  return [googleEngine, deeplEngine, openaiEngine, localEngine];
 }
 
 /** 관리자 화면의 지원 여부가 실제 엔진 API 목록을 반영하도록 갱신한다. */

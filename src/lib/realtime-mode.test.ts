@@ -22,9 +22,13 @@ test("세션은 언어별 입력 페이지를 만들고 음성 전사를 멱등 
       },
       engine: "google",
       fallbackEngine: "openai",
+      translationModel: "translategemma-4b",
+      transcriptionProvider: "local",
     });
     assert.equal(meeting.fallbackEngine, "openai");
     assert.equal(repo.getMeeting(meeting.id)?.fallbackEngine, "openai");
+    assert.equal(repo.getMeeting(meeting.id)?.translationModel, "translategemma-4b");
+    assert.equal(repo.getMeeting(meeting.id)?.transcriptionProvider, "local");
     const pages = repo.getMeetingPages(meeting.id);
 
     const inputs = pages.filter((page) => page.kind === "input");

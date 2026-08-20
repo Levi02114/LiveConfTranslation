@@ -29,7 +29,7 @@ const voiceEventSchema = z.union([
   }),
   z.object({
     t: z.literal("error"),
-    reason: z.enum(["busy", "key-required", "speaker-required", "lost"]),
+    reason: z.enum(["busy", "key-required", "local-unavailable", "speaker-required", "lost"]),
   }),
 ]);
 type VoiceEvent = z.infer<typeof voiceEventSchema>;
@@ -165,6 +165,7 @@ export function useServerVoiceInput({
 
   const submitTranscript = useCallback(
     async (event: Extract<VoiceEvent, { t: "transcript" }>) => {
+      if (!event.body.trim()) return;
       if (!autoSubmit) {
         onTranscript?.(event.body);
         return;
@@ -196,7 +197,8 @@ export function useServerVoiceInput({
       speechSinceCommit.current = false;
     }
     if (pendingTranscripts.current) {
-      stopTimer.current = setTimeout(disconnect, 5_000);
+      // 로컬 Whisper는 저사양 CPU에서 마지막 턴 확정에 수십 초가 걸릴 수 있다.
+      stopTimer.current = setTimeout(disconnect, 60_000);
     } else {
       disconnect();
     }
@@ -329,6 +331,8 @@ export function useServerVoiceInput({
               ? strings.busy
               : event.reason === "key-required"
                 ? strings.keyRequired
+                : event.reason === "local-unavailable"
+                  ? strings.localUnavailable
                 : event.reason === "speaker-required"
                   ? strings.startFailed
                   : strings.lost,

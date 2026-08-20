@@ -47,6 +47,7 @@ export function CombinedInputView({
   const [closed, setClosed] = useState(initiallyClosed);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [pendingLanguageBody, setPendingLanguageBody] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const [speakerName, setSpeakerName] = useState("");
@@ -175,8 +176,8 @@ export function CombinedInputView({
       send({ t: "draft", text: textareaRef.current?.value ?? "" });
     }, DRAFT_INTERVAL_MS);
   };
-  const submit = async () => {
-    const body = text.trim();
+  const submit = async (explicitLang?: LanguageCode) => {
+    const body = (pendingLanguageBody ?? text).trim();
     if (!body || sending || closed || !speakerReady) return;
     textareaRef.current?.focus({ preventScroll: true });
     setSending(true);
@@ -186,19 +187,25 @@ export function CombinedInputView({
       const response = await fetch(`/api/pages/${encodeURIComponent(token)}/messages`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ body, speakerName: speakerLabels ? speakerName.trim() : undefined }),
+        body: JSON.stringify({ body, lang: explicitLang, speakerName: speakerLabels ? speakerName.trim() : undefined }),
       });
       const payload = await parseJsonResponse(
         response,
         z.object({
           usedFallback: z.boolean().optional(),
+          error: z.string().optional(),
+          candidates: z.array(z.string()).optional(),
           message: z.object({ lang: z.string().optional() }).optional(),
         }),
       );
       if (response.status === 409) setClosed(true);
+      else if (response.status === 422 && payload?.error === "language-ambiguous") {
+        setPendingLanguageBody(body);
+      }
       else if (!response.ok) setError(strings.error.sendFailed);
       else {
         setText("");
+        setPendingLanguageBody(null);
         send({ t: "draft", text: "" });
         if (payload?.usedFallback) showFallback(payload.message?.lang ?? fallbackLang);
       }
@@ -280,6 +287,25 @@ export function CombinedInputView({
               {strings.speaker.confirm}
             </button>
           </form>
+        </div>
+      ) : null}
+
+      {pendingLanguageBody ? (
+        <div role="dialog" aria-modal="true" aria-labelledby="language-prompt-title" className="fixed inset-0 z-50 flex items-center justify-center bg-bg px-4">
+          <div className="w-full max-w-[420px] border border-line bg-bg p-5">
+            <h2 id="language-prompt-title" className="text-[18px] font-medium">{strings.input.chooseLanguage}</h2>
+            <p className="mt-2 font-mono text-[12px] leading-5 text-muted">{strings.input.chooseLanguageNote}</p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              {languages.map((language) => (
+                <button key={language.code} type="button" onClick={() => void submit(language.code)} className="cursor-pointer border border-line px-3 py-2 font-mono text-[13px] hover:border-fg hover:bg-fg hover:text-bg">
+                  {language.label}
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={() => setPendingLanguageBody(null)} className="mt-4 cursor-pointer font-mono text-[12px] text-muted hover:text-fg">
+              {strings.input.cancelLanguage}
+            </button>
+          </div>
         </div>
       ) : null}
 

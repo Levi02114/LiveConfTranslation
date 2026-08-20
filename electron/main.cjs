@@ -14,6 +14,7 @@ const {
   parseHealth,
   pickLanAddress,
 } = require("./network.cjs");
+const { applyLocalAiEnvironment, ensureLocalCertificate, isPortable, setupLocalAi, stringsFor: localAiStrings } = require("./local-ai.cjs");
 
 const PORT = 3000;
 const LOOPBACK_ORIGIN = `http://127.0.0.1:${PORT}`;
@@ -83,6 +84,32 @@ function loadDesktopSettings() {
   if (!existsSync(desktopSettingsPath)) return;
   desktopSettings = JSON.parse(readFileSync(desktopSettingsPath, "utf8"));
   preferredShareOrigin = desktopSettings.preferredOrigin ?? null;
+  applyLocalAiEnvironment(desktopSettings);
+}
+
+async function runLocalAiSetup() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const text = localAiStrings(app);
+  const health = await probeServer();
+  if (health.state === "ours" && health.openMeetings > 0) {
+    await dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      message: text.running,
+      detail: text.runningDetail,
+      buttons: [text.ok],
+    });
+    return;
+  }
+  try {
+    const changed = await setupLocalAi({ app, dialog, shell, window: mainWindow, settings: desktopSettings, save: writeDesktopSettings });
+    if (changed) {
+      globalThis.__localAiRuntimes?.translation?.kill();
+      globalThis.__localAiRuntimes?.transcription?.kill();
+      await mainWindow.reload();
+    }
+  } catch (error) {
+    dialog.showErrorBox(text.failed, error instanceof Error ? error.message : String(error));
+  }
 }
 
 function writeDesktopSettings() {
@@ -111,7 +138,14 @@ function createDesktopSettings() {
 }
 
 function lanOrigin(address) {
-  return `http://${address}:${PORT}`;
+  return desktopSettings?.localHttps
+    ? `https://${address}:3443`
+    : `http://${address}:${PORT}`;
+}
+
+function caDownloadUrl() {
+  const address = pickLanAddress(os.networkInterfaces());
+  return `http://${address}:${PORT}/local-ca.cer`;
 }
 
 function selectedLanOrigin() {
@@ -318,6 +352,7 @@ async function startQuickTunnel() {
 }
 
 function installApplicationMenu() {
+  const localText = localAiStrings(app);
   const addressItems = lanAddresses.length
     ? lanAddresses.map((item) => {
         const origin = lanOrigin(item.address);
@@ -356,6 +391,8 @@ function installApplicationMenu() {
         label: "설정",
         submenu: [
           { label: "기본 공유 주소", submenu: addressItems },
+          { label: localText.menuSetup, enabled: app.isPackaged && process.platform === "win32" && !isPortable(), click: () => void runLocalAiSetup() },
+          { label: localText.caDownload, enabled: Boolean(desktopSettings?.localHttps), click: () => openInBrowser(caDownloadUrl()) },
           { type: "separator" },
           { id: "tunnel-status", label: "상태: 꺼짐", enabled: false },
           { type: "separator" },
@@ -444,6 +481,18 @@ async function start() {
   let generatedPassword = null;
   if (state === "free") {
     generatedPassword = createDesktopSettings();
+    try {
+      await ensureLocalCertificate({
+        app,
+        settings: desktopSettings,
+        save: writeDesktopSettings,
+        addresses: lanAddresses.map((item) => item.address),
+      });
+      shareOrigin = selectedLanOrigin();
+      installApplicationMenu();
+    } catch (error) {
+      console.warn("[local-https] 인증서를 만들지 못해 HTTP로 시작합니다", error);
+    }
     require(path.join(appRoot, "dist", "server.cjs"));
     await waitForServer();
   }
@@ -461,6 +510,38 @@ async function start() {
       defaultId: 0,
     });
     if (result.response === 0) clipboard.writeText(generatedPassword);
+
+    if (process.platform === "win32" && !isPortable()) {
+      const text = localAiStrings(app);
+      const shortcut = await dialog.showMessageBox(mainWindow, {
+        type: "question",
+        message: text.desktopPrompt,
+        buttons: [text.noShortcut, text.createShortcut],
+        defaultId: 0,
+        cancelId: 0,
+      });
+      if (shortcut.response === 1) {
+        shell.writeShortcutLink(path.join(app.getPath("desktop"), "Live Conference Translation.lnk"), "create", {
+          target: process.execPath,
+          cwd: path.dirname(process.execPath),
+          description: "Live Conference Translation",
+        });
+      }
+    }
+  }
+
+  if (process.platform === "win32" && !isPortable() && !desktopSettings?.localAi?.enabled) {
+    const text = localAiStrings(app);
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: "question",
+      title: text.promptTitle,
+      message: text.promptMessage,
+      detail: text.promptDetail,
+      buttons: [text.install, text.later],
+      defaultId: 1,
+      cancelId: 1,
+    });
+    if (result.response === 0) await runLocalAiSetup();
   }
 }
 

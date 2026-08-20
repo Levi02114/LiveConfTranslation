@@ -6,6 +6,8 @@ import { deleteEngineSecret, upsertEngineSecret } from "@/lib/repo";
 import { engineKeyStatus } from "@/lib/secrets";
 import { ENGINE_IDS, isEngineId } from "@/lib/translate/types";
 
+const KEY_ENGINE_IDS = ENGINE_IDS.filter((engine) => engine !== "local");
+
 /**
  * 번역 엔진 API 키 관리.
  *
@@ -14,7 +16,7 @@ import { ENGINE_IDS, isEngineId } from "@/lib/translate/types";
  */
 
 const saveSchema = z.object({
-  engine: z.string().refine(isEngineId, "지원하지 않는 번역 엔진입니다"),
+  engine: z.string().refine((value) => isEngineId(value) && value !== "local", "지원하지 않는 번역 엔진입니다"),
   // 붙여넣기에 딸려 오는 공백·개행은 그대로 두면 인증이 실패한다.
   key: z.string().trim().min(1, "API 키를 입력해 주세요").max(500),
 });
@@ -23,7 +25,7 @@ export async function GET() {
   const denied = await requireAdmin();
   if (denied) return denied;
 
-  return Response.json({ keys: ENGINE_IDS.map(engineKeyStatus) });
+  return Response.json({ keys: KEY_ENGINE_IDS.map(engineKeyStatus) });
 }
 
 export async function POST(request: Request) {
@@ -55,7 +57,7 @@ export async function DELETE(request: Request) {
   if (denied) return denied;
 
   const engine = new URL(request.url).searchParams.get("engine");
-  if (!isEngineId(engine)) {
+  if (!isEngineId(engine) || engine === "local") {
     return Response.json({ error: "지원하지 않는 번역 엔진입니다" }, { status: 400 });
   }
 

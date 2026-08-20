@@ -1,5 +1,5 @@
 import { decryptSecret } from "@/lib/crypto";
-import { getEngineSecret, getEngineSetting } from "@/lib/repo";
+import { getEngineSecret } from "@/lib/repo";
 import type { EngineId } from "@/lib/translate/types";
 
 /**
@@ -32,6 +32,9 @@ export type EngineKeyStatus = {
   updatedAt: number | null;
 };
 
+/** OpenAI 번역은 검증된 단일 모델만 사용한다. */
+export const OPENAI_TRANSLATION_MODEL = "gpt-5.6-luna";
+
 /**
  * 관리자 화면에 내려 줄 상태. **평문 키는 절대 포함하지 않는다.**
  */
@@ -50,13 +53,9 @@ export function engineKeyStatus(engine: EngineId): EngineKeyStatus {
 /**
  * 번역에 쓸 OpenAI 언어모델.
  *
- * 관리자가 화면에서 고른 값을 먼저 쓰고, 아직 고르지 않았으면 내장 기본값을 쓴다.
- * 회의 중에 모델을 바꿔도 서버 재시작 없이 다음 문장부터 먹힌다.
- *
- * `lib/env.ts` 가 아니라 여기 있는 이유: `env.ts` 는 `process.env` 전용 통로라
- * DB 를 읽어서는 안 된다(`AGENTS.md`).
+ * 세션 생성 시점이나 이전 DB 설정과 관계없이 검증된 단일 모델을 반환한다.
+ * 호출부가 모두 이 함수를 사용하므로 UI와 실제 요청이 어긋나지 않는다.
  */
 export function resolveOpenaiModel(): string {
-  const stored = getEngineSetting("openai")?.model?.trim();
-  return stored || "gpt-5.4-mini";
+  return OPENAI_TRANSLATION_MODEL;
 }

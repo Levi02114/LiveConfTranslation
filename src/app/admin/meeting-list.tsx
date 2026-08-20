@@ -10,8 +10,9 @@ import type { AdminStrings, UiStrings } from "@/lib/i18n-builtin";
 import type { Language, LanguageCode } from "@/lib/languages";
 import { formatTimestamp } from "@/lib/log-format";
 import { parseJsonResponse } from "@/lib/json-response";
-import type { Meeting, SessionPreset, SessionPresetConfig } from "@/lib/repo";
+import type { Meeting, SessionPreset, SessionPresetConfig, TranscriptionProvider } from "@/lib/repo";
 import { engineIdSchema, isEngineId, type EngineId } from "@/lib/translate/types";
+import { transcriptionProviderSchema } from "@/lib/repo-schema";
 
 import { AdminBusyOverlay } from "./admin-busy-overlay";
 import { EngineKeysDialog, type EngineKeyStatus } from "./engine-keys-dialog";
@@ -33,6 +34,8 @@ const meetingResponseSchema = z.object({
     inputMode: z.enum(["human", "realtime"]),
     speakerLabels: z.boolean(),
     transcriptionContext: z.string().nullable(),
+    translationModel: z.string().nullable(),
+    transcriptionProvider: z.enum(["openai", "local"]),
     createdAt: z.number(),
     closedAt: z.number().nullable(),
   }).optional(),
@@ -50,8 +53,8 @@ export function MeetingList({
   engineKeys,
   defaultEngine,
   openaiModel,
-  openaiModels,
   presets,
+  localTranscriptionAvailable,
 }: {
   lang: LanguageCode;
   strings: AdminStrings;
@@ -63,11 +66,10 @@ export function MeetingList({
   engines: { id: EngineId; label: string; configured: boolean }[];
   engineKeys: EngineKeyStatus[];
   defaultEngine: EngineId;
-  /** 전역 OpenAI 언어모델. 아직 고르지 않았으면 내장 기본값을 쓴다. */
+  /** OpenAI 번역에 쓰는 고정 언어모델. */
   openaiModel: string;
-  /** 마지막으로 성공한 OpenAI 모델 목록. */
-  openaiModels: string[];
   presets: SessionPreset[];
+  localTranscriptionAvailable: boolean;
 }) {
   const router = useRouter();
   const setLang = useSetAdminLang();
@@ -85,6 +87,7 @@ export function MeetingList({
   }));
   const [engine, setEngine] = useState<EngineId>(defaultEngine);
   const [fallbackEngine, setFallbackEngine] = useState<EngineId | null>(null);
+  const [transcriptionProvider, setTranscriptionProvider] = useState<TranscriptionProvider>("openai");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [closing, setClosing] = useState<string | null>(null);
@@ -196,6 +199,7 @@ export function MeetingList({
           config,
           engine,
           fallbackEngine,
+          transcriptionProvider,
         }),
       });
       const payload = await parseJsonResponse(response, meetingResponseSchema);
@@ -408,21 +412,18 @@ export function MeetingList({
             value={engine}
             engines={engines}
             noKeyLabel={strings.list.engineNoKey}
+            notInstalledLabel={strings.list.notInstalled}
             onChange={(next) => next && void selectEngine(next)}
           />
-          {/* 항상 마운트해 페이지 진입 때 갱신하고, OpenAI 일 때만 화면에 보인다. */}
           <OpenaiModelSelect
             label={strings.list.model}
-            initial={openaiModel}
-            initialModels={openaiModels}
+            model={openaiModel}
             hidden={engine !== "openai" && fallbackEngine !== "openai"}
-            onError={(message) => setError(message ? strings.list.settingFailed : null)}
-            onPendingChange={setActionPending}
           />
 
           <EngineKeysDialog
             strings={strings.keys}
-            engines={engines.map((item) => ({ id: item.id, label: item.label }))}
+            engines={engines.filter((item) => item.id !== "local").map((item) => ({ id: item.id, label: item.label }))}
             initial={engineKeys}
             onChange={(status) =>
               setEngines((prev) =>
@@ -434,6 +435,30 @@ export function MeetingList({
           />
         </div>
 
+        {engine === "local" ? (
+          <p className="font-mono text-[11px] leading-5 text-muted">{strings.list.localGlossaryUnsupported}</p>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-3.5">
+          <label htmlFor="transcription-provider" className="font-mono text-[11px] text-muted">
+            {strings.list.transcriptionProvider}
+          </label>
+          <select
+            id="transcription-provider"
+            value={transcriptionProvider}
+            onChange={(event) => {
+              const parsed = transcriptionProviderSchema.safeParse(event.target.value);
+              if (parsed.success) setTranscriptionProvider(parsed.data);
+            }}
+            className="max-w-full border border-line bg-bg px-2.5 py-1.5 font-mono text-[13px] outline-none"
+          >
+            <option value="openai">{strings.list.transcriptionOpenai}</option>
+            <option value="local" disabled={!localTranscriptionAvailable}>
+              {strings.list.transcriptionLocal}{localTranscriptionAvailable ? "" : ` · ${strings.list.notInstalled}`}
+            </option>
+          </select>
+        </div>
+
         <div className="flex flex-wrap items-center gap-3.5">
           <div className="font-mono text-[11px] text-muted">
             {strings.list.fallbackEngine}
@@ -442,6 +467,7 @@ export function MeetingList({
             value={fallbackEngine}
             engines={engines}
             noKeyLabel={strings.list.engineNoKey}
+            notInstalledLabel={strings.list.notInstalled}
             noneLabel={strings.list.noFallback}
             exclude={engine}
             onChange={setFallbackEngine}
@@ -534,6 +560,7 @@ function EngineSelect({
   value,
   engines,
   noKeyLabel,
+  notInstalledLabel,
   noneLabel,
   exclude,
   onChange,
@@ -541,6 +568,7 @@ function EngineSelect({
   value: EngineId | null;
   engines: { id: EngineId; label: string; configured: boolean }[];
   noKeyLabel: string;
+  notInstalledLabel: string;
   noneLabel?: string;
   exclude?: EngineId;
   onChange: (value: EngineId | null) => void;
@@ -560,7 +588,7 @@ function EngineSelect({
         .map((item) => (
           <option key={item.id} value={item.id}>
             {item.label}
-            {item.configured ? "" : ` (${noKeyLabel})`}
+            {item.configured ? "" : ` (${item.id === "local" ? notInstalledLabel : noKeyLabel})`}
           </option>
         ))}
     </select>

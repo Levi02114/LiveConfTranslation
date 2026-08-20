@@ -49,6 +49,8 @@ CREATE TABLE IF NOT EXISTS meetings (
   input_mode  TEXT NOT NULL DEFAULT 'human',  -- 'human' | 'realtime'
   source_lang TEXT,                           -- 이전 단일 원음 모드 호환용(신규 데이터는 NULL)
   speaker_labels INTEGER NOT NULL DEFAULT 0,  -- 입력자 닉네임을 확정 기록에 남길지
+  translation_model TEXT,                    -- 세션 생성 시 확정한 번역 모델
+  transcription_provider TEXT NOT NULL DEFAULT 'openai', -- 'openai' | 'local'
   created_at  INTEGER NOT NULL,
   closed_at   INTEGER
 );
@@ -98,7 +100,7 @@ CREATE TABLE IF NOT EXISTS translations (
 );
 
 CREATE TABLE IF NOT EXISTS engine_secrets (
-  engine      TEXT PRIMARY KEY,               -- 'google' | 'deepl' | 'openai'
+  engine      TEXT PRIMARY KEY,               -- 'google' | 'deepl' | 'openai' | 'local'
   -- AES-256-GCM 암호문(iv || tag || ciphertext). 평문 키는 저장하지 않는다.
   secret      BLOB NOT NULL,
   -- 관리자가 어떤 키인지 알아볼 수 있게 하는 마스킹 문자열. 복호화 없이 읽는다.
@@ -244,6 +246,8 @@ function open(): DatabaseSync {
   ensureColumn(db, "meetings", "input_mode", "TEXT NOT NULL DEFAULT 'human'");
   ensureColumn(db, "meetings", "source_lang", "TEXT");
   ensureColumn(db, "meetings", "speaker_labels", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "meetings", "translation_model", "TEXT");
+  ensureColumn(db, "meetings", "transcription_provider", "TEXT NOT NULL DEFAULT 'openai'");
   ensureColumn(db, "meetings", "transcription_context", "TEXT");
   ensureColumn(db, "meeting_langs", "input_enabled", "INTEGER NOT NULL DEFAULT 1");
   ensureColumn(db, "meeting_langs", "output_enabled", "INTEGER NOT NULL DEFAULT 1");
