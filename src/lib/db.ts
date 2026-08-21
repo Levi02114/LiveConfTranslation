@@ -145,8 +145,8 @@ CREATE TABLE IF NOT EXISTS glossary_terms (
 );
 
 CREATE TABLE IF NOT EXISTS engine_settings (
-  engine      TEXT PRIMARY KEY,               -- 'google' | 'deepl' | 'openai'
-  model       TEXT,                           -- OpenAI 언어모델. NULL 이면 내장 기본값
+  engine      TEXT PRIMARY KEY,               -- 번역 엔진 또는 'transcription'
+  model       TEXT,                           -- 모델 또는 마지막 음성 인식 엔진
   updated_at  INTEGER NOT NULL
 );
 

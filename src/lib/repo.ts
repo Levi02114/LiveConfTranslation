@@ -41,6 +41,7 @@ import {
   promptCueRowSchema,
   recentTranslationRowSchema,
   sessionPresetRowSchema,
+  transcriptionSettingRowSchema,
   translationCountRowSchema,
   uiStringRowSchema,
   type MeetingRow,
@@ -1317,6 +1318,28 @@ export function upsertEngineSetting(engine: EngineId, model: string | null): voi
          updated_at = excluded.updated_at`,
     )
     .run(engine, model, Date.now());
+}
+
+/** 관리자 화면에서 마지막으로 고른 음성 인식 엔진. */
+export function getTranscriptionProviderSetting(): TranscriptionProvider | null {
+  const row = parseSqlRow(
+    transcriptionSettingRowSchema,
+    getDb().prepare(`SELECT model FROM engine_settings WHERE engine = 'transcription'`).get(),
+    "음성 인식 엔진 설정",
+  );
+  return row?.model ?? null;
+}
+
+export function upsertTranscriptionProviderSetting(provider: TranscriptionProvider): void {
+  getDb()
+    .prepare(
+      `INSERT INTO engine_settings (engine, model, updated_at)
+       VALUES ('transcription', ?, ?)
+       ON CONFLICT (engine) DO UPDATE SET
+         model = excluded.model,
+         updated_at = excluded.updated_at`,
+    )
+    .run(provider, Date.now());
 }
 
 /* ── OpenAI 모델 목록 캐시 ─────────────────────────────────── */

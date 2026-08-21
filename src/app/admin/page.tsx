@@ -9,6 +9,7 @@ import { getLanguage, isBuiltinLanguage, type LanguageCode } from "@/lib/languag
 import {
   getMeetingLangs,
   getLastEngineSetting,
+  getTranscriptionProviderSetting,
   isLanguageUsed,
   listLanguages,
   listMeetings,
@@ -67,6 +68,11 @@ export default async function AdminPage() {
 
   const languages = listLanguages().map((row) => row.code);
   const selectedEngine = getLastEngineSetting()?.engine ?? "google";
+  const localTranscriptionAvailable = localTranscriptionConfigured();
+  const savedTranscriptionProvider = getTranscriptionProviderSetting();
+  const defaultTranscriptionProvider = savedTranscriptionProvider === "local" && !localTranscriptionAvailable
+    ? "openai"
+    : savedTranscriptionProvider ?? (localTranscriptionAvailable ? "local" : "openai");
   await fillMissingUiStrings(languages, selectedEngine);
 
   const lang = toAdminLang((await cookies()).get(ADMIN_LANG_COOKIE)?.value, languages);
@@ -93,7 +99,8 @@ export default async function AdminPage() {
         configured: engine.isConfigured(),
       }))}
       engineKeys={listEngines().filter((engine) => engine.id !== "local").map((engine) => engineKeyStatus(engine.id))}
-      localTranscriptionAvailable={localTranscriptionConfigured()}
+      localTranscriptionAvailable={localTranscriptionAvailable}
+      defaultTranscriptionProvider={defaultTranscriptionProvider}
       defaultEngine={selectedEngine}
       openaiModel={resolveOpenaiModel()}
       presets={listSessionPresets()}

@@ -55,6 +55,7 @@ export function MeetingList({
   openaiModel,
   presets,
   localTranscriptionAvailable,
+  defaultTranscriptionProvider,
 }: {
   lang: LanguageCode;
   strings: AdminStrings;
@@ -70,6 +71,7 @@ export function MeetingList({
   openaiModel: string;
   presets: SessionPreset[];
   localTranscriptionAvailable: boolean;
+  defaultTranscriptionProvider: TranscriptionProvider;
 }) {
   const router = useRouter();
   const setLang = useSetAdminLang();
@@ -87,7 +89,7 @@ export function MeetingList({
   }));
   const [engine, setEngine] = useState<EngineId>(defaultEngine);
   const [fallbackEngine, setFallbackEngine] = useState<EngineId | null>(null);
-  const [transcriptionProvider, setTranscriptionProvider] = useState<TranscriptionProvider>("openai");
+  const [transcriptionProvider, setTranscriptionProvider] = useState(defaultTranscriptionProvider);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [closing, setClosing] = useState<string | null>(null);
@@ -178,6 +180,25 @@ export function MeetingList({
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ engine: next }),
+      });
+      if (!response.ok) setError(strings.list.settingFailed);
+    } catch {
+      setError(strings.list.settingFailed);
+    } finally {
+      setActionPending(false);
+    }
+  };
+
+  const selectTranscriptionProvider = async (next: TranscriptionProvider) => {
+    if (actionPending) return;
+    setTranscriptionProvider(next);
+    setActionPending(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/engine-settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ transcriptionProvider: next }),
       });
       if (!response.ok) setError(strings.list.settingFailed);
     } catch {
@@ -451,7 +472,7 @@ export function MeetingList({
             value={transcriptionProvider}
             onChange={(event) => {
               const parsed = transcriptionProviderSchema.safeParse(event.target.value);
-              if (parsed.success) setTranscriptionProvider(parsed.data);
+              if (parsed.success) void selectTranscriptionProvider(parsed.data);
             }}
             className="max-w-full border border-line bg-bg px-2.5 py-1.5 font-mono text-[13px] outline-none"
           >

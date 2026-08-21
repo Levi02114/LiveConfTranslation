@@ -164,4 +164,7 @@ export const engineSettingRowSchema = z.object({
   model: z.string().nullable(),
   updated_at: z.number(),
 });
+export const transcriptionSettingRowSchema = z.object({
+  model: transcriptionProviderSchema,
+});
 export const openaiModelRowSchema = z.object({ model: z.string() });
