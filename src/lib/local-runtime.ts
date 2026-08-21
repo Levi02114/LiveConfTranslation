@@ -84,7 +84,7 @@ export async function ensureLocalTranslationRuntime(): Promise<string> {
     "--port", "3031",
     "--ctx-size", "2048",
     "--parallel", "1",
-    "--jinja",
+    "--no-jinja",
   ];
   if (localAiUseGpu()) args.push("--n-gpu-layers", "999", "--fit", "on");
   const child = spawn(binary, args, { cwd: dirname(binary), windowsHide: true });
