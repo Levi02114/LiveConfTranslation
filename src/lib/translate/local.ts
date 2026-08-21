@@ -8,7 +8,7 @@ const SUPPORTED = new Set([
   "am", "ar", "bg", "bn", "cs", "da", "de", "el", "en", "es", "et", "fa", "fi",
   "fr", "gu", "he", "hi", "hr", "hu", "id", "it", "ja", "km", "kn", "ko", "lo",
   "lt", "lv", "ml", "mr", "ms", "my", "ne", "nl", "no", "pa", "pl", "pt", "ro",
-  "ru", "sk", "sl", "sr", "sv", "sw", "ta", "te", "th", "tl", "tr", "uk", "ur",
+  "ru", "si", "sk", "sl", "sr", "sv", "sw", "ta", "te", "th", "tl", "tr", "uk", "ur",
   "vi", "zh",
 ]);
 const responseSchema = z.object({ content: z.string() });
