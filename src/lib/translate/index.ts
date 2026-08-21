@@ -45,7 +45,11 @@ async function engineProblem(
   engine: TranslationEngine,
   input: Pick<TranslateInput, "from" | "to">,
 ) {
-  if (!engine.isConfigured()) return `${engine.label} 의 API 키가 설정되지 않았습니다`;
+  if (!engine.isConfigured()) {
+    return engine.id === "local"
+      ? "로컬 AI 번역 모델이 설치되지 않았습니다"
+      : `${engine.label} 의 API 키가 설정되지 않았습니다`;
+  }
 
   try {
     await engine.refreshSupport?.();

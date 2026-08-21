@@ -59,6 +59,7 @@ const TRANSCRIPTION_MODELS = {
 };
 
 const UI = {
+  en: { caDownload: "Download the local HTTPS certificate for phones" },
   ko: { caDownload: "휴대전화용 로컬 HTTPS 인증서 받기" },
   vi: { caDownload: "Tải chứng chỉ HTTPS cục bộ cho điện thoại" },
   th: { caDownload: "ดาวน์โหลดใบรับรอง HTTPS สำหรับโทรศัพท์" },
@@ -67,7 +68,7 @@ const UI = {
 
 function stringsFor(app) {
   const locale = app.getLocale().toLowerCase();
-  return UI[locale.startsWith("vi") ? "vi" : locale.startsWith("th") ? "th" : locale.startsWith("si") ? "si" : "ko"];
+  return UI[locale.startsWith("ko") ? "ko" : locale.startsWith("vi") ? "vi" : locale.startsWith("th") ? "th" : locale.startsWith("si") ? "si" : "en"];
 }
 
 function isPortable() {

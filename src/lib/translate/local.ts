@@ -4,22 +4,16 @@ import { ensureLocalTranslationRuntime, localTranslationConfigured } from "@/lib
 
 import { TranslationError, type TranslateInput, type TranslationEngine } from "./types";
 
-const SUPPORTED = new Set([
-  "am", "ar", "bg", "bn", "cs", "da", "de", "el", "en", "es", "et", "fa", "fi",
-  "fr", "gu", "he", "hi", "hr", "hu", "id", "it", "ja", "km", "kn", "ko", "lo",
-  "lt", "lv", "ml", "mr", "ms", "my", "ne", "nl", "no", "pa", "pl", "pt", "ro",
-  "ru", "si", "sk", "sl", "sr", "sv", "sw", "ta", "te", "th", "tl", "tr", "uk", "ur",
-  "vi", "zh",
-]);
 const responseSchema = z.object({ content: z.string() });
 const englishNames = new Intl.DisplayNames(["en"], { type: "language" });
 
 function code(value: string): string {
   const locale = value.replaceAll("_", "-");
-  if (locale.toLowerCase().startsWith("zh-")) {
-    return /(?:hant|tw|hk|mo)/i.test(locale) ? "zh-Hant" : "zh";
+  try {
+    return new Intl.Locale(locale).toString();
+  } catch {
+    return locale;
   }
-  return locale.toLowerCase().split("-")[0];
 }
 
 function clean(text: string): string {
@@ -64,8 +58,10 @@ async function translate(input: TranslateInput): Promise<string> {
 export const localEngine: TranslationEngine = {
   id: "local",
   label: "Local AI (TranslateGemma)",
-  supports(lang) {
-    return SUPPORTED.has(code(lang));
+  supports() {
+    // TranslateGemma에는 모델을 로드하지 않고 물을 지원 언어 API가 없다. 불완전한 수동 목록으로
+    // 등록 언어를 미리 막지 않고 실제 모델 응답으로 성공 여부를 판단한다.
+    return true;
   },
   isConfigured: localTranslationConfigured,
   translate,

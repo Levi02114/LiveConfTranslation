@@ -42,15 +42,23 @@ export function configuredLocalTranslationModel(): string | null {
 
 async function waitFor(url: string, child: ChildProcess, timeoutMs: number): Promise<void> {
   const attempts = Math.ceil(timeoutMs / 250);
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    if (child.exitCode !== null) throw new Error(`로컬 AI 프로세스가 종료되었습니다 (${child.exitCode})`);
-    try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(500) });
-      if (response.ok) return;
-    } catch {
-      // 모델 로딩 중이다.
+  let spawnError: Error | null = null;
+  const onError = (error: Error) => { spawnError = error; };
+  child.once("error", onError);
+  try {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (spawnError) throw spawnError;
+      if (child.exitCode !== null) throw new Error(`로컬 AI 프로세스가 종료되었습니다 (${child.exitCode})`);
+      try {
+        const response = await fetch(url, { signal: AbortSignal.timeout(500) });
+        if (response.ok) return;
+      } catch {
+        // 모델 로딩 중이다.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
     }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+  } finally {
+    child.off("error", onError);
   }
   child.kill();
   throw new Error(`로컬 AI 모델을 ${Math.ceil(timeoutMs / 1000)}초 안에 시작하지 못했습니다`);
@@ -78,13 +86,15 @@ export async function ensureLocalTranslationRuntime(): Promise<string> {
     "--parallel", "1",
     "--jinja",
   ];
-  if (localAiUseGpu()) args.push("--n-gpu-layers", "999");
+  if (localAiUseGpu()) args.push("--n-gpu-layers", "999", "--fit", "on");
   const child = spawn(binary, args, { cwd: dirname(binary), windowsHide: true });
   state.translation = child;
   logChild("local-translate", child);
-  child.once("exit", () => {
+  const clearTranslation = () => {
     if (state.translation === child) state.translation = null;
-  });
+  };
+  child.once("error", clearTranslation);
+  child.once("exit", clearTranslation);
   await waitFor(`${TRANSLATION_ORIGIN}/health`, child, 180_000);
   return TRANSLATION_ORIGIN;
 }
@@ -108,9 +118,11 @@ export async function ensureLocalTranscriptionRuntime(): Promise<string> {
   ], { cwd: dirname(binary), windowsHide: true });
   state.transcription = child;
   logChild("local-transcribe", child);
-  child.once("exit", () => {
+  const clearTranscription = () => {
     if (state.transcription === child) state.transcription = null;
-  });
+  };
+  child.once("error", clearTranscription);
+  child.once("exit", clearTranscription);
   await waitFor(`${TRANSCRIPTION_ORIGIN}/`, child, 60_000);
   return TRANSCRIPTION_ORIGIN;
 }
