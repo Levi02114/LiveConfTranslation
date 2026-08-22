@@ -67,7 +67,7 @@ Windows 설치본은 Node.js나 개발 도구를 따로 설치하지 않아도 �
 
 ### 1. 설치 또는 포터블 실행
 
-[v0.9.15 릴리스 페이지](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.15)에서 다음 중
+[v0.9.16 릴리스 페이지](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.16)에서 다음 중
 하나를 내려받습니다.
 
 - `... Setup ... .exe`: Windows에 설치하는 버전
@@ -175,6 +175,9 @@ CA를 설치하면 그 인증서를 만든 컴퓨터를 신뢰하게 됩니다. 
 행사가 끝난 뒤 필요 없으면 운영체제의 사용자 인증서 설정에서 제거하세요. 인증서 설치가
 곤란하거나 외부 네트워크에서도 접속해야 하면 [Cloudflare 공개 URL](#cloudflare-공개-url)을
 사용하는 편이 쉽습니다.
+
+인증서 생성에 실패하면 앱이 원인을 알리고 HTTP로 계속 실행합니다. 설치형 앱을 다시
+시작하면 인증서 설정을 재시도하며, 성공하면 공유 주소가 `https://...:3443`으로 바뀝니다.
 
 ## Windows 관리자 비밀번호 복구·변경
 

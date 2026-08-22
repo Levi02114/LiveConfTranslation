@@ -449,10 +449,9 @@ async function start() {
   installApplicationMenu();
   createWindow(false);
 
-  const { state } = await probeServer();
-  if (state === "occupied") throw new Error(`포트 ${PORT}을 다른 프로그램이 사용하고 있습니다.`);
   let generatedPassword = null;
-  if (state === "free") {
+  let localHttpsError = null;
+  if (app.isPackaged) {
     generatedPassword = createDesktopSettings();
     try {
       await ensureLocalCertificate({
@@ -464,14 +463,33 @@ async function start() {
       shareOrigin = selectedLanOrigin();
       installApplicationMenu();
     } catch (error) {
-      console.warn("[local-https] 인증서를 만들지 못해 HTTP로 시작합니다", error);
+      localHttpsError = error instanceof Error ? error.message : String(error);
+      console.warn("[local-https] 인증서를 만들지 못해 HTTP로 시작합니다", localHttpsError);
+      shareOrigin = selectedLanOrigin();
+      installApplicationMenu();
     }
+  }
+
+  const { state } = await probeServer();
+  if (state === "occupied") throw new Error(`포트 ${PORT}을 다른 프로그램이 사용하고 있습니다.`);
+  if (state === "free") {
     require(path.join(appRoot, "dist", "server.cjs"));
     await waitForServer();
   }
 
   if (!mainWindow || mainWindow.isDestroyed()) return;
   await mainWindow.loadURL(`${adminOrigin}/admin`);
+
+  if (localHttpsError) {
+    const text = localAiStrings(app);
+    await dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      title: text.httpsFailed,
+      message: text.httpsFailed,
+      detail: `${text.httpsFailedDetail}\n\n${localHttpsError}`,
+      buttons: ["OK"],
+    });
+  }
 
   if (generatedPassword) {
     const result = await dialog.showMessageBox(mainWindow, {

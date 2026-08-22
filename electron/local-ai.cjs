@@ -59,11 +59,31 @@ const TRANSCRIPTION_MODELS = {
 };
 
 const UI = {
-  en: { caDownload: "Download the local HTTPS certificate for phones" },
-  ko: { caDownload: "휴대전화용 로컬 HTTPS 인증서 받기" },
-  vi: { caDownload: "Tải chứng chỉ HTTPS cục bộ cho điện thoại" },
-  th: { caDownload: "ดาวน์โหลดใบรับรอง HTTPS สำหรับโทรศัพท์" },
-  si: { caDownload: "දුරකථනය සඳහා දේශීය HTTPS සහතිකය බාගන්න" },
+  en: {
+    caDownload: "Download the local HTTPS certificate for phones",
+    httpsFailed: "Local HTTPS setup failed",
+    httpsFailedDetail: "The app will continue over HTTP. Restart the app to retry certificate setup.",
+  },
+  ko: {
+    caDownload: "휴대전화용 로컬 HTTPS 인증서 받기",
+    httpsFailed: "로컬 HTTPS 설정 실패",
+    httpsFailedDetail: "HTTP로 계속 실행합니다. 앱을 다시 시작하면 인증서 설정을 재시도합니다.",
+  },
+  vi: {
+    caDownload: "Tải chứng chỉ HTTPS cục bộ cho điện thoại",
+    httpsFailed: "Thiết lập HTTPS cục bộ thất bại",
+    httpsFailedDetail: "Ứng dụng sẽ tiếp tục qua HTTP. Khởi động lại ứng dụng để thử lại thiết lập chứng chỉ.",
+  },
+  th: {
+    caDownload: "ดาวน์โหลดใบรับรอง HTTPS สำหรับโทรศัพท์",
+    httpsFailed: "ตั้งค่า HTTPS ภายในเครื่องไม่สำเร็จ",
+    httpsFailedDetail: "แอปจะทำงานต่อผ่าน HTTP โปรดเริ่มแอปใหม่เพื่อลองตั้งค่าใบรับรองอีกครั้ง",
+  },
+  si: {
+    caDownload: "දුරකථනය සඳහා දේශීය HTTPS සහතිකය බාගන්න",
+    httpsFailed: "දේශීය HTTPS සැකසුම අසාර්ථකයි",
+    httpsFailedDetail: "යෙදුම HTTP හරහා දිගටම ක්‍රියාත්මක වේ. සහතික සැකසුම නැවත උත්සාහ කිරීමට යෙදුම නැවත අරඹන්න.",
+  },
 };
 
 function stringsFor(app) {
@@ -81,6 +101,11 @@ function applyLocalAiEnvironment(settings) {
     process.env.LOCAL_HTTPS_PFX_PASSWORD = settings.localHttps.password;
     process.env.LOCAL_HTTPS_CA_PATH = settings.localHttps.ca;
     process.env.LOCAL_HTTPS_PORT = "3443";
+  } else {
+    delete process.env.LOCAL_HTTPS_PFX_PATH;
+    delete process.env.LOCAL_HTTPS_PFX_PASSWORD;
+    delete process.env.LOCAL_HTTPS_CA_PATH;
+    delete process.env.LOCAL_HTTPS_PORT;
   }
   const local = settings?.localAi;
   if (!local?.enabled) return;
@@ -98,6 +123,7 @@ function ps(value) {
 
 async function ensureLocalCertificate({ app, settings, save, addresses }) {
   if (process.platform !== "win32" || isPortable()) return false;
+  if (!settings) return false;
   if (settings.localHttps?.pfx && existsSync(settings.localHttps.pfx) && existsSync(settings.localHttps.ca)) {
     applyLocalAiEnvironment(settings);
     return true;
@@ -108,6 +134,11 @@ async function ensureLocalCertificate({ app, settings, save, addresses }) {
   const ca = path.join(directory, "local-ca.cer");
   const password = randomBytes(24).toString("base64url");
   const sans = ["DNS=localhost", ...addresses.map((address) => `IPAddress=${address}`)].join("&");
+  delete settings.localHttps;
+  save();
+  applyLocalAiEnvironment(settings);
+  rmSync(pfx, { force: true });
+  rmSync(ca, { force: true });
   const command = [
     "$ErrorActionPreference='Stop'",
     "$caCert=New-SelfSignedCertificate -Type Custom -Subject 'CN=Live Conference Translation Local CA' -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -KeyUsage CertSign,CRLSign,DigitalSignature -KeyExportPolicy Exportable -CertStoreLocation 'Cert:\\CurrentUser\\My' -NotAfter (Get-Date).AddYears(10) -TextExtension @('2.5.29.19={critical}{text}ca=true')",
@@ -183,7 +214,10 @@ async function download(asset, destination, onProgress, text) {
 
 function exec(command, args) {
   return new Promise((resolve, reject) => {
-    execFile(command, args, { windowsHide: true }, (error) => error ? reject(error) : resolve());
+    execFile(command, args, { windowsHide: true }, (error, _stdout, stderr) => {
+      if (!error) return resolve();
+      reject(new Error(String(stderr).trim() || `${path.basename(command)} 종료 코드: ${error.code ?? "unknown"}`));
+    });
   });
 }
 
