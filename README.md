@@ -67,7 +67,7 @@ Windows 설치본은 Node.js나 개발 도구를 따로 설치하지 않아도 �
 
 ### 1. 설치 또는 포터블 실행
 
-[v0.9.16 릴리스 페이지](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.16)에서 다음 중
+[v0.9.17 릴리스 페이지](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.17)에서 다음 중
 하나를 내려받습니다.
 
 - `... Setup ... .exe`: Windows에 설치하는 버전
@@ -165,6 +165,7 @@ Local AI를 골라야 완전 오프라인입니다. Local AI와 온라인 폴백
 설치형은 자체 서명한 로컬 CA와 서버 인증서를 현재 Windows 사용자 신뢰 저장소에
 준비하고 LAN 공유 주소를 `https://<주소>:3443`으로 표시합니다. 관리자 컴퓨터에서는
 바로 신뢰되지만 휴대전화에는 CA가 없으므로 첫 접속 시 위험 경고가 나타날 수 있습니다.
+첫 인증서 생성 때 Windows가 로컬 CA 신뢰 여부를 물으면 허용해야 설정이 완료됩니다.
 
 1. Electron의 **설정 → 휴대전화용 로컬 HTTPS 인증서 받기**를 엽니다.
 2. 휴대전화로 표시된 HTTP 다운로드 주소를 열어 `.cer` 파일을 받습니다.

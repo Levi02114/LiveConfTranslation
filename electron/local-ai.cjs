@@ -148,7 +148,7 @@ async function ensureLocalCertificate({ app, settings, save, addresses }) {
     `Export-Certificate -Cert $caCert -FilePath ${ps(ca)} | Out-Null`,
     `Import-Certificate -FilePath ${ps(ca)} -CertStoreLocation 'Cert:\\CurrentUser\\Root' | Out-Null`,
   ].join(";");
-  await exec("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command]);
+  await exec("powershell.exe", ["-NoProfile", "-Command", command]);
   settings.localHttps = { pfx, ca, password };
   save();
   applyLocalAiEnvironment(settings);
