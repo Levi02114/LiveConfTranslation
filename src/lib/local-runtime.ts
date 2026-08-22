@@ -107,7 +107,7 @@ export async function ensureLocalTranscriptionRuntime(): Promise<string> {
   }
 
   const binary = localWhisperServerPath()!;
-  const child = spawn(binary, [
+  const args = [
     "--model", localTranscriptionModelPath()!,
     "--host", "127.0.0.1",
     "--port", "3032",
@@ -115,7 +115,9 @@ export async function ensureLocalTranscriptionRuntime(): Promise<string> {
     "--no-timestamps",
     "--suppress-nst",
     "--threads", String(Math.max(1, Math.min(8, Math.floor(availableParallelism() / 2)))),
-  ], { cwd: dirname(binary), windowsHide: true });
+  ];
+  if (!localAiUseGpu()) args.push("--no-gpu");
+  const child = spawn(binary, args, { cwd: dirname(binary), windowsHide: true });
   state.transcription = child;
   logChild("local-transcribe", child);
   const clearTranscription = () => {

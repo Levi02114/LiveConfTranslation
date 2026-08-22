@@ -288,9 +288,6 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   let draining = false;
   let localPcm: Buffer[] = [];
   let localBytes = 0;
-  let localGeneration = 0;
-  let localPreviewTimer: ReturnType<typeof setInterval> | null = null;
-  let localPreviewQueued = false;
   let localQueue = Promise.resolve();
 
   // 2차 전사(rescue)는 힌트 미지원 언어가 있는 세션에서만 의미가 있다 —
@@ -310,8 +307,6 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
     if (closed) return;
     closed = true;
     if (leaseId) releaseCapture(target.page.id, leaseId);
-    if (localPreviewTimer) clearInterval(localPreviewTimer);
-    localPreviewTimer = null;
     upstream?.close();
     upstream = null;
   };
@@ -333,27 +328,10 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
         speaker: speakerName,
       });
 
-  const queueLocalPreview = () => {
-    if (localBytes < 38_400 || localPreviewQueued) return; // 0.8초 미만은 Whisper 환각이 많다.
-    localPreviewQueued = true;
-    const pcm = Buffer.concat(localPcm, localBytes);
-    const generation = localGeneration;
-    const params = localParams();
-    localQueue = localQueue.then(async () => {
-      const result = await transcribeLocalPcm({ pcm, languages: target.languages, prompt: params.prompt });
-      if (!closed && generation === localGeneration) send({ t: "partial", text: result.body });
-    }).catch((error) => {
-      console.warn("[local-transcribe] 미리보기 실패", error);
-    }).finally(() => {
-      localPreviewQueued = false;
-    });
-  };
-
   const commitLocal = () => {
     const pcm = Buffer.concat(localPcm, localBytes);
     localPcm = [];
     localBytes = 0;
-    localGeneration += 1;
     send({ t: "partial", text: "" });
     const itemId = randomUUID();
     const params = localParams();
@@ -482,7 +460,6 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
     if (local) {
       void ensureLocalTranscriptionRuntime().then(() => {
         if (closed) return;
-        localPreviewTimer = setInterval(queueLocalPreview, 1_500);
         send({ t: "ready", leaseId });
       }).catch((error) => {
         console.error("[local-transcribe] 시작 실패", error);

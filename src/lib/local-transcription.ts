@@ -48,7 +48,7 @@ export async function transcribeLocalPcm(input: {
   form.set("file", new Blob([new Uint8Array(wav)], { type: "audio/wav" }), "turn.wav");
   form.set("temperature", "0.0");
   form.set("temperature_inc", "0.2");
-  form.set("response_format", "verbose_json");
+  form.set("response_format", input.languages.length === 1 ? "json" : "verbose_json");
   form.set("prompt", input.prompt);
   form.set("carry_initial_prompt", "true");
   form.set("language", input.languages.length === 1 ? input.languages[0].split("-")[0] : "auto");
