@@ -191,11 +191,17 @@ export function useServerVoiceInput({
     if (state !== "active" || stopping.current) return;
     stopping.current = true;
     stream.current?.getTracks().forEach((track) => track.stop());
+    stream.current = null;
     if (speechSinceCommit.current && socket.current?.readyState === WebSocket.OPEN) {
       socket.current.send(JSON.stringify({ t: "commit" }));
       pendingTranscripts.current += 1;
       speechSinceCommit.current = false;
     }
+    void neuralVad.current?.destroy();
+    neuralVad.current = null;
+    void context.current?.close();
+    context.current = null;
+    setMeter(null);
     if (pendingTranscripts.current) {
       // 로컬 Whisper는 저사양 CPU에서 마지막 턴 확정에 수십 초가 걸릴 수 있다.
       stopTimer.current = setTimeout(disconnect, 60_000);

@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename, dirname } from "node:path";
-import { availableParallelism } from "node:os";
+import { availableParallelism, constants, setPriority } from "node:os";
 
 import {
   localAiUseGpu,
@@ -114,10 +114,17 @@ export async function ensureLocalTranscriptionRuntime(): Promise<string> {
     "--language", "auto",
     "--no-timestamps",
     "--suppress-nst",
-    "--threads", String(Math.max(1, Math.min(8, Math.floor(availableParallelism() / 2)))),
+    "--threads", String(Math.max(1, Math.min(4, Math.floor(availableParallelism() / 4)))),
   ];
   if (!localAiUseGpu()) args.push("--no-gpu");
   const child = spawn(binary, args, { cwd: dirname(binary), windowsHide: true });
+  if (child.pid) {
+    try {
+      setPriority(child.pid, constants.priority.PRIORITY_BELOW_NORMAL);
+    } catch {
+      // 우선순위 변경을 막는 환경에서도 전사는 정상 실행한다.
+    }
+  }
   state.transcription = child;
   logChild("local-transcribe", child);
   const clearTranscription = () => {
