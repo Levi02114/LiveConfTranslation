@@ -69,7 +69,7 @@ Windows 설치본은 Node.js나 개발 도구를 따로 설치하지 않아도 �
 
 ### 1. 설치 또는 포터블 실행
 
-[v0.9.17 릴리스 페이지](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.17)에서 다음 중
+[v0.9.18 릴리스 페이지](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.18)에서 다음 중
 하나를 내려받습니다.
 
 - `... Setup ... .exe`: Windows에 설치하는 버전
