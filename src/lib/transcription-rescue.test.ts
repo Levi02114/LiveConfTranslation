@@ -54,18 +54,18 @@ test("60초 보관 한도를 벗어난 턴은 rescue 만 생략한다", () => {
   assert.equal(turns.take("old"), null);
 });
 
-test("언어 고정 재전사는 ISO-639-1 language 를 보낸다", async () => {
+test("지원 언어 고정 재전사는 ISO-639-1 language 를 보낸다", async () => {
   const originalFetch = globalThis.fetch;
   const mockFetch: typeof fetch = async (_input, init) => {
     assert.ok(init?.body instanceof FormData);
-    assert.equal(init.body.get("language"), "si");
-    return Response.json({ text: "ඔයාගේ නම මොකක්ද?" });
+    assert.equal(init.body.get("language"), "ko");
+    return Response.json({ text: "안녕하세요" });
   };
   globalThis.fetch = mockFetch;
   try {
     assert.equal(
-      await rescueTranscribe({ pcm: Buffer.alloc(9600), key: "test", prompt: "test", language: "si" }),
-      "ඔයාගේ නම මොකක්ද?",
+      await rescueTranscribe({ pcm: Buffer.alloc(9600), key: "test", prompt: "test", language: "ko" }),
+      "안녕하세요",
     );
   } finally {
     globalThis.fetch = originalFetch;

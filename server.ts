@@ -33,7 +33,12 @@ import {
   localHttpsPort,
   openaiRealtimeTranscribeUrl,
 } from "@/lib/env";
-import { hasScriptEvidence, scriptLanguageOf } from "@/lib/script-language";
+import {
+  hasCleanSinhalaScript,
+  hasScriptEvidence,
+  needsSinhalaRescue,
+  scriptLanguageOf,
+} from "@/lib/script-language";
 import { ensureLocalTranscriptionRuntime, localTranscriptionConfigured } from "@/lib/local-runtime";
 import { transcribeLocalPcm } from "@/lib/local-transcription";
 import type { LanguageCode } from "@/lib/languages";
@@ -413,24 +418,37 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
       !scripted && detected && hasScriptEvidence(body, detected) === false,
     );
     const fixedLang = selectedLang ?? (target.mode === "single" ? target.page.lang : null);
+    const fixedPrimary = fixedLang?.toLowerCase().split("-")[0] ?? null;
     const wrongFixedScript = Boolean(
-      fixedLang && hasScriptEvidence(body, fixedLang) === false,
+      fixedLang &&
+        (fixedPrimary === "si"
+          ? needsSinhalaRescue(body)
+          : hasScriptEvidence(body, fixedLang) === false),
     );
     if ((usedFallback || conflict || contradicted || wrongFixedScript) && rescueEnabled && sessionKey) {
       if (turnPcm && turnPcm.byteLength <= RESCUE_MAX_BYTES) {
-        const forcedLanguage = wrongFixedScript ? fixedLang ?? undefined : undefined;
+        const rescueLang = wrongFixedScript ? fixedLang ?? undefined : undefined;
+        // `language=si` 는 배치 API도 400으로 거부한다. 실시간 힌트와 같은
+        // 지원 목록을 쓰고, 미지원 언어는 이미 강한 프롬프트에만 맡긴다.
+        const apiLanguage = rescueLang && splitTranscribeHintLangs([rescueLang]).supported.length
+          ? rescueLang.toLowerCase().split("-")[0]
+          : undefined;
         const rescued = await rescueTranscribe({
           pcm: turnPcm,
           key: sessionKey,
           prompt: rescuePrompt,
-          language: forcedLanguage?.toLowerCase().split("-")[0],
+          language: apiLanguage,
         });
         let rescueStatus = "failed";
         if (rescued) {
           // 언어를 고정한 재전사는 그 문자가 실제로 나온 경우만, 자동 재전사는
           // 문자 증거가 세션 언어 하나를 가리킨 경우만 받아들인다.
-          const rescuedLang = forcedLanguage
-            ? hasScriptEvidence(rescued, forcedLanguage) === true ? forcedLanguage : null
+          const rescuedLang = rescueLang
+            ? (rescueLang.toLowerCase().split("-")[0] === "si"
+                ? hasCleanSinhalaScript(rescued)
+                : hasScriptEvidence(rescued, rescueLang) === true)
+              ? rescueLang
+              : null
             : scriptLanguageOf(rescued, target.languages);
           if (rescuedLang) {
             body = rescued;

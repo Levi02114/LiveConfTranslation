@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { hasScriptEvidence, scriptLanguageOf } from "./script-language";
+import {
+  hasCleanSinhalaScript,
+  hasScriptEvidence,
+  needsSinhalaRescue,
+  scriptLanguageOf,
+} from "./script-language";
 
 const CANDIDATES = ["ko", "vi", "th", "si"];
 
@@ -41,4 +46,13 @@ test("hasScriptEvidence: g 플래그 정규식을 재사용해도 결과가 흔�
   assert.equal(hasScriptEvidence("안녕", "ko"), true);
   assert.equal(hasScriptEvidence("abc", "ko"), false);
   assert.equal(hasScriptEvidence("안녕", "ko"), true);
+});
+
+test("싱할라어에 다른 문자나 로마자가 섞이면 보정하고 깨끗한 결과만 채택한다", () => {
+  assert.equal(needsSinhalaRescue("ඔයාගේ නම මොකක්ද?"), false);
+  assert.equal(needsSinhalaRescue("とかって ඔයාගේ නම මොකක්ද?"), true);
+  assert.equal(needsSinhalaRescue("වරෙ saha ආයතනයන්"), true);
+  assert.equal(needsSinhalaRescue("oyage nama mokadda"), true);
+  assert.equal(hasCleanSinhalaScript("OpenAI ගැන කතා කරමු"), true);
+  assert.equal(hasCleanSinhalaScript("とかって ඔයාගේ නම මොකක්ද?"), false);
 });

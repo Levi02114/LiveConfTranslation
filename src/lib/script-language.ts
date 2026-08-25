@@ -29,6 +29,23 @@ export function hasScriptEvidence(text: string, lang: LanguageCode): boolean | n
   return new RegExp(range.re.source).test(text);
 }
 
+const NON_SINHALA_SCRIPT_RE =
+  /[\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F\u0E00-\u0E7F\u3040-\u30FF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\u0780-\u07BF]/;
+
+/** 싱할라어 고정 입력이 다른 문자나 로마자로 새면 배치 전사를 다시 태운다. */
+export function needsSinhalaRescue(text: string): boolean {
+  return (
+    hasScriptEvidence(text, "si") !== true ||
+    NON_SINHALA_SCRIPT_RE.test(text) ||
+    /[A-Za-z]{2,}/.test(text)
+  );
+}
+
+/** 보정 결과는 싱할라 문자가 있고 다른 고유 문자가 없을 때만 채택한다. */
+export function hasCleanSinhalaScript(text: string): boolean {
+  return hasScriptEvidence(text, "si") === true && !NON_SINHALA_SCRIPT_RE.test(text);
+}
+
 /**
  * 텍스트의 문자 증거가 가리키는 세션 언어. 증거가 없거나 후보에 없으면 null.
  * `candidates` 는 세션의 입력 언어 코드 목록이다.
