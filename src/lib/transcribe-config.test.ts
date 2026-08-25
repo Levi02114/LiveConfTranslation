@@ -44,9 +44,9 @@ test("지역 태그는 기본 하위 태그로 환산해 힌트를 본다", () =
   const { supported, unsupported } = splitTranscribeHintLangs(["zh-CN", "si"]);
   assert.deepEqual(supported, ["zh-CN"]);
   assert.deepEqual(unsupported, ["si"]);
-  // API 에 볼 때는 기본 태그만 낸다.
+  // 일부 후보만 보내면 si 를 배제하므로 힌트를 전부 생략한다.
   const params = buildCombinedSessionParams(["zh-CN", "si"], "zh-CN", "t");
-  assert.deepEqual(params.languages, ["zh"]);
+  assert.deepEqual(params.languages, []);
 });
 
 test("미지원 언어만 있으면 languages 를 비운다", () => {
@@ -71,5 +71,9 @@ test("th 단일 세션은 gpt-transcribe 로 라우팅하고 delay 를 빼고, k
   assert.deepEqual(singleTranscriptionProfile("vi"), {
     model: "gpt-live-transcribe",
     transport: "webrtc",
+  });
+  assert.deepEqual(singleTranscriptionProfile("si"), {
+    model: "gpt-live-transcribe",
+    transport: "websocket",
   });
 });

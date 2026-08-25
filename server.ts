@@ -412,13 +412,26 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
     const contradicted = Boolean(
       !scripted && detected && hasScriptEvidence(body, detected) === false,
     );
-    if ((usedFallback || conflict || contradicted) && rescueEnabled && sessionKey) {
+    const fixedLang = selectedLang ?? (target.mode === "single" ? target.page.lang : null);
+    const wrongFixedScript = Boolean(
+      fixedLang && hasScriptEvidence(body, fixedLang) === false,
+    );
+    if ((usedFallback || conflict || contradicted || wrongFixedScript) && rescueEnabled && sessionKey) {
       if (turnPcm && turnPcm.byteLength <= RESCUE_MAX_BYTES) {
-        const rescued = await rescueTranscribe({ pcm: turnPcm, key: sessionKey, prompt: rescuePrompt });
+        const forcedLanguage = wrongFixedScript ? fixedLang ?? undefined : undefined;
+        const rescued = await rescueTranscribe({
+          pcm: turnPcm,
+          key: sessionKey,
+          prompt: rescuePrompt,
+          language: forcedLanguage?.toLowerCase().split("-")[0],
+        });
         let rescueStatus = "failed";
         if (rescued) {
-          // 배치 결과는 문자 증거가 세션 언어를 가리킬 때만 받아들인다.
-          const rescuedLang = scriptLanguageOf(rescued, target.languages);
+          // 언어를 고정한 재전사는 그 문자가 실제로 나온 경우만, 자동 재전사는
+          // 문자 증거가 세션 언어 하나를 가리킨 경우만 받아들인다.
+          const rescuedLang = forcedLanguage
+            ? hasScriptEvidence(rescued, forcedLanguage) === true ? forcedLanguage : null
+            : scriptLanguageOf(rescued, target.languages);
           if (rescuedLang) {
             body = rescued;
             lang = rescuedLang;
@@ -632,11 +645,13 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
         fail("speaker-required");
         return;
       }
+      const rescueLangs = selectedLang
+        ? [selectedLang]
+        : target.mode === "single"
+          ? [target.page.lang]
+          : target.languages;
       rescueEnabled =
-        !local &&
-        target.mode === "combined" &&
-        !selectedLang &&
-        splitTranscribeHintLangs(target.languages).unsupported.length > 0;
+        !local && splitTranscribeHintLangs(rescueLangs).unsupported.length > 0;
       rescueAudio = rescueEnabled ? new RescueAudioTurns() : null;
       started = true;
       start();

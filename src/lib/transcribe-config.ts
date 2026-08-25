@@ -166,7 +166,11 @@ export function buildCombinedSessionParams(
     .join(", ");
   return {
     model: "gpt-transcribe",
-    languages: supported.map((code) => code.toLowerCase().split("-")[0]),
+    // 후보 일부만 보내면 si 같은 미지원 언어보다 나머지 언어를 우선하게 된다.
+    // 하나라도 미지원이면 전체 후보를 프롬프트에만 두고 자동 감지한다.
+    languages: unsupported.length
+      ? []
+      : supported.map((code) => code.toLowerCase().split("-")[0]),
     keywords: glossaryTermsFor(ordered, 100),
     prompt:
       `Live session title/context: "${cleanTitle(title)}". ` +

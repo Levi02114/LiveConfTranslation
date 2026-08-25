@@ -6,6 +6,7 @@ import {
   RescueAudioTurns,
   RESCUE_BUFFER_MAX_BYTES,
   RESCUE_MAX_BYTES,
+  rescueTranscribe,
 } from "@/lib/transcription-rescue";
 
 test("WAV 헤더가 PCM 길이와 24kHz mono s16le 를 정확히 담는다", () => {
@@ -51,4 +52,22 @@ test("60초 보관 한도를 벗어난 턴은 rescue 만 생략한다", () => {
   turns.append(Buffer.from([2]));
   turns.bindCommit("old");
   assert.equal(turns.take("old"), null);
+});
+
+test("언어 고정 재전사는 ISO-639-1 language 를 보낸다", async () => {
+  const originalFetch = globalThis.fetch;
+  const mockFetch: typeof fetch = async (_input, init) => {
+    assert.ok(init?.body instanceof FormData);
+    assert.equal(init.body.get("language"), "si");
+    return Response.json({ text: "ඔයාගේ නම මොකක්ද?" });
+  };
+  globalThis.fetch = mockFetch;
+  try {
+    assert.equal(
+      await rescueTranscribe({ pcm: Buffer.alloc(9600), key: "test", prompt: "test", language: "si" }),
+      "ඔයාගේ නම මොකක්ද?",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

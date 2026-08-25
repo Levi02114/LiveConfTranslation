@@ -98,18 +98,20 @@ export function pcm24ToWav(pcm: Buffer): Buffer {
 }
 
 /**
- * 배치 전사로 턴을 다시 듣는다. 언어를 고정하지 않는다 — 잘못 고정하면 그 언어
- * 문자로 그럴듯한 환각이 나와 문자 검증이 무너진다. 실패·타임아웃이면 null.
+ * 배치 전사로 턴을 다시 듣는다. 자동 감지는 언어를 고정하지 않고, 사용자가
+ * 언어를 직접 선택한 입력만 ISO-639-1 언어 힌트를 보낸다. 실패·타임아웃이면 null.
  */
 export async function rescueTranscribe(opts: {
   pcm: Buffer;
   key: string;
   prompt: string;
+  language?: string;
 }): Promise<string | null> {
   try {
     const form = new FormData();
     form.set("model", "gpt-4o-transcribe");
     form.set("prompt", opts.prompt);
+    if (opts.language) form.set("language", opts.language);
     form.set("file", new Blob([new Uint8Array(pcm24ToWav(opts.pcm))], { type: "audio/wav" }), "turn.wav");
     const response = await fetch(`${openaiBaseUrl()}/audio/transcriptions`, {
       method: "POST",
