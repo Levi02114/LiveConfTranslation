@@ -22,6 +22,34 @@ type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 const chatResponseSchema = z.object({
   choices: z.array(z.object({ message: z.object({ content: z.string() }) })),
 });
+const openaiErrorSchema = z.object({
+  error: z.object({
+    code: z.string().nullish(),
+    type: z.string().nullish(),
+  }).optional(),
+});
+const BILLING_ERROR_CODES = new Set([
+  "credit_balance_exhausted",
+  "organization_spend_limit_exceeded",
+  "project_spend_limit_exceeded",
+  "organization_usage_limit_exceeded",
+]);
+
+/** OpenAI는 결제 부족과 순간 속도 제한을 모두 HTTP 429로 반환한다. */
+export function classifyOpenAiError(status: number, detail: string): string | undefined {
+  if (status !== 429) return undefined;
+  try {
+    const payload = openaiErrorSchema.safeParse(JSON.parse(detail));
+    const code = payload.success ? payload.data.error?.code : null;
+    const type = payload.success ? payload.data.error?.type : null;
+    if ((code && BILLING_ERROR_CODES.has(code)) || type === "insufficient_quota") {
+      return "openai-billing-limit";
+    }
+  } catch {
+    // JSON이 아니어도 429라는 사실로 일반 요청 제한 안내는 할 수 있다.
+  }
+  return "openai-rate-limit";
+}
 
 /**
  * OpenAI 모델을 쓰는 LLM 번역.
@@ -150,10 +178,17 @@ async function requestChat(
 
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
-    const hint = response.status === 429 ? " (요청 한도 초과)" : "";
+    const code = classifyOpenAiError(response.status, detail);
+    const hint = code === "openai-billing-limit"
+      ? " (크레딧 또는 사용 한도 소진)"
+      : code === "openai-rate-limit"
+        ? " (요청 한도 초과)"
+        : "";
     throw new TranslationError(
       `OpenAI 가 ${response.status} 를 반환했습니다${hint}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
       "openai",
+      undefined,
+      code,
     );
   }
 

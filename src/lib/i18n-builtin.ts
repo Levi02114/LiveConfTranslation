@@ -30,6 +30,8 @@ export type UiStrings = {
     capture: string;
   };
   input: {
+    language: string;
+    autoLanguage: string;
     placeholder: string;
     send: string;
     sending: string;
@@ -63,6 +65,7 @@ export type UiStrings = {
     permission: string;
     lost: string;
     startFailed: string;
+    invalidLanguage: string;
     fallback: string;
     level: string;
     levelTooQuiet: string;
@@ -74,6 +77,8 @@ export type UiStrings = {
     lastInput: string;
     lastOutput: string;
     failed: string;
+    openaiBilling: string;
+    openaiRateLimit: string;
     newMessages: string;
   };
   meeting: { closed: string };
@@ -98,10 +103,36 @@ export type UiStrings = {
   error: { sendFailed: string; loadFailed: string; notFound: string };
 };
 
+/** 저장된 제공자 오류 코드를 현재 화면 언어의 안전한 안내로 바꾼다. */
+export function translationFailureText(
+  error: string | null | undefined,
+  strings: UiStrings["status"],
+): string {
+  const normalized = error?.toLowerCase() ?? "";
+  if (
+    error === "openai-billing-limit" ||
+    [
+      "credit_balance_exhausted",
+      "organization_spend_limit_exceeded",
+      "project_spend_limit_exceeded",
+      "organization_usage_limit_exceeded",
+      "insufficient_quota",
+      "current quota",
+    ].some((marker) => normalized.includes(marker))
+  ) return strings.openaiBilling;
+  if (
+    error === "openai-rate-limit" ||
+    (normalized.includes("openai") && normalized.includes("429"))
+  ) return strings.openaiRateLimit;
+  return strings.failed;
+}
+
 const ko: UiStrings = {
   connection: { connected: "연결됨", reconnecting: "다시 연결 중", disconnected: "연결 끊김" },
   role: { input: "입력", output: "출력", combined: "통합 조회", combinedInput: "통합 입력", capture: "음성 수집" },
   input: {
+    language: "입력 언어",
+    autoLanguage: "자동 감지",
     placeholder: "세션 내용을 입력하세요",
     send: "보내기",
     sending: "보내는 중",
@@ -135,6 +166,7 @@ const ko: UiStrings = {
     permission: "마이크를 사용할 수 없습니다",
     lost: "음성 수집 연결이 끊겼습니다",
     startFailed: "전사를 시작하지 못했습니다",
+    invalidLanguage: "선택한 입력 언어를 사용할 수 없습니다",
     fallback: "언어를 확인하지 못해 {language}(으)로 처리했습니다",
     level: "입력 음량",
     levelTooQuiet: "소리가 너무 작습니다 — 마이크를 가까이 하세요",
@@ -146,6 +178,8 @@ const ko: UiStrings = {
     lastInput: "마지막 입력",
     lastOutput: "마지막 번역",
     failed: "번역 실패",
+    openaiBilling: "OpenAI API 크레딧 또는 사용 한도가 소진되었습니다. OpenAI 결제 및 사용 한도를 확인해 주세요.",
+    openaiRateLimit: "OpenAI API 요청 한도를 일시적으로 초과했습니다. 잠시 후 다시 시도해 주세요.",
     newMessages: "새 문장",
   },
   meeting: { closed: "종료된 세션입니다" },
@@ -182,6 +216,8 @@ const vi: UiStrings = {
   },
   role: { input: "Nhập liệu", output: "Bản dịch", combined: "Xem tổng hợp", combinedInput: "Nhập liệu tổng hợp", capture: "Thu âm" },
   input: {
+    language: "Ngôn ngữ nhập",
+    autoLanguage: "Tự động nhận diện",
     placeholder: "Nhập nội dung phiên",
     send: "Gửi",
     sending: "Đang gửi",
@@ -215,6 +251,7 @@ const vi: UiStrings = {
     permission: "Không thể sử dụng micrô",
     lost: "Kết nối thu âm đã bị ngắt",
     startFailed: "Không thể bắt đầu phiên âm",
+    invalidLanguage: "Không thể sử dụng ngôn ngữ nhập đã chọn",
     fallback: "Không xác định được ngôn ngữ nên đã xử lý bằng {language}",
     level: "Âm lượng đầu vào",
     levelTooQuiet: "Âm thanh quá nhỏ — hãy lại gần micrô hơn",
@@ -226,6 +263,8 @@ const vi: UiStrings = {
     lastInput: "Lần nhập cuối",
     lastOutput: "Bản dịch cuối",
     failed: "Dịch thất bại",
+    openaiBilling: "Tín dụng hoặc hạn mức sử dụng OpenAI API đã hết. Hãy kiểm tra phần thanh toán và hạn mức sử dụng OpenAI.",
+    openaiRateLimit: "Đã tạm thời vượt quá giới hạn yêu cầu OpenAI API. Hãy thử lại sau ít phút.",
     newMessages: "Câu mới",
   },
   meeting: { closed: "Phiên đã kết thúc" },
@@ -266,6 +305,8 @@ const th: UiStrings = {
   },
   role: { input: "ป้อนข้อมูล", output: "คำแปล", combined: "มุมมองรวม", combinedInput: "ป้อนข้อมูลรวม", capture: "รับเสียง" },
   input: {
+    language: "ภาษาที่ป้อน",
+    autoLanguage: "ตรวจจับอัตโนมัติ",
     placeholder: "พิมพ์เนื้อหาเซสชัน",
     send: "ส่ง",
     sending: "กำลังส่ง",
@@ -299,6 +340,7 @@ const th: UiStrings = {
     permission: "ไม่สามารถใช้ไมโครโฟนได้",
     lost: "การเชื่อมต่อรับเสียงถูกตัด",
     startFailed: "ไม่สามารถเริ่มการถอดเสียงได้",
+    invalidLanguage: "ไม่สามารถใช้ภาษาที่เลือกได้",
     fallback: "ไม่สามารถระบุภาษาได้ จึงประมวลผลเป็น {language}",
     level: "ระดับเสียงที่เข้า",
     levelTooQuiet: "เสียงเบาเกินไป — โปรดเข้าใกล้ไมโครโฟน",
@@ -310,6 +352,8 @@ const th: UiStrings = {
     lastInput: "ป้อนข้อมูลล่าสุด",
     lastOutput: "คำแปลล่าสุด",
     failed: "แปลไม่สำเร็จ",
+    openaiBilling: "เครดิตหรือวงเงินการใช้งาน OpenAI API หมดแล้ว โปรดตรวจสอบการเรียกเก็บเงินและขีดจำกัดการใช้งาน OpenAI",
+    openaiRateLimit: "เกินขีดจำกัดคำขอ OpenAI API ชั่วคราว โปรดลองอีกครั้งในภายหลัง",
     newMessages: "ข้อความใหม่",
   },
   meeting: { closed: "เซสชันสิ้นสุดแล้ว" },
@@ -346,6 +390,8 @@ const si: UiStrings = {
   },
   role: { input: "ඇතුළත් කිරීම", output: "පරිවර්තනය", combined: "ඒකාබද්ධ දසුන", combinedInput: "ඒකාබද්ධ ඇතුළත් කිරීම", capture: "හඬ ග්‍රහණය" },
   input: {
+    language: "ආදාන භාෂාව",
+    autoLanguage: "ස්වයංක්‍රීයව හඳුනාගන්න",
     placeholder: "සැසි අන්තර්ගතය ටයිප් කරන්න",
     send: "යවන්න",
     sending: "යවමින්",
@@ -379,6 +425,7 @@ const si: UiStrings = {
     permission: "මයික්‍රෆෝනය භාවිත කළ නොහැක",
     lost: "හඬ ග්‍රහණ සම්බන්ධතාව බිඳී ඇත",
     startFailed: "පිටපත් කිරීම ආරම්භ කළ නොහැකි විය",
+    invalidLanguage: "තෝරාගත් ආදාන භාෂාව භාවිත කළ නොහැක",
     fallback: "භාෂාව හඳුනාගත නොහැකි නිසා {language} ලෙස සැකසීය",
     level: "ආදාන ශබ්ද මට්ටම",
     levelTooQuiet: "හඬ ඉතා මෘදුයි — මයික්‍රෆෝනයට ළං වන්න",
@@ -390,6 +437,8 @@ const si: UiStrings = {
     lastInput: "අවසන් ඇතුළත් කිරීම",
     lastOutput: "අවසන් පරිවර්තනය",
     failed: "පරිවර්තනය අසාර්ථකයි",
+    openaiBilling: "OpenAI API ණය හෝ භාවිත සීමාව අවසන් වී ඇත. OpenAI බිල්පත් සහ භාවිත සීමා පරීක්ෂා කරන්න.",
+    openaiRateLimit: "OpenAI API ඉල්ලීම් සීමාව තාවකාලිකව ඉක්මවා ඇත. මඳ වේලාවකින් නැවත උත්සාහ කරන්න.",
     newMessages: "නව වාක්‍ය",
   },
   meeting: { closed: "සැසිය අවසන් වී ඇත" },
@@ -517,6 +566,7 @@ export type AdminStrings = {
     unsupportedEngine: string;
     pages: string;
     participantGuide: string;
+    inputGuide: string;
     input: string;
     output: string;
     capture: string;
@@ -587,6 +637,40 @@ export type AdminStrings = {
     remove: string;
     saveFailed: string;
     removeFailed: string;
+  };
+  openaiUsage: {
+    button: string;
+    title: string;
+    close: string;
+    description: string;
+    adminKey: string;
+    configured: string;
+    notConfigured: string;
+    placeholder: string;
+    replacePlaceholder: string;
+    save: string;
+    saving: string;
+    remove: string;
+    saveFailed: string;
+    removeFailed: string;
+    keyRequired: string;
+    keyInvalid: string;
+    permissionDenied: string;
+    rateLimited: string;
+    loadFailed: string;
+    period: string;
+    daily: string;
+    weekly: string;
+    loading: string;
+    empty: string;
+    input: string;
+    cached: string;
+    output: string;
+    requests: string;
+    cost: string;
+    unknownCost: string;
+    organizationNote: string;
+    pricingNote: string;
   };
   languages: {
     add: string;
@@ -719,6 +803,7 @@ const adminKo: AdminStrings = {
       "{engine}은(는) {languages}을(를) 지원하지 않습니다 · 폴백 엔진: {fallback}",
     pages: "페이지 URL — 참석자에게 배포",
     participantGuide: "참가자 안내",
+    inputGuide: "입력자 안내",
     input: "입력",
     output: "출력",
     capture: "음성 수집",
@@ -794,6 +879,40 @@ const adminKo: AdminStrings = {
     remove: "삭제",
     saveFailed: "키를 저장하지 못했습니다",
     removeFailed: "키를 지우지 못했습니다",
+  },
+  openaiUsage: {
+    button: "사용량 조회",
+    title: "OpenAI 사용량",
+    close: "닫기",
+    description: "조직 Usage API에서 모델별 토큰과 예상 비용을 조회합니다.",
+    adminKey: "OpenAI Admin API 키",
+    configured: "등록됨",
+    notConfigured: "등록 필요",
+    placeholder: "Admin API 키",
+    replacePlaceholder: "새 Admin API 키로 덮어쓰기",
+    save: "저장",
+    saving: "저장 중",
+    remove: "삭제",
+    saveFailed: "Admin API 키를 저장하지 못했습니다",
+    removeFailed: "Admin API 키를 지우지 못했습니다",
+    keyRequired: "사용량 조회용 Admin API 키를 먼저 등록해 주세요.",
+    keyInvalid: "Admin API 키가 올바르지 않습니다.",
+    permissionDenied: "이 키에는 조직 사용량을 조회할 권한이 없습니다.",
+    rateLimited: "OpenAI 사용량 조회 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.",
+    loadFailed: "OpenAI 사용량을 불러오지 못했습니다.",
+    period: "조회 기간",
+    daily: "일간 · 최근 24시간",
+    weekly: "주간 · 최근 7일",
+    loading: "사용량을 불러오는 중",
+    empty: "선택한 기간의 사용량이 없습니다.",
+    input: "입력 토큰",
+    cached: "캐시 입력",
+    output: "출력 토큰",
+    requests: "요청 수",
+    cost: "예상 비용",
+    unknownCost: "계산 불가",
+    organizationNote: "조회값은 이 앱만이 아니라 Admin API 키가 속한 OpenAI 조직 전체 사용량입니다.",
+    pricingNote: "예상 비용은 2026-08-25에 확인한 OpenAI 공식 모델별 Standard 요금으로 계산합니다. 배치·서비스 등급·장문 컨텍스트·가격 변경에 따라 실제 청구액과 다를 수 있습니다.",
   },
   languages: {
     add: "언어 추가",
@@ -927,6 +1046,7 @@ const adminVi: AdminStrings = {
       "{engine} không hỗ trợ {languages} · Công cụ dự phòng: {fallback}",
     pages: "URL trang — gửi cho người tham dự",
     participantGuide: "Hướng dẫn người tham dự",
+    inputGuide: "Hướng dẫn người nhập",
     input: "Nhập liệu",
     output: "Bản dịch",
     capture: "Thu âm",
@@ -1002,6 +1122,40 @@ const adminVi: AdminStrings = {
     remove: "Xóa",
     saveFailed: "Không lưu được khóa",
     removeFailed: "Không xóa được khóa",
+  },
+  openaiUsage: {
+    button: "Xem mức sử dụng",
+    title: "Mức sử dụng OpenAI",
+    close: "Đóng",
+    description: "Xem số token và chi phí ước tính theo mô hình từ API Usage của tổ chức.",
+    adminKey: "Khóa OpenAI Admin API",
+    configured: "Đã đăng ký",
+    notConfigured: "Cần đăng ký",
+    placeholder: "Khóa Admin API",
+    replacePlaceholder: "Ghi đè bằng khóa Admin API mới",
+    save: "Lưu",
+    saving: "Đang lưu",
+    remove: "Xóa",
+    saveFailed: "Không lưu được khóa Admin API",
+    removeFailed: "Không xóa được khóa Admin API",
+    keyRequired: "Hãy đăng ký khóa Admin API để xem mức sử dụng.",
+    keyInvalid: "Khóa Admin API không hợp lệ.",
+    permissionDenied: "Khóa này không có quyền xem mức sử dụng của tổ chức.",
+    rateLimited: "Đã vượt giới hạn truy vấn mức sử dụng. Hãy thử lại sau.",
+    loadFailed: "Không tải được mức sử dụng OpenAI.",
+    period: "Khoảng thời gian",
+    daily: "Ngày · 24 giờ qua",
+    weekly: "Tuần · 7 ngày qua",
+    loading: "Đang tải mức sử dụng",
+    empty: "Không có mức sử dụng trong khoảng đã chọn.",
+    input: "Token đầu vào",
+    cached: "Đầu vào đã lưu đệm",
+    output: "Token đầu ra",
+    requests: "Số yêu cầu",
+    cost: "Chi phí ước tính",
+    unknownCost: "Không tính được",
+    organizationNote: "Số liệu là tổng mức sử dụng của toàn bộ tổ chức OpenAI chứa khóa Admin API, không chỉ riêng ứng dụng này.",
+    pricingNote: "Chi phí ước tính được tính theo giá Standard chính thức của từng mô hình OpenAI, được kiểm tra ngày 25-08-2026. Hóa đơn thực tế có thể khác do batch, hạng dịch vụ, ngữ cảnh dài hoặc thay đổi giá.",
   },
   languages: {
     add: "Thêm ngôn ngữ",
@@ -1135,6 +1289,7 @@ const adminTh: AdminStrings = {
       "{engine} ไม่รองรับ {languages} · เครื่องมือสำรอง: {fallback}",
     pages: "URL หน้า — แจกจ่ายให้ผู้เข้าร่วม",
     participantGuide: "คู่มือผู้เข้าร่วม",
+    inputGuide: "คู่มือผู้ป้อนข้อมูล",
     input: "ป้อนข้อมูล",
     output: "คำแปล",
     capture: "รับเสียง",
@@ -1210,6 +1365,40 @@ const adminTh: AdminStrings = {
     remove: "ลบ",
     saveFailed: "บันทึกคีย์ไม่สำเร็จ",
     removeFailed: "ลบคีย์ไม่สำเร็จ",
+  },
+  openaiUsage: {
+    button: "ดูการใช้งาน",
+    title: "การใช้งาน OpenAI",
+    close: "ปิด",
+    description: "ดูจำนวนโทเค็นและค่าใช้จ่ายโดยประมาณแยกตามโมเดลจาก Usage API ขององค์กร",
+    adminKey: "คีย์ OpenAI Admin API",
+    configured: "ลงทะเบียนแล้ว",
+    notConfigured: "ต้องลงทะเบียน",
+    placeholder: "คีย์ Admin API",
+    replacePlaceholder: "เขียนทับด้วยคีย์ Admin API ใหม่",
+    save: "บันทึก",
+    saving: "กำลังบันทึก",
+    remove: "ลบ",
+    saveFailed: "บันทึกคีย์ Admin API ไม่สำเร็จ",
+    removeFailed: "ลบคีย์ Admin API ไม่สำเร็จ",
+    keyRequired: "โปรดลงทะเบียนคีย์ Admin API สำหรับดูการใช้งานก่อน",
+    keyInvalid: "คีย์ Admin API ไม่ถูกต้อง",
+    permissionDenied: "คีย์นี้ไม่มีสิทธิ์ดูการใช้งานขององค์กร",
+    rateLimited: "เกินขีดจำกัดการดูการใช้งาน โปรดลองอีกครั้งภายหลัง",
+    loadFailed: "โหลดการใช้งาน OpenAI ไม่สำเร็จ",
+    period: "ช่วงเวลา",
+    daily: "รายวัน · 24 ชั่วโมงล่าสุด",
+    weekly: "รายสัปดาห์ · 7 วันล่าสุด",
+    loading: "กำลังโหลดการใช้งาน",
+    empty: "ไม่มีการใช้งานในช่วงเวลาที่เลือก",
+    input: "โทเค็นขาเข้า",
+    cached: "ขาเข้าจากแคช",
+    output: "โทเค็นขาออก",
+    requests: "จำนวนคำขอ",
+    cost: "ค่าใช้จ่ายโดยประมาณ",
+    unknownCost: "คำนวณไม่ได้",
+    organizationNote: "ข้อมูลนี้เป็นการใช้งานรวมของทั้งองค์กร OpenAI ที่คีย์ Admin API สังกัด ไม่ใช่เฉพาะแอปนี้",
+    pricingNote: "ค่าใช้จ่ายโดยประมาณคำนวณจากราคา Standard อย่างเป็นทางการของแต่ละโมเดล OpenAI ที่ตรวจสอบเมื่อ 25-08-2026 ยอดจริงอาจต่างกันตามแบตช์ ระดับบริการ บริบทยาว หรือการเปลี่ยนราคา",
   },
   languages: {
     add: "เพิ่มภาษา",
@@ -1343,6 +1532,7 @@ const adminSi: AdminStrings = {
       "{engine} {languages} සඳහා සහය නොදක්වයි · විකල්ප එන්ජිම: {fallback}",
     pages: "පිටු URL — සහභාගිවන්නන්ට බෙදා දෙන්න",
     participantGuide: "සහභාගිවන්නන්ගේ මාර්ගෝපදේශය",
+    inputGuide: "ඇතුළත් කරන්නන්ගේ මාර්ගෝපදේශය",
     input: "ඇතුළත් කිරීම",
     output: "පරිවර්තනය",
     capture: "හඬ ග්‍රහණය",
@@ -1418,6 +1608,40 @@ const adminSi: AdminStrings = {
     remove: "මකන්න",
     saveFailed: "යතුර සුරැකිය නොහැකි විය",
     removeFailed: "යතුර මැකිය නොහැකි විය",
+  },
+  openaiUsage: {
+    button: "භාවිතය බලන්න",
+    title: "OpenAI භාවිතය",
+    close: "වසන්න",
+    description: "සංවිධාන Usage API මඟින් ආකෘති අනුව ටෝකන සහ ඇස්තමේන්තුගත පිරිවැය බලන්න.",
+    adminKey: "OpenAI Admin API යතුර",
+    configured: "ලියාපදිංචියි",
+    notConfigured: "ලියාපදිංචිය අවශ්‍යයි",
+    placeholder: "Admin API යතුර",
+    replacePlaceholder: "නව Admin API යතුරකින් ප්‍රතිස්ථාපනය",
+    save: "සුරකින්න",
+    saving: "සුරකිමින්",
+    remove: "මකන්න",
+    saveFailed: "Admin API යතුර සුරැකිය නොහැකි විය",
+    removeFailed: "Admin API යතුර මැකිය නොහැකි විය",
+    keyRequired: "භාවිතය බැලීමට Admin API යතුරක් ලියාපදිංචි කරන්න.",
+    keyInvalid: "Admin API යතුර වලංගු නොවේ.",
+    permissionDenied: "මෙම යතුරට සංවිධාන භාවිතය බැලීමේ අවසර නැත.",
+    rateLimited: "භාවිතය විමසීමේ සීමාව ඉක්මවා ඇත. පසුව නැවත උත්සාහ කරන්න.",
+    loadFailed: "OpenAI භාවිතය පූරණය කළ නොහැකි විය.",
+    period: "කාල පරාසය",
+    daily: "දිනපතා · පසුගිය පැය 24",
+    weekly: "සතිපතා · පසුගිය දින 7",
+    loading: "භාවිතය පූරණය කරමින්",
+    empty: "තෝරාගත් කාලයට භාවිතයක් නැත.",
+    input: "ආදාන ටෝකන",
+    cached: "හැඹිලි ආදානය",
+    output: "ප්‍රතිදාන ටෝකන",
+    requests: "ඉල්ලීම්",
+    cost: "ඇස්තමේන්තුගත පිරිවැය",
+    unknownCost: "ගණනය කළ නොහැක",
+    organizationNote: "මෙය මෙම යෙදුමට පමණක් නොව Admin API යතුර අයත් මුළු OpenAI සංවිධානයේම භාවිතයයි.",
+    pricingNote: "ඇස්තමේන්තුගත පිරිවැය 2026-08-25 දින තහවුරු කළ එක් එක් OpenAI ආකෘතියේ නිල Standard මිල අනුව ගණනය කෙරේ. batch, සේවා මට්ටම, දිගු සන්දර්භ හෝ මිල වෙනස්වීම් නිසා සැබෑ බිල වෙනස් විය හැක.",
   },
   languages: {
     add: "භාෂාවක් එක් කරන්න",

@@ -15,7 +15,7 @@ import {
 
 type Params = { params: Promise<{ token: string }> };
 
-/** 일반 참석자가 자기 언어의 출력 페이지를 고르는 저대역폭 안내 화면. */
+/** 입력자가 자동 감지 또는 자기 입력 언어 페이지를 고르는 저대역폭 안내 화면. */
 export async function GET(_request: Request, { params }: Params) {
   const { token } = await params;
   const guidePage = getPageByToken(token);
@@ -29,30 +29,42 @@ export async function GET(_request: Request, { params }: Params) {
   const registered = listLanguages().map((row) => row.code);
   const displayLang = toAdminLang((await cookies()).get(ADMIN_LANG_COOKIE)?.value, registered);
   const strings = getStrings(displayLang);
-  const outputPages = new Map(
-    getMeetingPages(meeting.id)
-      .filter((page) => page.kind === "output" && page.lang && isPageEnabled(page))
+  const pages = getMeetingPages(meeting.id).filter(isPageEnabled);
+  const inputPages = new Map(
+    pages
+      .filter((page) => page.kind === "input" && page.lang)
       .map((page) => [page.lang!, page]),
   );
-  const cards = getMeetingLanguageConfigs(meeting.id)
-    .filter((row) => row.outputEnabled)
-    .flatMap((row) => {
-      const page = outputPages.get(row.lang);
-      if (!page) return [];
-      const language = getLanguage(row.lang, displayLang);
-      return [{
-        href: `/out/${page.token}`,
-        lang: row.lang,
-        label: language.nativeName,
-        ariaLabel: `${strings.role.output}: ${language.nativeName}`,
-      }];
-    });
+  const combinedInput = pages.find((page) => page.kind === "combined-input");
+  const cards = [
+    ...(combinedInput
+      ? [{
+          href: `/in/all/${combinedInput.token}`,
+          lang: displayLang,
+          label: strings.input.autoLanguage,
+          ariaLabel: `${strings.role.combinedInput}: ${strings.input.autoLanguage}`,
+        }]
+      : []),
+    ...getMeetingLanguageConfigs(meeting.id)
+      .filter((row) => row.inputEnabled)
+      .flatMap((row) => {
+        const page = inputPages.get(row.lang);
+        if (!page) return [];
+        const language = getLanguage(row.lang, displayLang);
+        return [{
+          href: `/in/${page.token}`,
+          lang: row.lang,
+          label: language.nativeName,
+          ariaLabel: `${strings.role.input}: ${language.nativeName}`,
+        }];
+      }),
+  ];
   if (!cards.length) return new Response("Not Found", { status: 404 });
 
   return renderGuidePage({
     displayLang,
     meetingTitle: meeting.title,
-    roleTitle: strings.role.output,
+    roleTitle: strings.role.input,
     options: registered.map((code) => ({
       code,
       nativeName: getLanguage(code, displayLang).nativeName,

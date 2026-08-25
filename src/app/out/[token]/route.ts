@@ -1,4 +1,5 @@
 import { getStrings } from "@/lib/i18n";
+import { translationFailureText } from "@/lib/i18n-builtin";
 import { getLanguage, textDirection } from "@/lib/languages";
 import { formatClock } from "@/lib/log-format";
 import { getMeeting, getPageByToken, getRecentOutput, isPageEnabled } from "@/lib/repo";
@@ -30,7 +31,7 @@ export async function GET(request: Request, { params }: Params) {
       {
         lines: history
           .filter((line) => line.updatedAt >= since)
-          .map((line) => [line.messageId, line.body, line.status, line.createdAt, line.speakerName, line.revision, line.editedAt, line.updatedAt]),
+          .map((line) => [line.messageId, line.body, line.status, line.createdAt, line.speakerName, line.revision, line.editedAt, line.updatedAt, line.error]),
         closed: meeting.status === "closed",
         snapshotAt,
       },
@@ -48,6 +49,8 @@ export async function GET(request: Request, { params }: Params) {
       disconnected: strings.connection.disconnected,
       closed: strings.meeting.closed,
       failed: strings.status.failed,
+      openaiBilling: strings.status.openaiBilling,
+      openaiRateLimit: strings.status.openaiRateLimit,
       waiting: strings.status.waiting,
       newMessages: strings.status.newMessages,
       edited: strings.message.edited,
@@ -62,7 +65,7 @@ export async function GET(request: Request, { params }: Params) {
     .map(
       (line) => `<div class="line" data-id="${line.messageId}" data-revision="${line.revision}">
         <time>${formatClock(line.createdAt)}</time>
-        <p${line.status === "error" ? ' class="failed"' : ""}>${html(`${line.speakerName ? `(${line.speakerName}) ` : ""}${line.status === "ok" ? line.body : strings.status.failed}`)}${line.editedAt ? `<small class="edited">(${html(strings.message.edited)})</small>` : ""}</p>
+        <p${line.status === "error" ? ' class="failed"' : ""}>${html(`${line.speakerName ? `(${line.speakerName}) ` : ""}${line.status === "ok" ? line.body : translationFailureText(line.error, strings.status)}`)}${line.editedAt ? `<small class="edited">(${html(strings.message.edited)})</small>` : ""}</p>
       </div>`,
     )
     .join("");
@@ -127,8 +130,9 @@ const rows=new Map(),sizes=['sm','md','lg','xl','xxl'],labels=['80%','100%','125
 function clock(at){const d=new Date(at),p=n=>String(n).padStart(2,'0');return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())}
 function follow(){scroll.scrollTop=scroll.scrollHeight}function followSoon(){requestAnimationFrame(()=>requestAnimationFrame(follow))}function refollow(){stick=true;pending=0;latest.hidden=true;followSoon()}
 function mark(body,edited){body.querySelector('.edited')?.remove();if(edited){const note=document.createElement('small');note.className='edited';note.textContent='('+DATA.strings.edited+')';body.append(note)}}
-function add(message){let row=rows.get(message.messageId),fresh=!row,previous=row?Number(row.dataset.revision||0):-1;if(row&&message.revision<previous)return;if(!row&&message.t==='message'&&message.lang!==DATA.lang)return;waiting.hidden=true;if(!row){row=document.createElement('div');row.className='line';row.dataset.id=message.messageId;row.append(document.createElement('time'),document.createElement('p'));lines.append(row);rows.set(message.messageId,row)}row.dataset.revision=message.revision;const time=row.querySelector('time'),body=row.querySelector('p'),isOwn=message.t==='message'&&message.lang===DATA.lang,ok=isOwn||message.t==='translation'&&message.status==='ok';time.textContent=clock(message.sourceCreatedAt||message.createdAt);body.className=ok?'':message.t==='message'?'waiting':'failed';body.textContent=(message.speakerName?'('+message.speakerName+') ':'')+(ok?message.body:message.t==='message'?DATA.strings.waiting:DATA.strings.failed);mark(body,message.editedAt);if(stick)followSoon();else if(fresh){pending++;latest.hidden=false;latest.lastElementChild.textContent=pending}}
-async function sync(){try{const response=await fetch(location.pathname+'?since='+watermark,{cache:'no-store'}),data=await response.json();for(const line of data.lines)add({t:'translation',messageId:line[0],body:line[1],status:line[2],createdAt:line[3],speakerName:line[4],revision:line[5],editedAt:line[6]});watermark=data.snapshotAt;if(data.closed){ended=true;closed.textContent=' · '+DATA.strings.closed}}catch(e){}}
+function failure(error){const e=(error||'').toLowerCase(),billing=['credit_balance_exhausted','organization_spend_limit_exceeded','project_spend_limit_exceeded','organization_usage_limit_exceeded','insufficient_quota','current quota'].some(x=>e.includes(x));return error==='openai-billing-limit'||billing?DATA.strings.openaiBilling:error==='openai-rate-limit'||e.includes('openai')&&e.includes('429')?DATA.strings.openaiRateLimit:DATA.strings.failed}
+function add(message){let row=rows.get(message.messageId),fresh=!row,previous=row?Number(row.dataset.revision||0):-1;if(row&&message.revision<previous)return;if(!row&&message.t==='message'&&message.lang!==DATA.lang)return;waiting.hidden=true;if(!row){row=document.createElement('div');row.className='line';row.dataset.id=message.messageId;row.append(document.createElement('time'),document.createElement('p'));lines.append(row);rows.set(message.messageId,row)}row.dataset.revision=message.revision;const time=row.querySelector('time'),body=row.querySelector('p'),isOwn=message.t==='message'&&message.lang===DATA.lang,ok=isOwn||message.t==='translation'&&message.status==='ok';time.textContent=clock(message.sourceCreatedAt||message.createdAt);body.className=ok?'':message.t==='message'?'waiting':'failed';body.textContent=(message.speakerName?'('+message.speakerName+') ':'')+(ok?message.body:message.t==='message'?DATA.strings.waiting:failure(message.error));mark(body,message.editedAt);if(stick)followSoon();else if(fresh){pending++;latest.hidden=false;latest.lastElementChild.textContent=pending}}
+async function sync(){try{const response=await fetch(location.pathname+'?since='+watermark,{cache:'no-store'}),data=await response.json();for(const line of data.lines)add({t:'translation',messageId:line[0],body:line[1],status:line[2],createdAt:line[3],speakerName:line[4],revision:line[5],editedAt:line[6],error:line[8]});watermark=data.snapshotAt;if(data.closed){ended=true;closed.textContent=' · '+DATA.strings.closed}}catch(e){}}
 function connect(){connection.textContent=DATA.strings.reconnecting;const scheme=location.protocol==='https:'?'wss':'ws',socket=new WebSocket(scheme+'://'+location.host+'/ws?token='+encodeURIComponent(DATA.token));socket.onopen=()=>{retry=0;connection.textContent=DATA.strings.connected;sync()};socket.onmessage=event=>{try{const message=JSON.parse(event.data);if(message.t==='message'||message.t==='translation')add(message);else if(message.t==='meeting-closed'){ended=true;closed.textContent=' · '+DATA.strings.closed;socket.close()}}catch(e){}};socket.onclose=()=>{connection.textContent=DATA.strings.disconnected;if(!ended)timer=setTimeout(connect,Math.min(10000,500*2**retry++))};socket.onerror=()=>socket.close()}
 scroll.addEventListener('scroll',()=>{stick=scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<=80;if(stick){pending=0;latest.hidden=true}},{passive:true});addEventListener('resize',refollow,{passive:true});window.visualViewport?.addEventListener('resize',refollow,{passive:true});latest.onclick=()=>{stick=true;pending=0;latest.hidden=true;follow()};
 function applyTheme(){const dark=root.dataset.theme==='dark'||(!root.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);theme.textContent=dark?DATA.strings.light:DATA.strings.dark}theme.onclick=()=>{const dark=root.dataset.theme==='dark'||(!root.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);root.dataset.theme=dark?'light':'dark';try{localStorage.setItem('lct.theme',root.dataset.theme)}catch(e){}applyTheme()};

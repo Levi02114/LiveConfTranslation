@@ -65,9 +65,10 @@ export async function POST(request: Request, { params }: Params) {
   const candidates = getMeetingLanguageConfigs(meeting.id)
     .filter((row) => row.inputEnabled)
     .map((row) => row.lang);
-  const selected = parsed.data.lang && candidates.includes(parsed.data.lang)
-    ? parsed.data.lang
-    : null;
+  if (parsed.data.lang && !candidates.includes(parsed.data.lang)) {
+    return Response.json({ error: "invalid-language" }, { status: 400 });
+  }
+  const selected = parsed.data.lang ?? null;
   const detected = page.kind === "combined-input"
     ? selected
       ? { lang: selected, usedFallback: false }

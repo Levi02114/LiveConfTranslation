@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS translations (
 );
 
 CREATE TABLE IF NOT EXISTS engine_secrets (
-  engine      TEXT PRIMARY KEY,               -- 'google' | 'deepl' | 'openai' | 'local'
+  engine      TEXT PRIMARY KEY,               -- 번역 엔진 또는 'openai-admin' Usage 자격 증명
   -- AES-256-GCM 암호문(iv || tag || ciphertext). 평문 키는 저장하지 않는다.
   secret      BLOB NOT NULL,
   -- 관리자가 어떤 키인지 알아볼 수 있게 하는 마스킹 문자열. 복호화 없이 읽는다.

@@ -23,6 +23,7 @@ export function AppearanceControls({
    */
   textSize = true,
   language,
+  qr,
 }: {
   strings: UiStrings["appearance"];
   textSize?: boolean;
@@ -41,6 +42,8 @@ export function AppearanceControls({
     options: readonly Language[];
     onChange: (next: LanguageCode) => void;
   };
+  /** 관리자 주소를 휴대전화로 열기 위한 QR 진입점. */
+  qr?: { label: string; onClick: () => void };
 }) {
   const { effectiveTheme, fontSize, toggleTheme, stepFontSize } = useAppearance();
 
@@ -49,6 +52,18 @@ export function AppearanceControls({
 
   return (
     <div className="fixed top-2.5 right-3 left-3 z-50 flex items-center justify-end gap-[6px] bg-bg font-mono text-[11px] text-muted sm:left-auto sm:right-3.5 sm:gap-3">
+      {qr ? (
+        <button
+          type="button"
+          onClick={qr.onClick}
+          title={qr.label}
+          aria-label={qr.label}
+          className={`${button} min-w-[1.3rem] shrink-0 px-[6px] text-[11px]`}
+        >
+          QR
+        </button>
+      ) : null}
+
       {language ? (
         <select
           value={language.value}

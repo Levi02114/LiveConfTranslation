@@ -65,6 +65,11 @@ export function openaiBaseUrl(): string {
   return (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
 }
 
+/** Admin API 키를 OpenAI 호환 게이트웨이에 노출하지 않고 공식 Usage API에만 보낸다. */
+export function openaiAdminBaseUrl(): string {
+  return "https://api.openai.com/v1";
+}
+
 /** 커스텀 서버가 OpenAI Realtime 전사 WebSocket에 연결할 주소. */
 export function openaiRealtimeTranscribeUrl(): string {
   const url = new URL(`${openaiBaseUrl()}/realtime`);

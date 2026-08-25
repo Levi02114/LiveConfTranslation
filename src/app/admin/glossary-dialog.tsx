@@ -160,7 +160,7 @@ export function GlossaryDialog({
         onClick={open}
         title={strings.button}
         aria-label={strings.button}
-        className="grid h-[18px] w-[25px] cursor-pointer place-items-center border border-line text-muted transition-colors hover:border-fg hover:bg-fg hover:text-bg"
+        className="grid h-[18px] w-[25px] cursor-pointer place-items-center border border-line p-0 text-muted transition-colors hover:border-fg hover:bg-fg hover:text-bg"
       >
         <svg aria-hidden viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-none stroke-current">
           <path d="M3.5 5.5c3.2-.8 6-.3 8.5 1.5v12c-2.5-1.8-5.3-2.3-8.5-1.5zM20.5 5.5c-3.2-.8-6-.3-8.5 1.5v12c2.5-1.8 5.3-2.3 8.5-1.5z" />

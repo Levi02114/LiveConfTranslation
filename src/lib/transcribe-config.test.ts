@@ -52,6 +52,9 @@ test("지역 태그는 기본 하위 태그로 환산해 힌트를 본다", () =
 test("미지원 언어만 있으면 languages 를 비운다", () => {
   const params = buildSingleSessionParams("si", "테스트 세션");
   assert.deepEqual(params.languages, []);
+  assert.match(params.prompt, /Sinhala script/);
+  assert.match(params.prompt, /Never romanize or transliterate Sinhala/);
+  assert.match(params.prompt, /English words in Latin script/);
 });
 
 test("th 단일 세션은 gpt-transcribe 로 라우팅하고 delay 를 빼고, ko 는 live+xhigh 를 유지한다", () => {

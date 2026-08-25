@@ -149,7 +149,7 @@ export async function translateMessage(input: {
       } catch (cause) {
         const reason =
           cause instanceof TranslationError
-            ? cause.message
+            ? cause.code ?? cause.message
             : cause instanceof Error
               ? cause.message
               : "번역에 실패했습니다";

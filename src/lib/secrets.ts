@@ -34,6 +34,7 @@ export type EngineKeyStatus = {
 
 /** OpenAI 번역은 검증된 단일 모델만 사용한다. */
 export const OPENAI_TRANSLATION_MODEL = "gpt-5.6-luna";
+const OPENAI_ADMIN_SECRET_ID = "openai-admin" as const;
 
 /**
  * 관리자 화면에 내려 줄 상태. **평문 키는 절대 포함하지 않는다.**
@@ -44,6 +45,23 @@ export function engineKeyStatus(engine: EngineId): EngineKeyStatus {
 
   return {
     engine,
+    configured,
+    hint: configured ? (stored?.hint ?? null) : null,
+    updatedAt: configured ? (stored?.updatedAt ?? null) : null,
+  };
+}
+
+/** 조직 사용량 API 전용 Admin API 키. 일반 번역 키와 권한·용도를 분리한다. */
+export function openaiAdminKey(): string | undefined {
+  const stored = getEngineSecret(OPENAI_ADMIN_SECRET_ID);
+  if (!stored) return undefined;
+  return decryptSecret(stored.secret) ?? undefined;
+}
+
+export function openaiAdminKeyStatus() {
+  const stored = getEngineSecret(OPENAI_ADMIN_SECRET_ID);
+  const configured = Boolean(openaiAdminKey());
+  return {
     configured,
     hint: configured ? (stored?.hint ?? null) : null,
     updatedAt: configured ? (stored?.updatedAt ?? null) : null,

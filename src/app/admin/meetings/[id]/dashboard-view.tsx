@@ -1,14 +1,19 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { useCallback, useRef, useState, useTransition } from "react";
 
 import { AppearanceControls } from "@/components/appearance-controls";
+import { generateQr, QrDialog, type QrImage } from "@/components/qr-dialog";
 import { copyText } from "@/lib/clipboard";
 import { useSetAdminLang } from "@/hooks/use-admin-lang";
+import { usePublicOrigin } from "@/hooks/use-public-origin";
 import { useRealtime } from "@/hooks/use-realtime";
-import type { AdminStrings, UiStrings } from "@/lib/i18n-builtin";
+import {
+  translationFailureText,
+  type AdminStrings,
+  type UiStrings,
+} from "@/lib/i18n-builtin";
 import type { Language, LanguageCode } from "@/lib/languages";
 import { formatClock, formatTimestamp } from "@/lib/log-format";
 import type { ServerMessage } from "@/lib/realtime/protocol";
@@ -24,18 +29,6 @@ import { TranscriptionContextSettings } from "./session-settings";
 
 /** 실시간 번역에 남겨 둘 줄 수. 대시보드는 기록이 아니라 감시용이다. */
 const FLOW_LIMIT = 60;
-
-const PUBLIC_ORIGIN_KEY = "lct_public_origin";
-const subscribeOrigin = (onStoreChange: () => void) => {
-  window.addEventListener("storage", onStoreChange);
-  window.addEventListener("lct-public-origin", onStoreChange);
-  return () => {
-    window.removeEventListener("storage", onStoreChange);
-    window.removeEventListener("lct-public-origin", onStoreChange);
-  };
-};
-const getOrigin = () => localStorage.getItem(PUBLIC_ORIGIN_KEY) ?? window.location.origin;
-const getServerOrigin = () => "";
 
 type Flow = {
   key: string;
@@ -80,9 +73,9 @@ export function DashboardView({
 }) {
   const [closed, setClosed] = useState(meeting.status === "closed");
   const [closedAt, setClosedAt] = useState<number | null>(meeting.closedAt);
-  const [flows, setFlows] = useState<Flow[]>(() => seedFlows(history, languages, ui.status.failed));
+  const [flows, setFlows] = useState<Flow[]>(() => seedFlows(history, languages, ui));
   const [copied, setCopied] = useState<{ key: string; ok: boolean } | null>(null);
-  const [qr, setQr] = useState<{ dataUrl: string; fileName: string } | null>(null);
+  const [qr, setQr] = useState<QrImage | null>(null);
   const [qrError, setQrError] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
@@ -93,7 +86,7 @@ export function DashboardView({
   // 참석자에게 나눠 줄 URL 은 절대 주소여야 한다. 서버는 접속자가 어느 주소로
   // 들어왔는지 모르므로(로컬 IP·호스트명 제각각) 브라우저에서 읽는다.
   // Electron 이 Quick Tunnel을 켜면 공개 주소로 즉시 교체한다.
-  const origin = useSyncExternalStore(subscribeOrigin, getOrigin, getServerOrigin);
+  const origin = usePublicOrigin();
 
   const nameOf = useCallback(
     (code: LanguageCode) =>
@@ -130,7 +123,9 @@ export function DashboardView({
             at: message.createdAt,
             route: `→ ${nameOf(message.lang)}`,
             body: withSpeaker(
-              message.status === "ok" ? message.body : ui.status.failed,
+              message.status === "ok"
+                ? message.body
+                : translationFailureText(message.error, ui.status),
               message.speakerName,
             ),
             status: message.status === "ok" ? "done" : "failed",
@@ -141,7 +136,7 @@ export function DashboardView({
         setClosedAt(message.closedAt);
       }
     },
-    [nameOf, ui.status.failed],
+    [nameOf, ui.status],
   );
 
   useRealtime(`meeting=${encodeURIComponent(meeting.id)}`, onMessage);
@@ -189,11 +184,7 @@ export function DashboardView({
     qrDialogRef.current?.showModal();
 
     try {
-      const { toDataURL } = await import("qrcode");
-      setQr({
-        dataUrl: await toDataURL(url, { width: 320, margin: 2 }),
-        fileName: `${key}-qr.png`,
-      });
+      setQr(await generateQr(url, `${key}-qr.png`));
     } catch {
       setQrError(strings.dashboard.qrFailed);
     }
@@ -212,6 +203,7 @@ export function DashboardView({
   );
   const configByLanguage = new Map(languageConfigs.map((row) => [row.lang, row]));
   const hasOutput = languageConfigs.some((row) => row.outputEnabled);
+  const hasInput = languageConfigs.some((row) => row.inputEnabled);
 
   const copyBtn =
     "min-h-9 shrink-0 cursor-pointer whitespace-nowrap border border-line px-2 py-1 font-mono text-[11px] text-muted transition-colors hover:bg-fg hover:text-bg sm:min-h-0";
@@ -371,32 +363,17 @@ export function DashboardView({
         })}
 
         {combined ? (
-          <>
-            <div className="grid grid-cols-1 gap-3 border-b border-line py-4 lg:grid-cols-[110px_1fr] lg:items-center lg:gap-x-5 lg:py-3.5">
-              <div className="text-[15px]">{ui.role.combined}</div>
-              <UrlCell
-                url={`${origin}/all/${combined.token}`}
-                copied={copied?.key === "all" ? copied : null}
-                onCopy={(url) => void copy("all", url)}
-                className={copyBtn}
-                strings={strings.dashboard}
-                onQr={(url) => void showQr("combined", url)}
-              />
-            </div>
-            {hasOutput ? (
-              <div className="grid grid-cols-1 gap-3 border-b border-line py-4 lg:grid-cols-[110px_1fr] lg:items-center lg:gap-x-5 lg:py-3.5">
-                <div className="text-[15px]">{strings.dashboard.participantGuide}</div>
-                <UrlCell
-                  url={`${origin}/join/${combined.token}`}
-                  copied={copied?.key === "join" ? copied : null}
-                  onCopy={(url) => void copy("join", url)}
-                  className={copyBtn}
-                  strings={strings.dashboard}
-                  onQr={(url) => void showQr("participant-guide", url)}
-                />
-              </div>
-            ) : null}
-          </>
+          <div className="grid grid-cols-1 gap-3 border-b border-line py-4 lg:grid-cols-[110px_1fr] lg:items-center lg:gap-x-5 lg:py-3.5">
+            <div className="text-[15px]">{ui.role.combined}</div>
+            <UrlCell
+              url={`${origin}/all/${combined.token}`}
+              copied={copied?.key === "all" ? copied : null}
+              onCopy={(url) => void copy("all", url)}
+              className={copyBtn}
+              strings={strings.dashboard}
+              onQr={(url) => void showQr("combined", url)}
+            />
+          </div>
         ) : null}
         {combinedInput ? (
           <div className="grid grid-cols-1 gap-3 border-b border-line py-4 lg:grid-cols-[110px_1fr] lg:items-center lg:gap-x-5 lg:py-3.5">
@@ -408,6 +385,32 @@ export function DashboardView({
               className={copyBtn}
               strings={strings.dashboard}
               onQr={(url) => void showQr("combined-input", url)}
+            />
+          </div>
+        ) : null}
+        {combined && hasOutput ? (
+          <div className="grid grid-cols-1 gap-3 border-b border-line py-4 lg:grid-cols-[110px_1fr] lg:items-center lg:gap-x-5 lg:py-3.5">
+            <div className="text-[15px]">{strings.dashboard.participantGuide}</div>
+            <UrlCell
+              url={`${origin}/join/${combined.token}`}
+              copied={copied?.key === "join" ? copied : null}
+              onCopy={(url) => void copy("join", url)}
+              className={copyBtn}
+              strings={strings.dashboard}
+              onQr={(url) => void showQr("participant-guide", url)}
+            />
+          </div>
+        ) : null}
+        {combined && hasInput ? (
+          <div className="grid grid-cols-1 gap-3 border-b border-line py-4 lg:grid-cols-[110px_1fr] lg:items-center lg:gap-x-5 lg:py-3.5">
+            <div className="text-[15px]">{strings.dashboard.inputGuide}</div>
+            <UrlCell
+              url={`${origin}/join/input/${combined.token}`}
+              copied={copied?.key === "input-guide" ? copied : null}
+              onCopy={(url) => void copy("input-guide", url)}
+              className={copyBtn}
+              strings={strings.dashboard}
+              onQr={(url) => void showQr("input-guide", url)}
             />
           </div>
         ) : null}
@@ -446,49 +449,17 @@ export function DashboardView({
         ))}
       </section>
 
-      <dialog
-        ref={qrDialogRef}
+      <QrDialog
+        dialogRef={qrDialogRef}
+        qr={qr}
+        error={qrError}
         onClose={() => {
           setQr(null);
           setQrError(null);
         }}
-        className="m-auto w-[min(380px,calc(100vw-32px))] border border-line bg-bg p-0 text-fg backdrop:bg-black/45"
-      >
-        <div className="p-6">
-          <div className="flex min-h-[320px] items-center justify-center bg-fg">
-            {qr ? (
-              <Image
-                unoptimized
-                src={qr.dataUrl}
-                width={320}
-                height={320}
-                alt="QR"
-                className="h-auto w-full"
-              />
-            ) : (
-              <span className="font-mono text-[12px] text-bg">{qrError ?? "…"}</span>
-            )}
-          </div>
-          <div className="mt-4 flex items-center justify-end gap-3">
-            {qr ? (
-              <a
-                href={qr.dataUrl}
-                download={qr.fileName}
-                className={copyBtn}
-              >
-                {strings.dashboard.downloadQr}
-              </a>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => qrDialogRef.current?.close()}
-              className={copyBtn}
-            >
-              {strings.dashboard.closeQr}
-            </button>
-          </div>
-        </div>
-      </dialog>
+        strings={strings.dashboard}
+        buttonClass={copyBtn}
+      />
     </div>
   );
 }
@@ -557,7 +528,7 @@ function push(prev: Flow[], next: Flow): Flow[] {
 }
 
 /** 대시보드를 늦게 열어도 직전 흐름이 보이도록 지난 기록을 같은 모양으로 편다. */
-function seedFlows(history: CombinedEntry[], languages: Language[], failedText: string): Flow[] {
+function seedFlows(history: CombinedEntry[], languages: Language[], ui: UiStrings): Flow[] {
   const nameOf = (code: LanguageCode) =>
     languages.find((language) => language.code === code)?.label ?? code;
 
@@ -582,7 +553,9 @@ function seedFlows(history: CombinedEntry[], languages: Language[], failedText: 
         at: entry.createdAt,
         route: `→ ${nameOf(translation.lang)}`,
         body: withSpeaker(
-          translation.status === "ok" ? translation.body : failedText,
+          translation.status === "ok"
+            ? translation.body
+            : translationFailureText(translation.error, ui.status),
           entry.speakerName,
         ),
         status: translation.status === "ok" ? "done" : "failed",

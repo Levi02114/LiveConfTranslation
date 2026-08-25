@@ -6,6 +6,7 @@ import { getLanguage } from "@/lib/languages";
 import {
   getMeeting,
   getMeetingActiveLangs,
+  getMeetingLanguageConfigs,
   getPageByToken,
   getRecentCombined,
   isPageEnabled,
@@ -46,6 +47,9 @@ export default async function CombinedInputPage({
   if (!meeting) notFound();
 
   const activeLangs = getMeetingActiveLangs(meeting.id);
+  const inputLangs = getMeetingLanguageConfigs(meeting.id)
+    .filter((row) => row.inputEnabled)
+    .map((row) => row.lang);
   const requested = (await searchParams).ui;
   const uiLang = requested && activeLangs.includes(requested) ? requested : page.lang;
 
@@ -56,6 +60,7 @@ export default async function CombinedInputPage({
       uiLang={uiLang}
       fallbackLang={page.lang}
       languages={activeLangs.map((code) => getLanguage(code, uiLang))}
+      inputLanguages={inputLangs}
       strings={getStrings(uiLang)}
       meetingTitle={meeting.title}
       history={getRecentCombined(meeting.id)}

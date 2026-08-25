@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 
 import { ADMIN_LANG_COOKIE, ADMIN_LANG_MAX_AGE, toAdminLang } from "@/lib/admin-lang";
 import { getStrings } from "@/lib/i18n";
-import type { UiStrings } from "@/lib/i18n-builtin";
+import { translationFailureText, type UiStrings } from "@/lib/i18n-builtin";
 import { getLanguage, textDirection, type Language } from "@/lib/languages";
 import { formatClock } from "@/lib/log-format";
 import {
@@ -57,6 +57,8 @@ export async function GET(request: Request, { params }: Params) {
       disconnected: strings.connection.disconnected,
       closed: strings.meeting.closed,
       failed: strings.status.failed,
+      openaiBilling: strings.status.openaiBilling,
+      openaiRateLimit: strings.status.openaiRateLimit,
       waiting: strings.status.waiting,
       noContent: strings.status.noContent,
       newMessages: strings.status.newMessages,
@@ -116,7 +118,7 @@ function compact(entry: CombinedEntry) {
     entry.revision,
     entry.editedAt,
     entry.updatedAt,
-    entry.translations.map((row) => [row.lang, row.body, row.status]),
+    entry.translations.map((row) => [row.lang, row.body, row.status, row.error]),
   ];
 }
 
@@ -131,7 +133,7 @@ function renderEntry(entry: CombinedEntry, languages: Language[], strings: UiStr
         ? strings.status.waiting
         : translation.status === "ok"
           ? translation.body
-          : strings.status.failed;
+          : translationFailureText(translation.error, strings.status);
       const edited = entry.editedAt ? `<small class="edited">(${html(strings.message.edited)})</small>` : "";
       return `<div class="translation" data-lang="${html(language.code)}" lang="${html(language.code)}" dir="${textDirection(language.code)}"><div class="label">${html(language.nativeName)}</div><p class="${status}">${html(body)}${translation?.status === "ok" ? edited : ""}</p></div>`;
     })
@@ -174,8 +176,9 @@ function clock(at){const d=new Date(at),p=n=>String(n).padStart(2,'0');return p(
 function mark(body,edited){body.querySelector('.edited')?.remove();if(edited){const note=document.createElement('small');note.className='edited';note.textContent='('+DATA.strings.edited+')';body.append(note)}}
 function resetTranslations(row){for(const body of row.querySelectorAll('.translation p')){body.className='waiting';body.textContent=DATA.strings.waiting}}
 function addSource(message){let row=entries.get(message.messageId),fresh=!row;if(row&&message.revision<Number(row.dataset.revision||0))return row;empty.hidden=true;if(!row){row=document.createElement('section');row.className='entry';row.dataset.id=message.messageId;const source=document.createElement('div');source.className='source';source.append(document.createElement('time'),document.createElement('p'));row.append(source);const targets=DATA.languages.filter(item=>item[0]!==message.lang);if(targets.length){const grid=document.createElement('div');grid.className='translations';for(const item of targets){const target=document.createElement('div');target.className='translation';target.dataset.lang=item[0];target.lang=item[0];target.dir=item[2];const label=document.createElement('div');label.className='label';label.textContent=item[1];const text=document.createElement('p');text.className='waiting';text.textContent=DATA.strings.waiting;target.append(label,text);grid.append(target)}row.append(grid)}entriesNode.append(row);entries.set(message.messageId,row)}const previous=Number(row.dataset.revision||0);row.dataset.revision=message.revision;const source=row.querySelector('.source'),time=source.querySelector('time'),body=source.querySelector('p');time.textContent=clock(message.createdAt);body.lang=message.lang;body.dir=(lang(message.lang)||[])[2]||'ltr';body.textContent=(message.speakerName?'('+message.speakerName+') ':'')+message.body;mark(body,message.editedAt);if(message.revision>previous)resetTranslations(row);if(stick)followSoon();else if(fresh){pending++;latest.hidden=false;latest.lastElementChild.textContent=pending}return row}
-function addTranslation(message){const row=entries.get(message.messageId);if(!row||Number(row.dataset.revision||0)!==message.revision)return;const target=[...row.querySelectorAll('.translation')].find(item=>item.dataset.lang===message.lang);if(!target)return;const body=target.querySelector('p'),ok=message.status==='ok';body.className=ok?'':'error';body.textContent=ok?message.body:DATA.strings.failed;if(ok)mark(body,message.editedAt);if(stick)followSoon()}
-function merge(entry){addSource({messageId:entry[0],lang:entry[1],body:entry[2],speakerName:entry[3],createdAt:entry[4],revision:entry[5],editedAt:entry[6]});for(const item of entry[8])addTranslation({messageId:entry[0],lang:item[0],body:item[1],status:item[2],revision:entry[5],editedAt:entry[6]})}
+function failure(error){const e=(error||'').toLowerCase(),billing=['credit_balance_exhausted','organization_spend_limit_exceeded','project_spend_limit_exceeded','organization_usage_limit_exceeded','insufficient_quota','current quota'].some(x=>e.includes(x));return error==='openai-billing-limit'||billing?DATA.strings.openaiBilling:error==='openai-rate-limit'||e.includes('openai')&&e.includes('429')?DATA.strings.openaiRateLimit:DATA.strings.failed}
+function addTranslation(message){const row=entries.get(message.messageId);if(!row||Number(row.dataset.revision||0)!==message.revision)return;const target=[...row.querySelectorAll('.translation')].find(item=>item.dataset.lang===message.lang);if(!target)return;const body=target.querySelector('p'),ok=message.status==='ok';body.className=ok?'':'error';body.textContent=ok?message.body:failure(message.error);if(ok)mark(body,message.editedAt);if(stick)followSoon()}
+function merge(entry){addSource({messageId:entry[0],lang:entry[1],body:entry[2],speakerName:entry[3],createdAt:entry[4],revision:entry[5],editedAt:entry[6]});for(const item of entry[8])addTranslation({messageId:entry[0],lang:item[0],body:item[1],status:item[2],error:item[3],revision:entry[5],editedAt:entry[6]})}
 async function sync(){try{const response=await fetch(location.pathname+'?since='+watermark,{cache:'no-store'}),data=await response.json();for(const entry of data.entries)merge(entry);watermark=data.snapshotAt;if(data.closed){ended=true;closed.textContent=' · '+DATA.strings.closed}}catch(e){}}
 function connect(){connection.textContent=DATA.strings.reconnecting;const scheme=location.protocol==='https:'?'wss':'ws',socket=new WebSocket(scheme+'://'+location.host+'/ws?token='+encodeURIComponent(DATA.token));socket.onopen=async()=>{retry=0;connection.textContent=DATA.strings.connected;await sync();if(ended)socket.close()};socket.onmessage=event=>{try{const message=JSON.parse(event.data);if(message.t==='message')addSource(message);else if(message.t==='translation')addTranslation(message);else if(message.t==='meeting-closed'){ended=true;closed.textContent=' · '+DATA.strings.closed;socket.close()}}catch(e){}};socket.onclose=()=>{connection.textContent=DATA.strings.disconnected;if(!ended)timer=setTimeout(connect,Math.min(10000,500*2**retry++))};socket.onerror=()=>socket.close()}
 scroll.addEventListener('scroll',()=>{stick=scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<=80;if(stick){pending=0;latest.hidden=true}},{passive:true});window.ResizeObserver&&new ResizeObserver(()=>{if(stick)followSoon()}).observe(entriesNode);addEventListener('resize',refollow,{passive:true});window.visualViewport?.addEventListener('resize',refollow,{passive:true});latest.onclick=()=>{stick=true;pending=0;latest.hidden=true;follow()};

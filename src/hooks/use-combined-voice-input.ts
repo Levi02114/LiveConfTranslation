@@ -29,7 +29,14 @@ const voiceEventSchema = z.union([
   }),
   z.object({
     t: z.literal("error"),
-    reason: z.enum(["busy", "key-required", "local-unavailable", "speaker-required", "lost"]),
+    reason: z.enum([
+      "busy",
+      "key-required",
+      "local-unavailable",
+      "speaker-required",
+      "invalid-language",
+      "lost",
+    ]),
   }),
 ]);
 type VoiceEvent = z.infer<typeof voiceEventSchema>;
@@ -41,6 +48,7 @@ type ServerVoiceInputOptions = {
   speakerName?: string | null;
   onFallback?: (lang: LanguageCode) => void;
   langs: readonly LanguageCode[];
+  lang?: LanguageCode | null;
   enabled?: boolean;
   preloadVad?: boolean;
   requestPermissionOnMount?: boolean;
@@ -55,6 +63,7 @@ export function useServerVoiceInput({
   speakerName,
   onFallback = () => {},
   langs,
+  lang = null,
   enabled = true,
   preloadVad = true,
   requestPermissionOnMount = true,
@@ -294,7 +303,11 @@ export function useServerVoiceInput({
         }
       };
 
-      ws.onopen = () => ws.send(JSON.stringify({ t: "start", speakerName: speakerName || undefined }));
+      ws.onopen = () => ws.send(JSON.stringify({
+        t: "start",
+        speakerName: speakerName || undefined,
+        lang: lang || undefined,
+      }));
       ws.onmessage = (message) => {
         let value;
         try {
@@ -341,6 +354,8 @@ export function useServerVoiceInput({
                   ? strings.localUnavailable
                 : event.reason === "speaker-required"
                   ? strings.startFailed
+                  : event.reason === "invalid-language"
+                    ? strings.invalidLanguage
                   : strings.lost,
           );
         }
@@ -354,7 +369,7 @@ export function useServerVoiceInput({
       setError(strings.permission);
       disconnect();
     }
-  }, [closed, deviceId, disconnect, enabled, langs, refreshDevices, speakerName, state, strings, submitTranscript, token, updateMeter]);
+  }, [closed, deviceId, disconnect, enabled, lang, langs, refreshDevices, speakerName, state, strings, submitTranscript, token, updateMeter]);
 
   return { state, partial, error, devices, deviceId, setDeviceId, start, stop, meter };
 }

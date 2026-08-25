@@ -14,6 +14,7 @@ import { parseJsonResponse } from "@/lib/json-response";
 import { type Language, type LanguageCode, textDirection } from "@/lib/languages";
 import type { Peer, ServerMessage } from "@/lib/realtime/protocol";
 import type { CombinedEntry } from "@/lib/repo";
+import { appendTranscriptDraft } from "@/lib/transcript-draft";
 
 const DRAFT_INTERVAL_MS = 180;
 
@@ -23,6 +24,7 @@ export function CombinedInputView({
   uiLang,
   fallbackLang,
   languages,
+  inputLanguages,
   strings,
   meetingTitle,
   history,
@@ -35,6 +37,7 @@ export function CombinedInputView({
   uiLang: LanguageCode;
   fallbackLang: LanguageCode;
   languages: Language[];
+  inputLanguages: LanguageCode[];
   strings: UiStrings;
   meetingTitle: string;
   history: CombinedEntry[];
@@ -46,6 +49,8 @@ export function CombinedInputView({
   const [peers, setPeers] = useState<Peer[]>([]);
   const [closed, setClosed] = useState(initiallyClosed);
   const [text, setText] = useState("");
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [inputLang, setInputLang] = useState<LanguageCode | "">("");
   const [sending, setSending] = useState(false);
   const [pendingLanguageBody, setPendingLanguageBody] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +65,9 @@ export function CombinedInputView({
   const contentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const appendTranscript = useCallback((body: string) => {
+    setText((current) => appendTranscriptDraft(current, body));
+  }, []);
 
   const nameOf = useCallback(
     (code: LanguageCode) => languages.find((language) => language.code === code)?.label ?? code,
@@ -76,7 +84,10 @@ export function CombinedInputView({
     closed,
     speakerName: speakerName.trim() || null,
     onFallback: showFallback,
-    langs: languages.map((language) => language.code),
+    langs: inputLang ? [inputLang] : inputLanguages,
+    lang: inputLang || null,
+    autoSubmit: voiceMode,
+    onTranscript: appendTranscript,
     preloadVad: voiceAvailable,
     requestPermissionOnMount: voiceAvailable,
   });
@@ -113,6 +124,18 @@ export function CombinedInputView({
   }, [stopVoice, strings.speaker.duplicate, token]);
   const { state, send } = useRealtime(`token=${encodeURIComponent(token)}`, onMessage);
   const speakerReady = !speakerLabels || (speakerClaimed && Boolean(speakerName.trim()));
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      try {
+        const saved = localStorage.getItem(`lct.inputLanguage.${token}`) ?? "";
+        if (inputLanguages.includes(saved)) setInputLang(saved);
+      } catch {
+        // 저장소를 막은 브라우저에서는 현재 탭의 선택만 유지한다.
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [inputLanguages, token]);
 
   useEffect(() => {
     if (!speakerLabels) return;
@@ -166,7 +189,7 @@ export function CombinedInputView({
     if (!area) return;
     area.style.height = "auto";
     area.style.height = `${Math.min(area.scrollHeight, 220)}px`;
-  }, [text]);
+  }, [text, voice.partial]);
 
   const changeText = (value: string) => {
     setText(value);
@@ -176,7 +199,7 @@ export function CombinedInputView({
       send({ t: "draft", text: textareaRef.current?.value ?? "" });
     }, DRAFT_INTERVAL_MS);
   };
-  const submit = async (explicitLang?: LanguageCode) => {
+  const submit = async (explicitLang: LanguageCode | "" = inputLang) => {
     const body = (pendingLanguageBody ?? text).trim();
     if (!body || sending || closed || !speakerReady) return;
     textareaRef.current?.focus({ preventScroll: true });
@@ -187,7 +210,11 @@ export function CombinedInputView({
       const response = await fetch(`/api/pages/${encodeURIComponent(token)}/messages`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ body, lang: explicitLang, speakerName: speakerLabels ? speakerName.trim() : undefined }),
+        body: JSON.stringify({
+          body,
+          lang: explicitLang || undefined,
+          speakerName: speakerLabels ? speakerName.trim() : undefined,
+        }),
       });
       const payload = await parseJsonResponse(
         response,
@@ -251,6 +278,26 @@ export function CombinedInputView({
         ? strings.capture.stop
         : strings.capture.start;
   const typing = peers.filter((peer) => peer.typing && peer.draft.trim());
+  const inputText = voice.partial
+    ? appendTranscriptDraft(voiceMode ? "" : text, voice.partial)
+    : text;
+
+  const selectVoiceMode = (enabled: boolean) => {
+    if (voice.state !== "idle") return;
+    setVoiceMode(enabled);
+    send({ t: "draft", text: enabled ? "" : text });
+  };
+
+  const selectInputLanguage = (next: LanguageCode | "") => {
+    if (voice.state !== "idle") return;
+    setInputLang(next);
+    setPendingLanguageBody(null);
+    try {
+      localStorage.setItem(`lct.inputLanguage.${token}`, next);
+    } catch {
+      // 저장소를 막은 브라우저에서는 현재 탭의 선택만 유지한다.
+    }
+  };
 
   return (
     <div lang={uiLang} dir={textDirection(uiLang)} className="flex h-dvh flex-col overflow-hidden">
@@ -296,7 +343,7 @@ export function CombinedInputView({
             <h2 id="language-prompt-title" className="text-[18px] font-medium">{strings.input.chooseLanguage}</h2>
             <p className="mt-2 font-mono text-[12px] leading-5 text-muted">{strings.input.chooseLanguageNote}</p>
             <div className="mt-5 flex flex-wrap gap-2">
-              {languages.map((language) => (
+              {languages.filter((language) => inputLanguages.includes(language.code)).map((language) => (
                 <button key={language.code} type="button" onClick={() => void submit(language.code)} className="cursor-pointer border border-line px-3 py-2 font-mono text-[13px] hover:border-fg hover:bg-fg hover:text-bg">
                   {language.label}
                 </button>
@@ -344,14 +391,54 @@ export function CombinedInputView({
 
       <div className="shrink-0 border-t border-line bg-bg">
         <div className="mx-auto max-w-[1100px] px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-8 sm:py-4">
-          <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-line pb-3 font-mono text-[11px]">
-            {voice.devices.length ? (
+          <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line pb-3 font-mono text-[11px]">
+            <label className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0 text-muted">{strings.input.language}</span>
+              <select
+                aria-label={strings.input.language}
+                value={inputLang}
+                onChange={(event) => {
+                  const next = inputLanguages.find((code) => code === event.target.value) ?? "";
+                  selectInputLanguage(next);
+                }}
+                disabled={voice.state !== "idle"}
+                className="h-9 min-w-0 border border-line bg-bg px-2 text-fg outline-none disabled:opacity-50"
+              >
+                <option value="">{strings.input.autoLanguage}</option>
+                {languages.filter((language) => inputLanguages.includes(language.code)).map((language) => (
+                  <option key={language.code} value={language.code}>{language.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label
+              className={`flex items-center gap-2 ${
+                voiceAvailable && !closed && speakerReady && voice.state === "idle"
+                  ? "cursor-pointer"
+                  : "cursor-not-allowed opacity-40"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={voiceMode}
+                disabled={!voiceAvailable || closed || !speakerReady || voice.state !== "idle"}
+                onChange={(event) => selectVoiceMode(event.target.checked)}
+                className="h-[15px] w-[15px] accent-[var(--fg)]"
+              />
+              <span>{strings.capture.toggle}</span>
+            </label>
+
+            {voiceAvailable && voice.devices.length ? (
               <select aria-label={strings.capture.microphone} value={voice.deviceId} onChange={(event) => voice.setDeviceId(event.target.value)} disabled={voice.state !== "idle"} className="h-9 min-w-0 flex-1 border border-line bg-bg px-2 text-fg outline-none disabled:opacity-50 sm:max-w-[320px]">
                 {voice.devices.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `${strings.capture.microphone} ${index + 1}`}</option>)}
               </select>
             ) : null}
             {!voiceAvailable ? <span className="text-muted">{strings.capture.keyRequired}</span> : null}
-            {voice.partial ? <span className="min-w-0 flex-1 break-words text-fg">{strings.capture.partial}: {voice.partial}</span> : null}
+            {voice.state !== "idle" ? (
+              <span className="text-muted">
+                {voice.state === "active" ? strings.capture.listening : strings.capture.starting}
+              </span>
+            ) : null}
             {voice.state === "active" ? <VoiceLevelMeter meter={voice.meter} strings={strings.capture} /> : null}
             {voice.error ? <span>{voice.error}</span> : null}
           </div>
@@ -363,8 +450,8 @@ export function CombinedInputView({
             <textarea
               ref={textareaRef}
               rows={1}
-              value={text}
-              disabled={closed || !speakerReady}
+              value={inputText}
+              disabled={closed || !speakerReady || voiceMode || voice.state !== "idle"}
               onChange={(event) => changeText(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -372,19 +459,33 @@ export function CombinedInputView({
                   void submit();
                 }
               }}
-              placeholder={strings.input.placeholder}
-              className="app-text field-sizing-content max-h-[220px] min-h-11 w-full min-w-0 flex-1 resize-none border-none bg-transparent outline-none"
+              placeholder={voiceMode ? strings.capture.standby : strings.input.placeholder}
+              className={`app-text field-sizing-content max-h-[220px] min-h-11 w-full min-w-0 flex-1 resize-none border-none bg-transparent outline-none ${voiceMode && !voice.partial ? "opacity-40" : ""}`}
             />
             <div className="flex shrink-0 gap-2 sm:w-auto">
-              <button type="button" aria-label={voiceAction} title={voiceAction} onClick={() => voice.state === "active" ? voice.stop() : void voice.start()} disabled={!voiceAvailable || closed || !speakerReady || voice.state === "starting"} className={`flex min-h-11 min-w-11 cursor-pointer items-center justify-center border border-fg transition-colors disabled:cursor-default disabled:opacity-30 ${voice.state === "active" ? "bg-fg text-bg" : "hover:bg-fg hover:text-bg"}`}>
-                <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M9 21h6" /></svg>
-              </button>
-              <button type="button" onPointerDown={(event) => event.preventDefault()} onClick={() => void submit()} disabled={closed || !speakerReady || sending || !text.trim()} className="min-h-11 min-w-0 flex-1 cursor-pointer border border-fg px-4 py-2.5 font-mono text-[14px] transition-colors hover:bg-fg hover:text-bg disabled:cursor-default disabled:opacity-30 sm:flex-none sm:px-6">
-                {sending ? strings.input.sending : strings.input.send}
+              {!voiceMode && voiceAvailable ? (
+                <button type="button" aria-label={voiceAction} title={voiceAction} onClick={() => voice.state === "active" ? voice.stop() : void voice.start()} disabled={closed || !speakerReady || voice.state === "starting"} className={`flex min-h-11 min-w-11 cursor-pointer items-center justify-center border border-fg transition-colors disabled:cursor-default disabled:opacity-30 ${voice.state === "active" ? "bg-fg text-bg" : "hover:bg-fg hover:text-bg"}`}>
+                  <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M9 21h6" /></svg>
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  if (!voiceMode) void submit();
+                  else if (voice.state === "idle") void voice.start();
+                  else if (voice.state === "active") voice.stop();
+                }}
+                disabled={closed || !speakerReady || (voiceMode ? voice.state === "starting" : voice.state !== "idle" || sending || !text.trim())}
+                className="min-h-11 min-w-0 flex-1 cursor-pointer border border-fg px-4 py-2.5 font-mono text-[14px] transition-colors hover:bg-fg hover:text-bg disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fg sm:flex-none sm:px-6"
+              >
+                {voiceMode ? voiceAction : sending ? strings.input.sending : strings.input.send}
               </button>
             </div>
           </div>
-          <div className="mt-2 font-mono text-[11px] text-muted">{strings.input.hint}</div>
+          <div className="mt-2 font-mono text-[11px] text-muted">
+            {voiceMode ? strings.capture.standby : strings.input.hint}
+          </div>
         </div>
       </div>
     </div>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { UiStrings } from "@/lib/i18n-builtin";
+import { translationFailureText, type UiStrings } from "@/lib/i18n-builtin";
 import { type Language, textDirection } from "@/lib/languages";
 import { formatClock } from "@/lib/log-format";
 import type { CombinedEntry } from "@/lib/repo";
@@ -157,7 +157,7 @@ export function TranslationEntry({
                   </div>
                 ) : (
                   <p className="font-mono text-[12px] text-muted italic">
-                    {strings.status.failed}
+                    {translationFailureText(translation.error, strings.status)}
                   </p>
                 )}
               </div>

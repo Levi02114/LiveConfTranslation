@@ -1,11 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { z } from "zod";
 
 import { AppearanceControls } from "@/components/appearance-controls";
+import { generateQr, QrDialog, type QrImage } from "@/components/qr-dialog";
 import { useSetAdminLang } from "@/hooks/use-admin-lang";
+import { usePublicOrigin } from "@/hooks/use-public-origin";
 import type { AdminStrings, UiStrings } from "@/lib/i18n-builtin";
 import type { Language, LanguageCode } from "@/lib/languages";
 import { formatTimestamp } from "@/lib/log-format";
@@ -19,6 +21,7 @@ import { EngineKeysDialog, type EngineKeyStatus } from "./engine-keys-dialog";
 import { GlossaryDialog } from "./glossary-dialog";
 import { LanguageDialog } from "./language-dialog";
 import { OpenaiModelSelect } from "./openai-model-select";
+import { OpenaiUsageDialog } from "./openai-usage-dialog";
 import { PasswordChangeDialog } from "./password-change-dialog";
 import { UiStringsDialog } from "./ui-strings-dialog";
 import { SessionConfigEditor } from "./meetings/[id]/session-settings";
@@ -76,6 +79,10 @@ export function MeetingList({
   const router = useRouter();
   const setLang = useSetAdminLang();
   const [navigating, startNavigation] = useTransition();
+  const origin = usePublicOrigin();
+  const qrDialogRef = useRef<HTMLDialogElement>(null);
+  const [qr, setQr] = useState<QrImage | null>(null);
+  const [qrError, setQrError] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
   const [config, setConfig] = useState<SessionPresetConfig>(() => ({
@@ -267,6 +274,17 @@ export function MeetingList({
     }
   };
 
+  const showAdminQr = async () => {
+    setQr(null);
+    setQrError(null);
+    qrDialogRef.current?.showModal();
+    try {
+      setQr(await generateQr(`${origin.replace(/\/$/, "")}/admin`, "admin-qr.png"));
+    } catch {
+      setQrError(strings.dashboard.qrFailed);
+    }
+  };
+
   const removeMeeting = async (meeting: Row) => {
     const prompt = strings.list.deleteConfirm.replace("{title}", meeting.title);
     if (!window.confirm(prompt)) return;
@@ -341,6 +359,7 @@ export function MeetingList({
       <AdminBusyOverlay label={busyLabel} />
       <AppearanceControls
         strings={ui.appearance}
+        qr={{ label: strings.dashboard.showQr, onClick: () => void showAdminQr() }}
         language={{
           value: lang,
           label: strings.language.label,
@@ -457,6 +476,7 @@ export function MeetingList({
           />
 
           {engine !== "local" ? engineKeysDialog : null}
+          {engine === "openai" ? <OpenaiUsageDialog strings={strings.openaiUsage} /> : null}
         </div>
 
         {engine === "local" ? (
@@ -581,6 +601,18 @@ export function MeetingList({
           </div>
         ))}
       </Section>
+
+      <QrDialog
+        dialogRef={qrDialogRef}
+        qr={qr}
+        error={qrError}
+        onClose={() => {
+          setQr(null);
+          setQrError(null);
+        }}
+        strings={strings.dashboard}
+        buttonClass="cursor-pointer border border-line px-3 py-2 font-mono text-[12px] hover:border-fg"
+      />
     </div>
   );
 }

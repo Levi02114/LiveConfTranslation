@@ -247,13 +247,17 @@ const openAiTranscriptionEventSchema = z.object({
 type OpenAiTranscriptionEvent = z.infer<typeof openAiTranscriptionEventSchema>;
 
 const transcriptionClientMessageSchema = z.union([
-  z.object({ t: z.literal("start"), speakerName: z.string().optional() }),
+  z.object({
+    t: z.literal("start"),
+    speakerName: z.string().optional(),
+    lang: z.string().trim().min(1).max(35).optional(),
+  }),
   z.object({ t: z.literal("heartbeat") }),
   z.object({ t: z.literal("commit") }),
 ]);
 
 type TranscriptionServerMessage =
-  | { t: "error"; reason: "busy" | "key-required" | "local-unavailable" | "speaker-required" | "lost" }
+  | { t: "error"; reason: "busy" | "key-required" | "local-unavailable" | "speaker-required" | "invalid-language" | "lost" }
   | { t: "ready"; leaseId: string | null }
   | { t: "partial"; text: string }
   | {
@@ -279,6 +283,7 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   let upstream: WsSocket | null = null;
   let leaseId: string | null = null;
   let speakerName: string | null = null;
+  let selectedLang: LanguageCode | null = null;
   let started = false;
   let closed = false;
   const committed: string[] = [];
@@ -292,13 +297,10 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
 
   // 2차 전사(rescue)는 힌트 미지원 언어가 있는 세션에서만 의미가 있다 —
   // 그런 언어가 없으면 문자 교차 검증으로 충분하므로 PCM 을 쌓지 않는다.
-  const rescueEnabled =
-    !local &&
-    target.mode === "combined" &&
-    splitTranscribeHintLangs(target.languages).unsupported.length > 0;
+  let rescueEnabled = false;
   let sessionKey: string | null = null;
   let rescuePrompt = "";
-  const rescueAudio = rescueEnabled ? new RescueAudioTurns() : null;
+  let rescueAudio: RescueAudioTurns | null = null;
 
   const send = (message: TranscriptionServerMessage) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));
@@ -310,12 +312,17 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
     upstream?.close();
     upstream = null;
   };
-  const fail = (reason: "busy" | "key-required" | "local-unavailable" | "speaker-required" | "lost") => {
+  const fail = (reason: "busy" | "key-required" | "local-unavailable" | "speaker-required" | "invalid-language" | "lost") => {
     send({ t: "error", reason });
     ws.close(1011, reason);
   };
 
-  const localParams = () => target.mode === "combined"
+  const localParams = () => selectedLang
+    ? buildSingleSessionParams(selectedLang, target.meeting.title, {
+        context: target.meeting.transcriptionContext,
+        speaker: speakerName,
+      })
+    : target.mode === "combined"
     ? buildCombinedSessionParams(
         target.languages,
         target.page.lang,
@@ -337,18 +344,22 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
     const params = localParams();
     localQueue = localQueue.then(async () => {
       if (pcm.byteLength < 9_600) {
-        send({ t: "transcript", itemId, contentIndex: 0, body: "", lang: target.page.lang, usedFallback: false, leaseId });
+        send({ t: "transcript", itemId, contentIndex: 0, body: "", lang: selectedLang ?? target.page.lang, usedFallback: false, leaseId });
         return;
       }
-      const result = await transcribeLocalPcm({ pcm, languages: target.languages, prompt: params.prompt });
-      const lang = result.lang ?? target.page.lang;
+      const result = await transcribeLocalPcm({
+        pcm,
+        languages: selectedLang ? [selectedLang] : target.languages,
+        prompt: params.prompt,
+      });
+      const lang = selectedLang ?? result.lang ?? target.page.lang;
       send({
         t: "transcript",
         itemId,
         contentIndex: 0,
         body: result.body,
         lang,
-        usedFallback: !result.lang,
+        usedFallback: !selectedLang && !result.lang,
         leaseId,
       });
     }).catch((error) => {
@@ -358,11 +369,11 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   };
   const handleCompleted = async (itemId: string, event: OpenAiTranscriptionEvent) => {
     let body = event.transcript?.trim() ?? "";
-    let lang = target.page.lang;
+    let lang = selectedLang ?? target.page.lang;
     let usedFallback = false;
     let scripted: LanguageCode | null = null;
     let detected: LanguageCode | null = null;
-    if (target.mode === "combined") {
+    if (target.mode === "combined" && !selectedLang) {
       detected = matchDetectedLanguage(event.languages?.[0]?.code, target.languages);
       // 문자 증거가 모델 감지와 다르면 문자를 우선한다 — 한글·태국어·싱할라
       // 문자 영역은 짧은 발화에서도 흔들리지 않는다.
@@ -476,18 +487,7 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
       return;
     }
     sessionKey = key;
-    const params = target.mode === "combined"
-      ? buildCombinedSessionParams(
-          target.languages,
-          target.page.lang,
-          target.meeting.title,
-          { context: target.meeting.transcriptionContext, speaker: speakerName },
-        )
-      : buildSingleSessionParams(target.page.lang, target.meeting.title, {
-          farField: target.page.kind === "capture",
-          context: target.meeting.transcriptionContext,
-          speaker: speakerName,
-        });
+    const params = localParams();
     if (rescueEnabled) {
       rescuePrompt = params.prompt +
         (params.keywords.length ? ` Terminology: ${params.keywords.join(", ")}.` : "");
@@ -606,10 +606,23 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
     const message = parsed.data;
     if (message.t === "start" && !started) {
       speakerName = message.speakerName?.trim().slice(0, 40) || null;
+      if (message.lang) {
+        if (target.mode !== "combined" || !target.languages.includes(message.lang)) {
+          fail("invalid-language");
+          return;
+        }
+        selectedLang = message.lang;
+      }
       if (target.page.kind !== "capture" && target.meeting.speakerLabels && !speakerName) {
         fail("speaker-required");
         return;
       }
+      rescueEnabled =
+        !local &&
+        target.mode === "combined" &&
+        !selectedLang &&
+        splitTranscribeHintLangs(target.languages).unsupported.length > 0;
+      rescueAudio = rescueEnabled ? new RescueAudioTurns() : null;
       started = true;
       start();
     } else if (message.t === "heartbeat" && leaseId) {

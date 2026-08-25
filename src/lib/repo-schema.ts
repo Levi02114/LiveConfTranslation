@@ -9,6 +9,8 @@ export const inputModeSchema = z.enum(["human", "realtime"]);
 export const transcriptionProviderSchema = z.enum(["openai", "local"]);
 export const pageKindSchema = z.enum(["input", "output", "combined", "combined-input", "capture"]);
 export const translationStatusSchema = z.enum(["ok", "error"]);
+export const storedSecretIdSchema = z.union([engineIdSchema, z.literal("openai-admin")]);
+export type StoredSecretId = z.infer<typeof storedSecretIdSchema>;
 
 export const meetingRowSchema = z.object({
   id: z.string(),
@@ -75,6 +77,7 @@ export const outputRowSchema = z.object({
   body: z.string(),
   speaker_name: z.string().nullable(),
   status: translationStatusSchema,
+  error: z.string().nullable(),
   revision: z.number().int().nonnegative(),
   edited_at: z.number().nullable(),
   created_at: z.number(),
@@ -126,7 +129,7 @@ export const combinedTranslationRowSchema = z.object({
 });
 
 export const engineSecretRowSchema = z.object({
-  engine: engineIdSchema,
+  engine: storedSecretIdSchema,
   secret: z.instanceof(Uint8Array),
   hint: z.string(),
   updated_at: z.number(),

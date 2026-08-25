@@ -46,6 +46,7 @@ import {
   uiStringRowSchema,
   type MeetingRow,
   type PageRow,
+  type StoredSecretId,
 } from "@/lib/repo-schema";
 import { parseRequiredSqlRow, parseSqlRow, parseSqlRows } from "@/lib/sqlite-schema";
 
@@ -566,6 +567,7 @@ export type OutputEntry = {
   body: string;
   speakerName: string | null;
   status: "ok" | "error";
+  error: string | null;
   revision: number;
   editedAt: number | null;
   createdAt: number;
@@ -581,13 +583,13 @@ export function getRecentOutput(
   const rows = parseSqlRows(
     outputRowSchema,
     getDb().prepare(
-      `SELECT message_id, body, speaker_name, status, revision, edited_at, created_at, updated_at FROM (
-         SELECT m.id AS message_id, m.body, m.speaker_name, 'ok' AS status,
+      `SELECT message_id, body, speaker_name, status, error, revision, edited_at, created_at, updated_at FROM (
+         SELECT m.id AS message_id, m.body, m.speaker_name, 'ok' AS status, NULL AS error,
                 m.revision, m.edited_at, m.created_at,
                 COALESCE(m.edited_at, m.created_at) AS updated_at
          FROM messages m WHERE m.meeting_id = ? AND m.lang = ?
          UNION ALL
-         SELECT t.message_id, t.body, m.speaker_name, t.status,
+         SELECT t.message_id, t.body, m.speaker_name, t.status, t.error,
                 m.revision, m.edited_at, m.created_at,
                 MAX(COALESCE(m.edited_at, m.created_at), t.created_at) AS updated_at
          FROM translations t
@@ -603,6 +605,7 @@ export function getRecentOutput(
     body: row.body,
     speakerName: row.speaker_name,
     status: row.status,
+    error: row.error,
     revision: row.revision,
     editedAt: row.edited_at,
     createdAt: row.created_at,
@@ -930,13 +933,13 @@ export function getRecentCombined(meetingId: string, limit: number | null = null
 // ---------------------------------------------------------- 엔진 API 키
 
 /**
- * 저장된 번역 엔진 API 키.
+ * 저장된 번역 엔진·OpenAI Usage API 자격 증명.
  *
  * `secret` 은 암호문이다. 이 계층은 복호화하지 않는다 — 암호화 규칙은
  * `lib/crypto.ts` 에, 어떤 키를 쓸지 고르는 규칙은 `lib/secrets.ts` 에 둔다.
  */
 export type EngineSecret = {
-  engine: EngineId;
+  engine: StoredSecretId;
   secret: Uint8Array;
   hint: string;
   updatedAt: number;
@@ -944,13 +947,13 @@ export type EngineSecret = {
 
 /** 화면에 내려도 되는 부분만. 암호문이 라우트 밖으로 새지 않게 분리해 둔다. */
 export type EngineSecretInfo = {
-  engine: EngineId;
+  engine: StoredSecretId;
   hint: string;
   updatedAt: number;
 };
 
 export function upsertEngineSecret(input: {
-  engine: EngineId;
+  engine: StoredSecretId;
   secret: Uint8Array;
   hint: string;
 }): void {
@@ -966,7 +969,7 @@ export function upsertEngineSecret(input: {
     .run(input.engine, input.secret, input.hint, Date.now());
 }
 
-export function getEngineSecret(engine: EngineId): EngineSecret | null {
+export function getEngineSecret(engine: StoredSecretId): EngineSecret | null {
   const row = parseSqlRow(
     engineSecretRowSchema,
     getDb()
@@ -999,7 +1002,7 @@ export function listEngineSecrets(): EngineSecretInfo[] {
   }));
 }
 
-export function deleteEngineSecret(engine: EngineId): void {
+export function deleteEngineSecret(engine: StoredSecretId): void {
   getDb().prepare(`DELETE FROM engine_secrets WHERE engine = ?`).run(engine);
 }
 

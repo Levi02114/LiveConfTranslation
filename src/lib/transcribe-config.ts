@@ -87,7 +87,7 @@ function languageCue(lang: LanguageCode): string {
     case "th":
       return "Write Thai (ไทย) in standard Thai script with no spaces between words. Keep polite particles (ครับ/ค่ะ) and numbers exactly as spoken.";
     case "si":
-      return "Write Sinhala (සිංහල) in Sinhala script with standard spelling. Keep numbers, names, and loanwords exactly as spoken.";
+      return "Write Sinhala speech in Sinhala script with standard Sinhala spelling. Keep genuinely spoken English words in Latin script. Never romanize or transliterate Sinhala into Latin letters. Do not translate or add labels, explanations, or other unspoken text.";
     default:
       return `Write ${getLanguage(lang).logName} (${lang}) in its standard written form, preserving exact wording.`;
   }

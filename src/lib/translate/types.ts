@@ -81,6 +81,8 @@ export class TranslationError extends Error {
     message: string,
     readonly engine: EngineId,
     readonly cause?: unknown,
+    /** 화면에 안전하게 전달할 수 있는, 제공자 응답과 독립적인 오류 코드. */
+    readonly code?: string,
   ) {
     super(message);
     this.name = "TranslationError";

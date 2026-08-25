@@ -121,7 +121,7 @@ export function LanguageDialog({
         onClick={() => void open()}
         title={strings.add}
         aria-label={strings.add}
-        className="cursor-pointer border border-line px-1.5 leading-none text-muted transition-colors hover:border-fg hover:bg-fg hover:text-bg"
+        className="grid h-[18px] w-[25px] cursor-pointer place-items-center border border-line p-0 leading-none text-muted transition-colors hover:border-fg hover:bg-fg hover:text-bg"
       >
         ＋
       </button>
