@@ -22,27 +22,30 @@ import "./globals.css";
 const sans = Noto_Sans({
   variable: "--font-noto-sans",
   subsets: ["latin", "vietnamese"],
-  weight: ["400", "500", "700"],
+  weight: "variable",
 });
 const sansKr = Noto_Sans_KR({
   variable: "--font-noto-kr",
   subsets: ["latin"],
-  weight: ["400", "500", "700"],
+  weight: "variable",
+  preload: false,
 });
 const sansThai = Noto_Sans_Thai({
   variable: "--font-noto-thai",
   subsets: ["latin", "thai"],
-  weight: ["400", "500", "700"],
+  weight: "variable",
+  preload: false,
 });
 const sansSinhala = Noto_Sans_Sinhala({
   variable: "--font-noto-sinhala",
   subsets: ["latin", "sinhala"],
-  weight: ["400", "500", "700"],
+  weight: "variable",
+  preload: false,
 });
 const mono = Noto_Sans_Mono({
   variable: "--font-noto-mono",
   subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: "variable",
 });
 
 const FONT_VARIABLES = [sans, sansKr, sansThai, sansSinhala, mono]

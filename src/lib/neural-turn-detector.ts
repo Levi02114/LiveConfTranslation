@@ -29,32 +29,6 @@ export function redemptionMsFor(langs: readonly string[]): number {
     : REDEMPTION_MS;
 }
 
-const VAD_ASSETS = [
-  "/vad/silero_vad_v5.onnx",
-  "/vad/ort-wasm-simd-threaded.mjs",
-  "/vad/ort-wasm-simd-threaded.wasm",
-  "/vad/vad.worklet.bundle.min.js",
-];
-
-let warmed = false;
-
-/**
- * 페이지 진입 직후 유휴 시간에 VAD 자산(wasm·모델, 약 15MB)을 미리 내려받는다.
- * 첫 마이크 시작이 다운로드를 기다리지 않게 하기 위한 캐시 예열일 뿐,
- * 실패해도 시작 경로가 다시 가져오므로 조용히 무시한다. 운영자 페이지만 호출한다.
- */
-export function warmVadAssets(): void {
-  if (warmed || !("window" in globalThis)) return;
-  warmed = true;
-  setTimeout(() => {
-    // JS 청크도 미리 평가해 두면 시작 시 import 가 즉시 끝난다.
-    void import("@ricky0123/vad-web").catch(() => undefined);
-    for (const url of VAD_ASSETS) {
-      void fetch(url).then((response) => response.blob()).catch(() => undefined);
-    }
-  }, 1_000);
-}
-
 type VadInstance = {
   destroy: () => Promise<void>;
 };

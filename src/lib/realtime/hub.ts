@@ -25,7 +25,7 @@ export type Connection = {
   name: string;
   nameClaimed: boolean;
   draft: string;
-  send: (message: ServerMessage) => void;
+  send: (message: ServerMessage, serialized?: string) => void;
   close?: () => void;
 };
 
@@ -122,10 +122,11 @@ export function claimInputName(connection: Connection, name: string): boolean {
 
 /** 회의에 붙어 있는 모든 연결에 규칙대로 배포한다. */
 export function publish(meetingId: string, message: ServerMessage): void {
+  const serialized = JSON.stringify(message);
   for (const connection of state().rooms.get(meetingId) ?? []) {
     if (!shouldDeliver(connection, message)) continue;
     try {
-      connection.send(message);
+      connection.send(message, serialized);
     } catch {
       // 이미 끊긴 소켓. close 핸들러가 정리한다.
     }

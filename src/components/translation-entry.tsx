@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 
 import { translationFailureText, type UiStrings } from "@/lib/i18n-builtin";
 import { type Language, textDirection } from "@/lib/languages";
@@ -8,7 +8,7 @@ import { formatClock } from "@/lib/log-format";
 import type { CombinedEntry } from "@/lib/repo";
 
 /** 원문 하나와 그 번역들을 통합 조회와 같은 가로 묶음으로 표시한다. */
-export function TranslationEntry({
+export const TranslationEntry = memo(function TranslationEntry({
   entry,
   languages,
   targetLanguages = languages,
@@ -23,7 +23,7 @@ export function TranslationEntry({
   strings: UiStrings;
   showSourceLanguage?: boolean;
   editable?: boolean;
-  onEdit?: (body: string, revision: number) => Promise<"ok" | "conflict" | "error">;
+  onEdit?: (messageId: number, body: string, revision: number) => Promise<"ok" | "conflict" | "error">;
 }) {
   const source = languages.find((language) => language.code === entry.sourceLang);
   const targets = targetLanguages.filter((language) => language.code !== entry.sourceLang);
@@ -37,7 +37,7 @@ export function TranslationEntry({
     if (!body || saving || !onEdit) return;
     setSaving(true);
     setEditError(null);
-    const result = await onEdit(body, entry.revision);
+    const result = await onEdit(entry.messageId, body, entry.revision);
     setSaving(false);
     if (result === "ok") {
       setEditing(false);
@@ -47,7 +47,7 @@ export function TranslationEntry({
   };
 
   return (
-    <section className="border-b border-line py-5">
+    <section className="border-b border-line py-5 [contain-intrinsic-size:auto_190px] [content-visibility:auto]">
       <div className="grid grid-cols-1 gap-1 sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-[18px]">
         <div className="whitespace-nowrap font-mono text-[12px] text-muted">
           {entry.speakerName || showSourceLanguage ? (
@@ -167,4 +167,4 @@ export function TranslationEntry({
       ) : null}
     </section>
   );
-}
+});

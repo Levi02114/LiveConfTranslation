@@ -278,6 +278,9 @@ type OpenAiTranscriptionSettings = {
   prompt: string;
 };
 
+const PARTIAL_INTERVAL_MS = 50;
+const MAX_VIEWER_BUFFERED_BYTES = 512 * 1024;
+
 function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   const local = target.meeting.transcriptionProvider === "local";
   let upstream: WsSocket | null = null;
@@ -289,6 +292,7 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   const committed: string[] = [];
   const completedEvents = new Map<string, OpenAiTranscriptionEvent>();
   const partials = new Map<string, string>();
+  let partialTimer: ReturnType<typeof setTimeout> | null = null;
   let nextTranscript = 0;
   let draining = false;
   let localPcm: Buffer[] = [];
@@ -305,9 +309,20 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   const send = (message: TranscriptionServerMessage) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));
   };
+  const flushPartial = () => {
+    if (partialTimer) clearTimeout(partialTimer);
+    partialTimer = null;
+    send({ t: "partial", text: [...partials.values()].join(" ") });
+  };
+  const schedulePartial = () => {
+    if (partialTimer) return;
+    partialTimer = setTimeout(flushPartial, PARTIAL_INTERVAL_MS);
+  };
   const cleanup = () => {
     if (closed) return;
     closed = true;
+    if (partialTimer) clearTimeout(partialTimer);
+    partialTimer = null;
     if (leaseId) releaseCapture(target.page.id, leaseId);
     upstream?.close();
     upstream = null;
@@ -552,10 +567,10 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
       }
       if (event.type === "conversation.item.input_audio_transcription.delta") {
         partials.set(event.item_id, (partials.get(event.item_id) ?? "") + (event.delta ?? ""));
-        send({ t: "partial", text: [...partials.values()].join(" ") });
+        schedulePartial();
       } else if (event.type === "conversation.item.input_audio_transcription.completed") {
         partials.delete(event.item_id);
-        send({ t: "partial", text: [...partials.values()].join(" ") });
+        flushPartial();
         completedEvents.set(event.item_id, event);
         void drainCompleted();
       }
@@ -657,8 +672,16 @@ function attach(ws: WebSocket, target: Target) {
     name,
     nameClaimed: false,
     draft: "",
-    send: (message: ServerMessage) => {
-      if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));
+    send: (message: ServerMessage, serialized?: string) => {
+      if (ws.readyState !== ws.OPEN) return;
+      if (
+        (target.kind === "output" || target.kind === "combined") &&
+        ws.bufferedAmount > MAX_VIEWER_BUFFERED_BYTES
+      ) {
+        ws.close(1013, "Slow client");
+        return;
+      }
+      ws.send(serialized ?? JSON.stringify(message));
     },
     close: () => ws.close(1008, "Page disabled"),
   };

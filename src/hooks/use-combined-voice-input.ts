@@ -7,7 +7,7 @@ import { AudioTurnDetector } from "@/lib/audio-turn-detector";
 import { newBrowserId } from "@/lib/browser-id";
 import type { UiStrings } from "@/lib/i18n-builtin";
 import type { LanguageCode } from "@/lib/languages";
-import { NeuralTurnDetector, redemptionMsFor, warmVadAssets } from "@/lib/neural-turn-detector";
+import { NeuralTurnDetector, redemptionMsFor } from "@/lib/neural-turn-detector";
 import {
   METER_INTERVAL_MS,
   VoiceMeterTracker,
@@ -50,7 +50,6 @@ type ServerVoiceInputOptions = {
   langs: readonly LanguageCode[];
   lang?: LanguageCode | null;
   enabled?: boolean;
-  preloadVad?: boolean;
   requestPermissionOnMount?: boolean;
   autoSubmit?: boolean;
   onTranscript?: (body: string) => void;
@@ -65,7 +64,6 @@ export function useServerVoiceInput({
   langs,
   lang = null,
   enabled = true,
-  preloadVad = true,
   requestPermissionOnMount = true,
   autoSubmit = true,
   onTranscript,
@@ -141,13 +139,6 @@ export function useServerVoiceInput({
     clientId.current = newBrowserId();
     return disconnect;
   }, [disconnect, enabled]);
-
-  // 페이지 진입 시 VAD 자산을 미리 내려받는다 — 첫 마이크 시작이 다운로드를
-  // 기다리지 않게 하기 위한 예열이다.
-  useEffect(() => {
-    if (!enabled || !preloadVad) return;
-    warmVadAssets();
-  }, [enabled, preloadVad]);
 
   useEffect(() => {
     if (!enabled || !navigator.mediaDevices?.enumerateDevices) return;

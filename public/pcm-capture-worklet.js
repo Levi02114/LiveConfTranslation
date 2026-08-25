@@ -11,6 +11,7 @@
 const KERNEL = 8; // 각 출력 샘플 양옆으로 보는 입력 샘플 수
 const HPF_CUTOFF_HZ = 80;
 const RMS_WINDOW_MS = 100; // RMS 슬라이딩 창 길이(폴백 VAD·음량 미터용)
+const BATCH_SAMPLES = 960; // 24kHz 40ms — 작은 WS 프레임 폭증을 막는다.
 
 function sinc(x) {
   return x === 0 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x);
@@ -32,6 +33,32 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
     this.winPos = 0;
     this.winCount = 0;
     this.winSum = 0;
+    this.pending = new Int16Array(BATCH_SAMPLES);
+    this.pendingLength = 0;
+    this.pendingPeak = 0;
+    this.pendingRms = 0;
+  }
+
+  queue(pcm, rms, peak) {
+    let offset = 0;
+    this.pendingRms = rms;
+    this.pendingPeak = Math.max(this.pendingPeak, peak);
+    while (offset < pcm.length) {
+      const count = Math.min(pcm.length - offset, BATCH_SAMPLES - this.pendingLength);
+      this.pending.set(pcm.subarray(offset, offset + count), this.pendingLength);
+      this.pendingLength += count;
+      offset += count;
+      if (this.pendingLength !== BATCH_SAMPLES) continue;
+
+      const batch = this.pending;
+      this.pending = new Int16Array(BATCH_SAMPLES);
+      this.pendingLength = 0;
+      this.port.postMessage(
+        { pcm: batch.buffer, rms: this.pendingRms, peak: this.pendingPeak },
+        [batch.buffer],
+      );
+      this.pendingPeak = 0;
+    }
   }
 
   highpass(input) {
@@ -81,7 +108,7 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
       }
       this.hpfPrevX = prevX;
       this.hpfPrevY = prevY;
-      this.port.postMessage({ pcm: pcm.buffer, rms, peak }, [pcm.buffer]);
+      this.queue(pcm, rms, peak);
       return true;
     }
 
@@ -117,7 +144,7 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < out.length; i += 1) {
       pcm[i] = out[i] < 0 ? out[i] * 32768 : out[i] * 32767;
     }
-    this.port.postMessage({ pcm: pcm.buffer, rms, peak }, [pcm.buffer]);
+    this.queue(pcm, rms, peak);
     return true;
   }
 }

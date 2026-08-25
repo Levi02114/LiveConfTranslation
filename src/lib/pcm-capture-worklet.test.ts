@@ -8,7 +8,7 @@ type Processor = {
   process: (inputs: Float32Array[][]) => boolean;
 };
 
-test("24kHz 입력은 추가 리샘플링 없이 같은 샘플 수의 PCM을 만든다", () => {
+test("24kHz 입력은 40ms PCM 프레임으로 묶어 전송한다", () => {
   const constructors: Array<new () => Processor> = [];
   class AudioWorkletProcessor {
     port = { postMessage: () => {} };
@@ -30,10 +30,13 @@ test("24kHz 입력은 추가 리샘플링 없이 같은 샘플 수의 PCM을 만
   processor.port.postMessage = (message: { pcm: ArrayBuffer; rms: number; peak: number }) => {
     results.push(message);
   };
-  assert.equal(processor.process([[Float32Array.from({ length: 128 }, () => 0.25)]]), true);
+  for (let index = 0; index < 8; index += 1) {
+    assert.equal(processor.process([[Float32Array.from({ length: 128 }, () => 0.25)]]), true);
+  }
+  assert.equal(results.length, 1);
   const output = results[0];
   assert.ok(output);
-  assert.equal(new Int16Array(output.pcm).length, 128);
+  assert.equal(new Int16Array(output.pcm).length, 960);
   assert.ok(output.rms > 0);
   assert.equal(output.peak, 0.25);
 });

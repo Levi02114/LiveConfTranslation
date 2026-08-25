@@ -9,7 +9,7 @@ import { useServerVoiceInput } from "@/hooks/use-combined-voice-input";
 import type { UiStrings } from "@/lib/i18n-builtin";
 import { parseJsonResponse } from "@/lib/json-response";
 import type { LanguageCode } from "@/lib/languages";
-import { NeuralTurnDetector, redemptionMsFor, warmVadAssets } from "@/lib/neural-turn-detector";
+import { NeuralTurnDetector, redemptionMsFor } from "@/lib/neural-turn-detector";
 import { singleTranscriptionProfile } from "@/lib/transcription-profile";
 import {
   METER_INTERVAL_MS,
@@ -32,6 +32,8 @@ const transcriptionEventSchema = z.object({
   transcript: z.string().optional(),
 });
 type CompletedTranscript = { contentIndex: number; body: string };
+const PARTIAL_INTERVAL_MS = 50;
+const AUDIO_ANALYSIS_INTERVAL_MS = 50;
 
 export function useVoiceInput({
   token,
@@ -68,7 +70,6 @@ export function useVoiceInput({
     onTranscript,
     langs: lang ? [lang] : [],
     enabled: serverTransport,
-    preloadVad: requestPermissionOnMount,
     requestPermissionOnMount,
   });
   const [state, setState] = useState<VoiceInputState>("idle");
@@ -98,6 +99,23 @@ export function useVoiceInput({
   const speechSinceCommit = useRef(false);
   const meterLastSet = useRef(0);
   const meterPeak = useRef(0);
+  const partialTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const partialText = useRef("");
+
+  const renderPartial = useCallback((value: string, immediate = false) => {
+    partialText.current = value;
+    if (immediate) {
+      if (partialTimer.current) clearTimeout(partialTimer.current);
+      partialTimer.current = null;
+      setPartial(value);
+      return;
+    }
+    if (partialTimer.current) return;
+    partialTimer.current = setTimeout(() => {
+      partialTimer.current = null;
+      setPartial(partialText.current);
+    }, PARTIAL_INTERVAL_MS);
+  }, []);
 
   // 음량 미터는 100ms 간격으로만 상태를 갱신해 불필요한 리렌더를 막는다.
   const updateMeter = useCallback((tracker: VoiceMeterTracker, rms: number, peak: number) => {
@@ -117,6 +135,9 @@ export function useVoiceInput({
       heartbeat.current = null;
       if (closingTimer.current) clearTimeout(closingTimer.current);
       closingTimer.current = null;
+      if (partialTimer.current) clearTimeout(partialTimer.current);
+      partialTimer.current = null;
+      partialText.current = "";
       if (audioFrame.current !== null) cancelAnimationFrame(audioFrame.current);
       audioFrame.current = null;
       void neuralVad.current?.destroy();
@@ -160,13 +181,6 @@ export function useVoiceInput({
     clientId.current = newBrowserId();
     return () => disconnect();
   }, [disconnect, serverTransport]);
-
-  // 페이지 진입 시 VAD 자산을 미리 내려받는다 — 첫 마이크 시작이 다운로드를
-  // 기다리지 않게 하기 위한 예열이다.
-  useEffect(() => {
-    if (serverTransport || !requestPermissionOnMount) return;
-    warmVadAssets();
-  }, [requestPermissionOnMount, serverTransport]);
 
   const refreshDevices = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -304,10 +318,10 @@ export function useVoiceInput({
       if (!itemId) return;
       if (event.type === "conversation.item.input_audio_transcription.delta") {
         partials.current.set(itemId, (partials.current.get(itemId) ?? "") + (event.delta ?? ""));
-        setPartial([...partials.current.values()].join(" "));
+        renderPartial([...partials.current.values()].join(" "));
       } else if (event.type === "conversation.item.input_audio_transcription.completed") {
         partials.current.delete(itemId);
-        setPartial([...partials.current.values()].join(" "));
+        renderPartial([...partials.current.values()].join(" "), true);
         completedItems.current.set(itemId, {
           contentIndex: event.content_index ?? 0,
           body: event.transcript?.trim() ?? "",
@@ -315,7 +329,7 @@ export function useVoiceInput({
         flushTranscripts(sessionLease);
       }
     },
-    [disconnect, flushTranscripts],
+    [disconnect, flushTranscripts, renderPartial],
   );
 
   const monitorSilence = useCallback(
@@ -351,7 +365,13 @@ export function useVoiceInput({
       const samples = new Float32Array(analyser.fftSize);
       const detector = new AudioTurnDetector();
       const tracker = new VoiceMeterTracker();
-      const measure = () => {
+      let lastMeasurement = 0;
+      const measure = (now: number) => {
+        if (now - lastMeasurement < AUDIO_ANALYSIS_INTERVAL_MS) {
+          audioFrame.current = requestAnimationFrame(measure);
+          return;
+        }
+        lastMeasurement = now;
         analyser.getFloatTimeDomainData(samples);
         let sum = 0;
         let peak = 0;
@@ -372,7 +392,7 @@ export function useVoiceInput({
         updateMeter(tracker, level, peak);
         audioFrame.current = requestAnimationFrame(measure);
       };
-      measure();
+      audioFrame.current = requestAnimationFrame(measure);
     },
     [lang, sendCommit, updateMeter],
   );

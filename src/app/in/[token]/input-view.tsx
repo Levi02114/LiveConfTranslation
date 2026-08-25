@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppearanceControls } from "@/components/appearance-controls";
 import { TranslationEntry } from "@/components/translation-entry";
@@ -16,6 +16,7 @@ import { appendTranscriptDraft } from "@/lib/transcript-draft";
 
 /** 초안은 타자마다 오간다. 글자당 한 번씩 보내지 않도록 묶어서 보낸다. */
 const DRAFT_INTERVAL_MS = 180;
+const NO_TARGET_LANGUAGES: Language[] = [];
 
 export function InputView({
   token,
@@ -55,6 +56,7 @@ export function InputView({
   const [speakerPromptOpen, setSpeakerPromptOpen] = useState(false);
   const [speakerClaimed, setSpeakerClaimed] = useState(!speakerLabels);
   const [speakerError, setSpeakerError] = useState<string | null>(null);
+  const targetLanguage = useMemo(() => [language], [language]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -390,11 +392,11 @@ export function InputView({
                 key={entry.messageId}
                 entry={entry}
                 languages={languages}
-                targetLanguages={entry.sourceLang === language.code ? [] : [language]}
+                targetLanguages={entry.sourceLang === language.code ? NO_TARGET_LANGUAGES : targetLanguage}
                 strings={strings}
                 showSourceLanguage
                 editable={!closed && entry.pageId === pageId}
-                onEdit={(body, revision) => edit(entry.messageId, body, revision)}
+                onEdit={edit}
               />
             ))}
 

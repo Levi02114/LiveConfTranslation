@@ -14,6 +14,7 @@ import type { ServerMessage } from "./protocol";
 
 test("입력 페이지가 다른 언어 원문과 번역도 받는다", () => {
   const received: ServerMessage[] = [];
+  const serialized: string[] = [];
   const connection: Connection = {
     clientId: "test-input",
     meetingId: "test-meeting",
@@ -22,7 +23,10 @@ test("입력 페이지가 다른 언어 원문과 번역도 받는다", () => {
     name: "test",
     nameClaimed: true,
     draft: "",
-    send: (message) => received.push(message),
+    send: (message, payload) => {
+      received.push(message);
+      if (payload) serialized.push(payload);
+    },
   };
 
   join(connection);
@@ -57,6 +61,7 @@ test("입력 페이지가 다른 언어 원문과 번역도 받는다", () => {
       received.map((message) => message.t),
       ["message", "translation"],
     );
+    assert.deepEqual(serialized.map((payload) => JSON.parse(payload).t), ["message", "translation"]);
   } finally {
     leave(connection);
   }

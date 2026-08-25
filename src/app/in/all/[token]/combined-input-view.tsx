@@ -88,7 +88,6 @@ export function CombinedInputView({
     lang: inputLang || null,
     autoSubmit: voiceMode,
     onTranscript: appendTranscript,
-    preloadVad: voiceAvailable,
     requestPermissionOnMount: voiceAvailable,
   });
   const { stop: stopVoice } = voice;
@@ -371,11 +370,10 @@ export function CombinedInputView({
                 key={entry.messageId}
                 entry={entry}
                 languages={languages}
-                targetLanguages={languages.filter((language) => language.code !== entry.sourceLang)}
                 strings={strings}
                 showSourceLanguage
                 editable={!closed && entry.pageId === pageId}
-                onEdit={(body, revision) => edit(entry.messageId, body, revision)}
+                onEdit={edit}
               />
             ))}
             {typing.map((peer) => (

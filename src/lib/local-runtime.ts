@@ -114,7 +114,7 @@ export async function ensureLocalTranscriptionRuntime(): Promise<string> {
     "--language", "auto",
     "--no-timestamps",
     "--suppress-nst",
-    "--threads", String(Math.max(1, Math.min(4, Math.floor(availableParallelism() / 4)))),
+    "--threads", String(Math.max(1, Math.min(4, availableParallelism() - 1))),
   ];
   if (!localAiUseGpu()) args.push("--no-gpu");
   const child = spawn(binary, args, { cwd: dirname(binary), windowsHide: true });
