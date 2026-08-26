@@ -11,7 +11,7 @@ import {
 import { sessionConfigSchema } from "@/lib/session-config";
 import { localTranscriptionConfigured } from "@/lib/local-runtime";
 import { transcriptionProviderSchema } from "@/lib/repo-schema";
-import { resolveOpenaiModel } from "@/lib/secrets";
+import { resolveOpenaiModel, transcriptionProviderConfigured } from "@/lib/secrets";
 import { getEngine, isEngineId } from "@/lib/translate";
 
 /*
@@ -67,6 +67,9 @@ export async function POST(request: Request) {
   }
   if (transcriptionProvider === "local" && !localTranscriptionConfigured()) {
     return Response.json({ error: "로컬 음성 인식 모델이 설치되지 않았습니다" }, { status: 400 });
+  }
+  if (transcriptionProvider === "google" && !transcriptionProviderConfigured("google")) {
+    return Response.json({ error: "Google Speech 서비스 계정을 등록해 주세요" }, { status: 400 });
   }
 
   const activeLanguages = config.languages

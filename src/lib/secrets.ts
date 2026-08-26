@@ -1,6 +1,9 @@
 import { decryptSecret } from "@/lib/crypto";
 import { getEngineSecret } from "@/lib/repo";
+import type { TranscriptionProvider } from "@/lib/repo";
+import { localTranscriptionConfigured } from "@/lib/local-runtime";
 import type { EngineId } from "@/lib/translate/types";
+import { z } from "zod";
 
 /**
  * 번역 엔진 API 키를 어디서 가져올지 정하는 곳.
@@ -35,6 +38,16 @@ export type EngineKeyStatus = {
 /** OpenAI 번역은 검증된 단일 모델만 사용한다. */
 export const OPENAI_TRANSLATION_MODEL = "gpt-5.6-luna";
 const OPENAI_ADMIN_SECRET_ID = "openai-admin" as const;
+const GOOGLE_SPEECH_SECRET_ID = "google-speech" as const;
+
+export const googleSpeechCredentialsSchema = z.object({
+  type: z.literal("service_account"),
+  project_id: z.string().trim().min(1).max(200),
+  client_email: z.string().trim().email().max(320),
+  private_key: z.string().min(100).max(10_000),
+  token_uri: z.literal("https://oauth2.googleapis.com/token"),
+});
+export type GoogleSpeechCredentials = z.infer<typeof googleSpeechCredentialsSchema>;
 
 /**
  * 관리자 화면에 내려 줄 상태. **평문 키는 절대 포함하지 않는다.**
@@ -66,6 +79,42 @@ export function openaiAdminKeyStatus() {
     hint: configured ? (stored?.hint ?? null) : null,
     updatedAt: configured ? (stored?.updatedAt ?? null) : null,
   };
+}
+
+/** Google Speech 서비스 계정. 평문 JSON은 서버 내부에서만 사용한다. */
+export function googleSpeechCredentials(): GoogleSpeechCredentials | undefined {
+  const stored = getEngineSecret(GOOGLE_SPEECH_SECRET_ID);
+  if (!stored) return undefined;
+  const decrypted = decryptSecret(stored.secret);
+  if (!decrypted) return undefined;
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(decrypted);
+  } catch {
+    console.warn("[secrets] Google Speech 서비스 계정 JSON을 읽지 못했습니다.");
+    return undefined;
+  }
+  const parsed = googleSpeechCredentialsSchema.safeParse(decoded);
+  if (parsed.success) return parsed.data;
+  console.warn("[secrets] Google Speech 서비스 계정 정보를 읽지 못했습니다.");
+  return undefined;
+}
+
+/** 관리자 화면에 내려도 되는 Google Speech 등록 상태. */
+export function googleSpeechCredentialsStatus() {
+  const stored = getEngineSecret(GOOGLE_SPEECH_SECRET_ID);
+  const configured = Boolean(googleSpeechCredentials());
+  return {
+    configured,
+    hint: configured ? (stored?.hint ?? null) : null,
+    updatedAt: configured ? (stored?.updatedAt ?? null) : null,
+  };
+}
+
+export function transcriptionProviderConfigured(provider: TranscriptionProvider): boolean {
+  if (provider === "local") return localTranscriptionConfigured();
+  if (provider === "google") return Boolean(googleSpeechCredentials());
+  return Boolean(engineKey("openai"));
 }
 
 /**

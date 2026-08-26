@@ -15,7 +15,11 @@ import {
   listMeetings,
   listSessionPresets,
 } from "@/lib/repo";
-import { engineKeyStatus, resolveOpenaiModel } from "@/lib/secrets";
+import {
+  engineKeyStatus,
+  googleSpeechCredentialsStatus,
+  resolveOpenaiModel,
+} from "@/lib/secrets";
 import { getEngine, listEngines, refreshEngineSupport } from "@/lib/translate";
 import type { EngineId } from "@/lib/translate/types";
 import { translateUiStrings } from "@/lib/ui-translate";
@@ -99,6 +103,7 @@ export default async function AdminPage() {
         configured: engine.isConfigured(),
       }))}
       engineKeys={listEngines().filter((engine) => engine.id !== "local").map((engine) => engineKeyStatus(engine.id))}
+      googleSpeechCredentials={googleSpeechCredentialsStatus()}
       localTranscriptionAvailable={localTranscriptionAvailable}
       defaultTranscriptionProvider={defaultTranscriptionProvider}
       defaultEngine={selectedEngine}

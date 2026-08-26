@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'unsafe-inline'" />
+    <title>Telegram</title>
+    <style>
+      :root { color-scheme: light dark; --bg: Canvas; --fg: CanvasText; --muted: GrayText; --line: color-mix(in srgb, CanvasText 22%, transparent); --panel: color-mix(in srgb, CanvasText 5%, Canvas); }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 system-ui, sans-serif; }
+      button, input { min-height: 38px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: inherit; padding: 7px 12px; }
+      button { cursor: pointer; }
+      button:disabled { cursor: default; opacity: .45; }
+      main { max-width: 720px; min-height: 100vh; margin: auto; padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+      h1, h2, p { margin: 0; }
+      h1 { font-size: 24px; }
+      h2 { font-size: 18px; }
+      .muted { color: var(--muted); }
+      .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+      .steps button { text-align: left; min-height: 54px; }
+      .steps button[aria-current="step"] { border-color: var(--fg); background: var(--panel); }
+      .card { border: 1px solid var(--line); padding: 20px; display: grid; gap: 16px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      label { display: grid; gap: 6px; }
+      input[type="text"], input[type="password"] { width: 100%; }
+      .bot { padding: 10px 12px; background: var(--panel); overflow-wrap: anywhere; }
+      .chat { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+      .chat:first-child { border-top: 0; }
+      .chat-name { min-width: 0; overflow-wrap: anywhere; }
+      .toggle { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; }
+      .toggle input { min-height: auto; margin-top: 5px; }
+      .notice { border-left: 3px solid var(--muted); padding: 8px 12px; color: var(--muted); }
+      .message { min-height: 24px; color: var(--muted); }
+      .message.error { color: #c43131; }
+      footer { margin-top: auto; display: flex; justify-content: space-between; gap: 8px; padding-top: 4px; }
+      footer div { display: flex; gap: 8px; }
+      @media (max-width: 620px) {
+        main { padding: 16px; }
+        .steps { grid-template-columns: repeat(2, 1fr); }
+        .chat { grid-template-columns: minmax(0, 1fr) auto; }
+        .chat button:last-child { grid-column: 2; }
+      }
+    </style>
+  </head>
+  <body><div id="root"></div><script src="./telegram-setup.js"></script></body>
+</html>

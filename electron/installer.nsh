@@ -61,6 +61,7 @@ Var LocalAiTranscriptionModel
 Var LocalAiTranscriptionControl
 Var LocalAiTermsAccepted
 Var LocalAiTermsControl
+Var LocalAiTermsLink
 Var LocalAiDesktopShortcut
 Var LocalAiDesktopShortcutControl
 
@@ -87,7 +88,7 @@ Var LocalAiDesktopShortcutControl
 
 Function LocalAiModelsPageCreate
   ${If} $LocalAiInitialized == ""
-    StrCpy $LocalAiEnabled ${BST_CHECKED}
+    StrCpy $LocalAiEnabled ${BST_UNCHECKED}
     StrCpy $LocalAiTermsAccepted ${BST_UNCHECKED}
     StrCpy $LocalAiDesktopShortcut ${BST_UNCHECKED}
     StrCpy $LocalAiInitialized "1"
@@ -100,6 +101,7 @@ Function LocalAiModelsPageCreate
   ${NSD_CreateCheckbox} 0u 0u 100% 18u "$(LocalAiEnable)"
   Pop $LocalAiEnabledControl
   ${NSD_SetState} $LocalAiEnabledControl $LocalAiEnabled
+  ${NSD_OnClick} $LocalAiEnabledControl LocalAiToggleControls
 
   ${NSD_CreateLabel} 0u 30u 100% 12u "$(LocalAiTranslation)"
   Pop $0
@@ -132,13 +134,30 @@ Function LocalAiModelsPageCreate
   Pop $LocalAiTermsControl
   ${NSD_SetState} $LocalAiTermsControl $LocalAiTermsAccepted
   ${NSD_CreateLink} 0u 144u 100% 14u "$(LocalAiOpenTerms)"
-  Pop $0
-  ${NSD_OnClick} $0 LocalAiOpenTerms
+  Pop $LocalAiTermsLink
+  ${NSD_OnClick} $LocalAiTermsLink LocalAiOpenTerms
   ${NSD_CreateCheckbox} 0u 162u 100% 18u "$(LocalAiDesktopShortcut)"
   Pop $LocalAiDesktopShortcutControl
   ${NSD_SetState} $LocalAiDesktopShortcutControl $LocalAiDesktopShortcut
 
+  Call LocalAiToggleControls
+
   nsDialogs::Show
+FunctionEnd
+
+Function LocalAiToggleControls
+  ${NSD_GetState} $LocalAiEnabledControl $0
+  ${If} $0 == ${BST_CHECKED}
+    EnableWindow $LocalAiTranslationControl 1
+    EnableWindow $LocalAiTranscriptionControl 1
+    EnableWindow $LocalAiTermsControl 1
+    EnableWindow $LocalAiTermsLink 1
+  ${Else}
+    EnableWindow $LocalAiTranslationControl 0
+    EnableWindow $LocalAiTranscriptionControl 0
+    EnableWindow $LocalAiTermsControl 0
+    EnableWindow $LocalAiTermsLink 0
+  ${EndIf}
 FunctionEnd
 
 Function LocalAiOpenTerms

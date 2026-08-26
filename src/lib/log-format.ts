@@ -18,6 +18,8 @@ export type LogLine = {
   /** 이 줄이 속한 언어. 필터링에 쓴다. */
   lang: LanguageCode;
   kind: "source" | "translation";
+  body: string;
+  speakerName: string | null;
   text: string;
 };
 
@@ -58,6 +60,15 @@ export function renderLogFile(lines: LogLine[], editedLabel?: string): string {
   return lines
     .map((line) => line.editedAt && editedLabel ? `${line.text} (${editedLabel})` : line.text)
     .join("\n") + "\n";
+}
+
+/** 회의록은 모든 원문을 보존하고 사용자가 고른 언어의 번역만 덧붙인다. */
+export function selectMinutesLines(
+  lines: readonly LogLine[],
+  translationLanguages: readonly LanguageCode[],
+): LogLine[] {
+  const selected = new Set(translationLanguages);
+  return lines.filter((line) => line.kind === "source" || selected.has(line.lang));
 }
 
 /** 화면에 뿌리는 짧은 시각 `HH:mm:ss`. 로그 파일이 아니라 실시간 목록용이다. */

@@ -41,6 +41,7 @@ import {
 } from "@/lib/script-language";
 import { ensureLocalTranscriptionRuntime, localTranscriptionConfigured } from "@/lib/local-runtime";
 import { transcribeLocalPcm } from "@/lib/local-transcription";
+import { transcribeGooglePcm } from "@/lib/google-transcription";
 import type { LanguageCode } from "@/lib/languages";
 import {
   broadcastPresence,
@@ -65,7 +66,7 @@ import {
   releaseCapture,
   renewCapture,
 } from "@/lib/realtime/capture-lease";
-import { engineKey } from "@/lib/secrets";
+import { engineKey, googleSpeechCredentials } from "@/lib/secrets";
 import {
   buildCombinedSessionParams,
   buildSingleSessionParams,
@@ -262,7 +263,7 @@ const transcriptionClientMessageSchema = z.union([
 ]);
 
 type TranscriptionServerMessage =
-  | { t: "error"; reason: "busy" | "key-required" | "local-unavailable" | "speaker-required" | "invalid-language" | "lost" }
+  | { t: "error"; reason: "busy" | "key-required" | "google-unavailable" | "local-unavailable" | "speaker-required" | "invalid-language" | "lost" }
   | { t: "ready"; leaseId: string | null }
   | { t: "partial"; text: string }
   | {
@@ -288,6 +289,7 @@ const MAX_VIEWER_BUFFERED_BYTES = 512 * 1024;
 
 function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   const local = target.meeting.transcriptionProvider === "local";
+  const google = target.meeting.transcriptionProvider === "google";
   let upstream: WsSocket | null = null;
   let leaseId: string | null = null;
   let speakerName: string | null = null;
@@ -300,9 +302,9 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   let partialTimer: ReturnType<typeof setTimeout> | null = null;
   let nextTranscript = 0;
   let draining = false;
-  let localPcm: Buffer[] = [];
-  let localBytes = 0;
-  let localQueue = Promise.resolve();
+  let bufferedPcm: Buffer[] = [];
+  let bufferedBytes = 0;
+  let serverQueue = Promise.resolve();
 
   // 2차 전사(rescue)는 힌트 미지원 언어가 있는 세션에서만 의미가 있다 —
   // 그런 언어가 없으면 문자 교차 검증으로 충분하므로 PCM 을 쌓지 않는다.
@@ -332,7 +334,7 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
     upstream?.close();
     upstream = null;
   };
-  const fail = (reason: "busy" | "key-required" | "local-unavailable" | "speaker-required" | "invalid-language" | "lost") => {
+  const fail = (reason: "busy" | "key-required" | "google-unavailable" | "local-unavailable" | "speaker-required" | "invalid-language" | "lost") => {
     send({ t: "error", reason });
     ws.close(1011, reason);
   };
@@ -355,23 +357,26 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
         speaker: speakerName,
       });
 
-  const commitLocal = () => {
-    const pcm = Buffer.concat(localPcm, localBytes);
-    localPcm = [];
-    localBytes = 0;
+  const commitServerTranscription = () => {
+    const pcm = Buffer.concat(bufferedPcm, bufferedBytes);
+    bufferedPcm = [];
+    bufferedBytes = 0;
     send({ t: "partial", text: "" });
     const itemId = randomUUID();
     const params = localParams();
-    localQueue = localQueue.then(async () => {
+    serverQueue = serverQueue.then(async () => {
       if (pcm.byteLength < 9_600) {
         send({ t: "transcript", itemId, contentIndex: 0, body: "", lang: selectedLang ?? target.page.lang, usedFallback: false, leaseId });
         return;
       }
-      const result = await transcribeLocalPcm({
-        pcm,
-        languages: selectedLang ? [selectedLang] : target.languages,
-        prompt: params.prompt,
-      });
+      const requestedLang = selectedLang ?? target.page.lang;
+      const result = google
+        ? await transcribeGooglePcm({ pcm, lang: requestedLang, keywords: params.keywords })
+        : await transcribeLocalPcm({
+            pcm,
+            languages: selectedLang ? [selectedLang] : target.languages,
+            prompt: params.prompt,
+          });
       const lang = selectedLang ?? result.lang ?? target.page.lang;
       send({
         t: "transcript",
@@ -379,11 +384,11 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
         contentIndex: 0,
         body: result.body,
         lang,
-        usedFallback: !selectedLang && !result.lang,
+        usedFallback: target.mode === "combined" && !selectedLang,
         leaseId,
       });
-    }).catch((error) => {
-      console.error("[local-transcribe] 확정 전사 실패", error);
+    }).catch(() => {
+      console.error(`[${google ? "google" : "local"}-transcribe] 확정 전사 실패`);
       if (!closed) fail("lost");
     });
   };
@@ -506,6 +511,10 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
       fail("local-unavailable");
       return;
     }
+    if (google && !googleSpeechCredentials()) {
+      fail("google-unavailable");
+      return;
+    }
     const lease = target.mode === "combined"
       ? claimExclusiveCapture(target.meeting.id, target.page.id, target.clientId)
       : claimCapture(target.meeting.id, target.page.id, target.clientId);
@@ -522,6 +531,10 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
         console.error("[local-transcribe] 시작 실패", error);
         if (!closed) fail("local-unavailable");
       });
+      return;
+    }
+    if (google) {
+      send({ t: "ready", leaseId });
       return;
     }
 
@@ -626,9 +639,9 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
         ws.close(1009, "Audio frame too large");
         return;
       }
-      if (local) {
-        localPcm.push(audio);
-        localBytes += audio.byteLength;
+      if (local || google) {
+        bufferedPcm.push(audio);
+        bufferedBytes += audio.byteLength;
         return;
       }
       if (!upstream || upstream.readyState !== WsSocket.OPEN) return;
@@ -669,14 +682,14 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
           ? [target.page.lang]
           : target.languages;
       rescueEnabled =
-        !local && splitTranscribeHintLangs(rescueLangs).unsupported.length > 0;
+        !local && !google && splitTranscribeHintLangs(rescueLangs).unsupported.length > 0;
       rescueAudio = rescueEnabled ? new RescueAudioTurns() : null;
       started = true;
       start();
     } else if (message.t === "heartbeat" && leaseId) {
       if (!renewCapture(target.page.id, leaseId)) fail("lost");
     } else if (message.t === "commit") {
-      if (local) commitLocal();
+      if (local || google) commitServerTranscription();
       else if (upstream?.readyState === WsSocket.OPEN) {
         rescueAudio?.markCommit();
         upstream.send(JSON.stringify({ type: "input_audio_buffer.commit" }));

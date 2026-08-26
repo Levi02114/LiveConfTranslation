@@ -5,8 +5,9 @@ const { existsSync, mkdirSync, readFileSync, writeFileSync } = require("node:fs"
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
+const { z } = require("zod");
 
-const { app, BrowserWindow, clipboard, dialog, Menu, shell } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, safeStorage, shell } = require("electron");
 
 const {
   extractQuickTunnelUrl,
@@ -15,6 +16,15 @@ const {
   pickLanAddress,
 } = require("./network.cjs");
 const { applyLocalAiEnvironment, ensureLocalCertificate, installLocalAi, installedLocalAi, stringsFor: localAiStrings } = require("./local-ai.cjs");
+const {
+  notificationKey,
+  pairingChat,
+  retryDelay,
+  shouldNotifyTunnelStopped,
+  shouldReplaceTunnel,
+  shouldSendTelegramUrl,
+  stringsForLocale,
+} = require("./telegram.cjs");
 
 const PORT = 3000;
 const LOOPBACK_ORIGIN = `http://127.0.0.1:${PORT}`;
@@ -33,8 +43,24 @@ let preferredShareOrigin = null;
 let shareOrigin = LOOPBACK_ORIGIN;
 let tunnelProcess = null;
 let tunnelStarting = false;
-let tunnelStopping = false;
+let tunnelInteractive = false;
+let tunnelStopReason = null;
 let tunnelUrl = null;
+let tunnelState = "off";
+let tunnelHealthTimer = null;
+let tunnelRestartTimer = null;
+let tunnelRetryAttempt = 0;
+let publicHealthFailures = 0;
+let telegramWindow = null;
+let telegramPairing = false;
+let lastTelegramNotificationUrl = null;
+let unavailableTunnelUrl = null;
+const sentTelegramNotifications = new Set();
+const telegramNotificationTimers = new Map();
+const telegramTokenSchema = z.string().trim().regex(/^\d{6,20}:[A-Za-z0-9_-]{20,}$/);
+const telegramChatIdSchema = z.string().regex(/^-?\d+$/);
+const telegramCopySchema = z.string().max(100);
+const telegramPairModeSchema = z.enum(["private", "group"]);
 let quitApproved = false;
 let quitPromptOpen = false;
 
@@ -77,13 +103,14 @@ async function waitForServer() {
 }
 
 function loadDesktopSettings() {
-  if (!app.isPackaged) return;
   const userData = app.getPath("userData");
   desktopSettingsPath = path.join(userData, "desktop-settings.json");
   mkdirSync(userData, { recursive: true });
   if (existsSync(desktopSettingsPath)) desktopSettings = JSON.parse(readFileSync(desktopSettingsPath, "utf8"));
-  const localAi = installedLocalAi(process.resourcesPath);
-  if (localAi) desktopSettings = { ...desktopSettings, localAi };
+  if (app.isPackaged) {
+    const localAi = installedLocalAi(process.resourcesPath);
+    if (localAi) desktopSettings = { ...desktopSettings, localAi };
+  }
   if (!desktopSettings) return;
   preferredShareOrigin = desktopSettings.preferredOrigin ?? null;
   applyLocalAiEnvironment(desktopSettings);
@@ -92,6 +119,221 @@ function loadDesktopSettings() {
 function writeDesktopSettings() {
   if (!desktopSettingsPath || !desktopSettings) return;
   writeFileSync(desktopSettingsPath, `${JSON.stringify(desktopSettings, null, 2)}\n`, { mode: 0o600 });
+}
+
+function telegramSettings() {
+  desktopSettings ??= {};
+  desktopSettings.telegram ??= { chats: [], autoTunnel: false };
+  desktopSettings.telegram.chats = Array.isArray(desktopSettings.telegram.chats)
+    ? desktopSettings.telegram.chats
+    : [];
+  return desktopSettings.telegram;
+}
+
+function telegramToken() {
+  const encrypted = telegramSettings().tokenEncrypted;
+  if (!encrypted || !safeStorage.isEncryptionAvailable()) return null;
+  try {
+    return safeStorage.decryptString(Buffer.from(encrypted, "base64"));
+  } catch {
+    return null;
+  }
+}
+
+function telegramNotificationsConfigured() {
+  return Boolean(telegramToken() && telegramSettings().chats.length > 0);
+}
+
+function telegramSetupState() {
+  const settings = telegramSettings();
+  return {
+    locale: app.getLocale(),
+    strings: stringsForLocale(app.getLocale()),
+    bot: settings.botId && settings.botUsername
+      ? { id: settings.botId, name: settings.botName || settings.botUsername, username: settings.botUsername }
+      : null,
+    chats: settings.chats,
+    autoTunnel: Boolean(settings.autoTunnel),
+  };
+}
+
+function telegramResult(error = null) {
+  return error ? { ok: false, error } : { ok: true, state: telegramSetupState() };
+}
+
+async function telegramRequest(token, method, payload, timeout = 20_000) {
+  const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(timeout),
+  });
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  if (!response.ok || !body?.ok) {
+    const error = new Error("telegram_request_failed");
+    error.retryAfter = body?.parameters?.retry_after;
+    throw error;
+  }
+  return body.result;
+}
+
+async function verifyTelegramBot(token) {
+  const value = token.trim();
+  if (!value || !safeStorage.isEncryptionAvailable()) {
+    return telegramResult(value ? "encryptionUnavailable" : "invalidToken");
+  }
+  try {
+    const bot = await telegramRequest(value, "getMe", {});
+    if (!bot?.id || !bot?.username) return telegramResult("invalidToken");
+    const settings = telegramSettings();
+    const changedBot = settings.botId !== String(bot.id);
+    settings.tokenEncrypted = safeStorage.encryptString(value).toString("base64");
+    settings.botId = String(bot.id);
+    settings.botName = bot.first_name || bot.username;
+    settings.botUsername = bot.username;
+    if (changedBot) {
+      settings.chats = [];
+      settings.autoTunnel = false;
+    }
+    writeDesktopSettings();
+    installApplicationMenu();
+    return telegramResult();
+  } catch {
+    return telegramResult("invalidToken");
+  }
+}
+
+async function pairTelegramChat(mode) {
+  const token = telegramToken();
+  const settings = telegramSettings();
+  if (!token || !settings.botUsername) return telegramResult("botRequired");
+  if (telegramPairing) return telegramResult("genericError");
+  telegramPairing = true;
+  try {
+    const webhook = await telegramRequest(token, "getWebhookInfo", {});
+    if (webhook?.url) return telegramResult("webhookConflict");
+    const initial = await telegramRequest(token, "getUpdates", {
+      offset: -1,
+      limit: 1,
+      timeout: 0,
+      allowed_updates: ["message"],
+    });
+    let offset = initial.length ? initial.at(-1).update_id + 1 : 0;
+    const nonce = randomBytes(18).toString("base64url");
+    const parameter = mode === "private" ? "start" : "startgroup";
+    openInBrowser(`https://t.me/${settings.botUsername}?${parameter}=${nonce}`);
+    const deadline = Date.now() + 120_000;
+    while (Date.now() < deadline) {
+      const updates = await telegramRequest(token, "getUpdates", {
+        offset,
+        limit: 20,
+        timeout: 15,
+        allowed_updates: ["message"],
+      }, 20_000);
+      for (const update of updates) {
+        offset = Math.max(offset, update.update_id + 1);
+        const chat = pairingChat(update, nonce, mode);
+        if (!chat) continue;
+        settings.chats = [...settings.chats.filter((item) => item.id !== chat.id), chat];
+        writeDesktopSettings();
+        return telegramResult();
+      }
+    }
+    return telegramResult("pairingTimeout");
+  } catch {
+    return telegramResult("genericError");
+  } finally {
+    telegramPairing = false;
+  }
+}
+
+async function sendTelegramMessage(chatId, text) {
+  const token = telegramToken();
+  if (!token) throw new Error("telegram_token_missing");
+  return telegramRequest(token, "sendMessage", { chat_id: chatId, text, disable_web_page_preview: true });
+}
+
+function telegramNotificationText(url, changed = false) {
+  const strings = stringsForLocale(app.getLocale());
+  const issued = new Intl.DateTimeFormat(app.getLocale(), { dateStyle: "medium", timeStyle: "medium" }).format(new Date());
+  return `${changed ? strings.changedNotification : strings.initialNotification}\n\n${url}\n\n${strings.notificationTime}: ${issued}`;
+}
+
+function sendTelegramNotification(chat, key, text, isCurrent, attempt = 0) {
+  if (sentTelegramNotifications.has(key) || !isCurrent()) {
+    telegramNotificationTimers.delete(key);
+    return;
+  }
+  void sendTelegramMessage(chat.id, text).then(() => {
+    sentTelegramNotifications.add(key);
+    const timer = telegramNotificationTimers.get(key);
+    if (timer) clearTimeout(timer);
+    telegramNotificationTimers.delete(key);
+  }).catch((error) => {
+    if (!isCurrent()) return;
+    const delayMs = Number.isFinite(error.retryAfter) ? error.retryAfter * 1_000 : retryDelay(attempt);
+    const timer = setTimeout(() => sendTelegramNotification(chat, key, text, isCurrent, attempt + 1), delayMs);
+    telegramNotificationTimers.set(key, timer);
+  });
+}
+
+function sendTelegramUrl(chat, url, changed) {
+  sendTelegramNotification(
+    chat,
+    notificationKey(chat.id, url),
+    telegramNotificationText(url, changed),
+    () => shouldSendTelegramUrl(Boolean(telegramToken()), telegramSettings().chats.length, tunnelUrl, url),
+  );
+}
+
+function notifyTelegramUrl(url, changed) {
+  if (!telegramNotificationsConfigured()) return;
+  if (lastTelegramNotificationUrl !== url) {
+    sentTelegramNotifications.clear();
+    lastTelegramNotificationUrl = url;
+  }
+  for (const chat of telegramSettings().chats) sendTelegramUrl(chat, url, changed);
+}
+
+function notifyTelegramTunnelStopped(url, recovering) {
+  unavailableTunnelUrl = url;
+  const strings = stringsForLocale(app.getLocale());
+  const occurred = new Intl.DateTimeFormat(app.getLocale(), { dateStyle: "medium", timeStyle: "medium" }).format(new Date());
+  const text = `${recovering ? strings.recoveringNotification : strings.stoppedNotification}\n\n${url}\n\n${strings.notificationTime}: ${occurred}`;
+  for (const chat of telegramSettings().chats) {
+    sentTelegramNotifications.delete(notificationKey(chat.id, url));
+    const key = notificationKey(chat.id, `${url}\n${recovering ? "recovering" : "stopped"}`);
+    sendTelegramNotification(chat, key, text, () => unavailableTunnelUrl === url);
+  }
+}
+
+async function notifyTelegramAppStopped() {
+  const url = tunnelUrl;
+  const settings = telegramSettings();
+  if (!url || settings.lastNotifiedUrl !== url || !telegramNotificationsConfigured()) return;
+  const strings = stringsForLocale(app.getLocale());
+  const occurred = new Intl.DateTimeFormat(app.getLocale(), { dateStyle: "medium", timeStyle: "medium" }).format(new Date());
+  const text = `${strings.appStoppedNotification}\n\n${url}\n\n${strings.notificationTime}: ${occurred}`;
+  await Promise.race([
+    Promise.allSettled(settings.chats.map((chat) => sendTelegramMessage(chat.id, text))),
+    delay(4_000),
+  ]);
+}
+
+async function testTelegramChat(chatId) {
+  const chat = telegramSettings().chats.find((item) => item.id === String(chatId));
+  if (!chat) return telegramResult("genericError");
+  try {
+    await sendTelegramMessage(chat.id, stringsForLocale(app.getLocale()).testNotification);
+    return telegramResult();
+  } catch {
+    return telegramResult("genericError");
+  }
 }
 
 function createDesktopSettings() {
@@ -173,6 +415,7 @@ function cloudflaredConfigPath() {
 
 function updateTunnelMenu() {
   const menu = Menu.getApplicationMenu();
+  const strings = stringsForLocale(app.getLocale());
   const connected = Boolean(tunnelProcess && tunnelUrl);
   const start = menu?.getMenuItemById("tunnel-start");
   const status = menu?.getMenuItemById("tunnel-status");
@@ -180,7 +423,13 @@ function updateTunnelMenu() {
   const open = menu?.getMenuItemById("tunnel-open");
   const stop = menu?.getMenuItemById("tunnel-stop");
   if (start) start.enabled = !tunnelProcess && !tunnelStarting;
-  if (status) status.label = tunnelStarting ? "상태: 연결 중" : connected ? "상태: 연결됨" : "상태: 꺼짐";
+  if (status) status.label = tunnelState === "recovering"
+    ? strings.tunnelStatusRecovering
+    : tunnelStarting
+      ? strings.tunnelStatusConnecting
+      : connected
+        ? strings.tunnelStatusConnected
+        : strings.tunnelStatusOff;
   if (copy) copy.enabled = connected;
   if (open) open.enabled = connected;
   if (stop) stop.enabled = Boolean(tunnelProcess);
@@ -196,10 +445,90 @@ function syncPublicOrigin() {
   }
 }
 
-function stopQuickTunnel() {
-  if (!tunnelProcess) return;
-  tunnelStopping = true;
-  tunnelProcess.kill();
+function clearTunnelTimers() {
+  if (tunnelHealthTimer) clearInterval(tunnelHealthTimer);
+  if (tunnelRestartTimer) clearTimeout(tunnelRestartTimer);
+  tunnelHealthTimer = null;
+  tunnelRestartTimer = null;
+  for (const timer of telegramNotificationTimers.values()) clearTimeout(timer);
+  telegramNotificationTimers.clear();
+}
+
+function stopQuickTunnel(reason = "manual") {
+  if (reason === "manual") {
+    telegramSettings().autoTunnel = false;
+    writeDesktopSettings();
+    clearTunnelTimers();
+  }
+  tunnelStopReason = reason;
+  if (tunnelProcess) tunnelProcess.kill();
+  else {
+    tunnelState = "off";
+    updateTunnelMenu();
+  }
+}
+
+async function probePublicServer(origin) {
+  try {
+    const response = await fetch(`${origin}/api/health`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(8_000),
+    });
+    return response.ok && Boolean(parseHealth(await response.text()));
+  } catch {
+    return false;
+  }
+}
+
+async function waitForPublicServer(origin) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (!tunnelProcess) return false;
+    if (await probePublicServer(origin)) return true;
+    await delay(1_000);
+  }
+  return false;
+}
+
+function scheduleTunnelRecovery() {
+  if (quitApproved || !telegramSettings().autoTunnel || tunnelRestartTimer || tunnelStarting || tunnelProcess) return;
+  tunnelState = "recovering";
+  updateTunnelMenu();
+  const wait = retryDelay(tunnelRetryAttempt);
+  tunnelRetryAttempt += 1;
+  tunnelRestartTimer = setTimeout(() => {
+    tunnelRestartTimer = null;
+    void startQuickTunnel({ interactive: false, recovering: true });
+  }, wait);
+}
+
+function startTunnelHealthMonitor() {
+  if (tunnelHealthTimer || !telegramSettings().autoTunnel) return;
+  tunnelHealthTimer = setInterval(() => {
+    if (!tunnelUrl || !tunnelProcess) return;
+    void Promise.all([probeServer(), probePublicServer(tunnelUrl)]).then(([local, publicOkay]) => {
+      if (publicOkay) {
+        publicHealthFailures = 0;
+        return;
+      }
+      publicHealthFailures += 1;
+      if (shouldReplaceTunnel(local.state, publicHealthFailures)) stopQuickTunnel("recovery");
+    });
+  }, 30_000);
+}
+
+function setAutoTunnelEnabled(enabled) {
+  const settings = telegramSettings();
+  if (enabled && (!telegramToken() || settings.chats.length === 0)) return "recipientRequired";
+  settings.autoTunnel = enabled;
+  writeDesktopSettings();
+  if (enabled) {
+    if (tunnelUrl) {
+      startTunnelHealthMonitor();
+      notifyTelegramUrl(tunnelUrl, Boolean(settings.lastNotifiedUrl && settings.lastNotifiedUrl !== tunnelUrl));
+    } else void probeServer().then(({ state }) => state === "ours" && startQuickTunnel({ interactive: false }));
+  } else clearTunnelTimers();
+  installApplicationMenu();
+  return null;
 }
 
 async function requestQuit() {
@@ -225,6 +554,7 @@ async function requestQuit() {
       if (result.response !== 1) return;
     }
 
+    await notifyTelegramAppStopped();
     quitApproved = true;
     app.quit();
   } finally {
@@ -232,17 +562,21 @@ async function requestQuit() {
   }
 }
 
-async function startQuickTunnel() {
+async function startQuickTunnel({ interactive = true, recovering = false } = {}) {
   if (tunnelProcess || tunnelStarting) return;
   tunnelStarting = true;
+  tunnelInteractive = interactive;
+  tunnelState = recovering ? "recovering" : "connecting";
   updateTunnelMenu();
   let recentLog = "";
+  let candidateUrl = null;
+  const strings = stringsForLocale(app.getLocale());
 
   try {
     const binary = cloudflaredPath();
-    if (app.isPackaged && !existsSync(binary)) throw new Error("설치 파일에서 cloudflared.exe를 찾지 못했습니다.");
+    if (app.isPackaged && !existsSync(binary)) throw new Error(strings.tunnelBinaryMissing);
 
-    tunnelUrl = await new Promise((resolve, reject) => {
+    candidateUrl = await new Promise((resolve, reject) => {
       const child = spawn(
         binary,
         [
@@ -263,7 +597,7 @@ async function startQuickTunnel() {
         if (settled) return;
         settled = true;
         child.kill();
-        reject(new Error("Cloudflare 공개 URL을 30초 안에 받지 못했습니다."));
+        reject(new Error(strings.tunnelUrlTimeout));
       }, 30_000);
 
       const read = (chunk) => {
@@ -284,49 +618,174 @@ async function startQuickTunnel() {
         reject(error);
       });
       child.on("exit", (code) => {
-        const endedTunnelUrl = tunnelUrl;
-        const unexpected = settled && !tunnelStopping && Boolean(tunnelUrl);
+        const endedTunnelUrl = tunnelUrl || candidateUrl;
+        const activeTunnelUrl = tunnelUrl;
+        const reason = tunnelStopReason;
+        const unexpected = settled && !reason && Boolean(endedTunnelUrl);
+        const recoveringTunnel = reason === "recovery" || (unexpected && telegramSettings().autoTunnel);
         if (!settled) {
           settled = true;
           clearTimeout(timeout);
-          reject(new Error(`cloudflared가 종료되었습니다. (${code ?? "알 수 없음"})`));
+          reject(new Error(`${strings.tunnelExited}. (${code ?? "?"})`));
         }
         tunnelProcess = null;
         tunnelUrl = null;
         if (shareOrigin === endedTunnelUrl) shareOrigin = selectedLanOrigin();
-        tunnelStopping = false;
+        tunnelStopReason = null;
+        publicHealthFailures = 0;
+        if (tunnelHealthTimer) clearInterval(tunnelHealthTimer);
+        tunnelHealthTimer = null;
         syncPublicOrigin();
         installApplicationMenu();
-        if (unexpected) dialog.showErrorBox("Cloudflare Tunnel 종료", "공개 터널 연결이 예기치 않게 종료되었습니다.");
+        if (shouldNotifyTunnelStopped(reason, activeTunnelUrl, telegramSettings().lastNotifiedUrl)) {
+          notifyTelegramTunnelStopped(activeTunnelUrl, recoveringTunnel);
+        }
+        if (recoveringTunnel) scheduleTunnelRecovery();
+        else if (unexpected && tunnelInteractive && !tunnelStarting) {
+          dialog.showErrorBox(strings.tunnelStart, strings.genericError);
+        }
       });
     });
 
-    shareOrigin = tunnelUrl;
+    if (!await waitForPublicServer(candidateUrl)) throw new Error(strings.tunnelHealthFailed);
+    tunnelUrl = candidateUrl;
+    unavailableTunnelUrl = null;
+    shareOrigin = candidateUrl;
+    tunnelState = "connected";
+    tunnelRetryAttempt = 0;
+    publicHealthFailures = 0;
     syncPublicOrigin();
     installApplicationMenu();
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: "info",
-      title: "Cloudflare 공개 URL",
-      message: "임시 공개 URL이 준비되었습니다.",
-      detail: `${tunnelUrl}\n\nQuick Tunnel은 테스트용이며 앱을 종료하면 주소도 사라집니다.`,
-      buttons: ["URL 복사", "브라우저에서 열기", "확인"],
-      defaultId: 0,
-    });
-    if (result.response === 0) clipboard.writeText(tunnelUrl);
-    if (result.response === 1) openInBrowser(tunnelUrl);
+    startTunnelHealthMonitor();
+    const settings = telegramSettings();
+    const changed = Boolean(settings.lastNotifiedUrl && settings.lastNotifiedUrl !== tunnelUrl);
+    if (telegramNotificationsConfigured()) settings.lastNotifiedUrl = tunnelUrl;
+    writeDesktopSettings();
+    notifyTelegramUrl(tunnelUrl, changed);
+    if (interactive) {
+      const result = await dialog.showMessageBox(mainWindow, {
+        type: "info",
+        title: strings.tunnelStart,
+        message: strings.tunnelStatusConnected,
+        detail: `${tunnelUrl}\n\n${strings.quickTunnelNotice}`,
+        buttons: [strings.tunnelCopy, strings.tunnelOpen, strings.close],
+        defaultId: 0,
+      });
+      if (result.response === 0) clipboard.writeText(tunnelUrl);
+      if (result.response === 1) openInBrowser(tunnelUrl);
+    }
   } catch (error) {
-    tunnelProcess = null;
+    if (tunnelProcess) {
+      tunnelStopReason = telegramSettings().autoTunnel ? "recovery" : "failed";
+      tunnelProcess.kill();
+    }
     tunnelUrl = null;
+    tunnelState = telegramSettings().autoTunnel ? "recovering" : "off";
     const message = error instanceof Error ? error.message : String(error);
-    dialog.showErrorBox("Cloudflare Tunnel 실패", `${message}${recentLog ? `\n\n${recentLog}` : ""}`);
+    if (interactive) {
+      dialog.showErrorBox(strings.tunnelStart, `${message}${recentLog ? `\n\n${recentLog}` : ""}`);
+    } else scheduleTunnelRecovery();
   } finally {
     tunnelStarting = false;
     updateTunnelMenu();
+    if (tunnelState === "recovering") scheduleTunnelRecovery();
   }
+}
+
+function isTelegramSetupUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "file:" && path.basename(decodeURIComponent(url.pathname)) === "telegram-setup.html";
+  } catch {
+    return false;
+  }
+}
+
+function openTelegramSetup() {
+  if (telegramWindow && !telegramWindow.isDestroyed()) {
+    telegramWindow.focus();
+    return;
+  }
+  telegramWindow = new BrowserWindow({
+    width: 760,
+    height: 820,
+    minWidth: 560,
+    minHeight: 620,
+    parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+    modal: Boolean(mainWindow && !mainWindow.isDestroyed()),
+    show: false,
+    title: stringsForLocale(app.getLocale()).windowTitle,
+    webPreferences: {
+      ...secureWebPreferences,
+      preload: path.join(__dirname, "telegram-preload.cjs"),
+    },
+  });
+  telegramWindow.once("ready-to-show", () => telegramWindow?.show());
+  telegramWindow.on("closed", () => {
+    telegramWindow = null;
+  });
+  void telegramWindow.loadFile(path.join(__dirname, "telegram-setup.html"));
+}
+
+function telegramIpcAllowed(event) {
+  return Boolean(telegramWindow && !telegramWindow.isDestroyed() && event.sender === telegramWindow.webContents);
+}
+
+function registerTelegramIpc() {
+  ipcMain.handle("telegram:get-state", (event) => telegramIpcAllowed(event) ? telegramResult() : telegramResult("genericError"));
+  ipcMain.handle("telegram:open-bot-father", (event) => {
+    if (!telegramIpcAllowed(event)) return telegramResult("genericError");
+    openInBrowser("https://t.me/BotFather");
+    return telegramResult();
+  });
+  ipcMain.handle("telegram:copy", (event, value) => {
+    const parsed = telegramCopySchema.safeParse(value);
+    if (!telegramIpcAllowed(event) || !parsed.success) return telegramResult("genericError");
+    clipboard.writeText(parsed.data);
+    return telegramResult();
+  });
+  ipcMain.handle("telegram:verify", (event, token) => {
+    const parsed = telegramTokenSchema.safeParse(token);
+    if (!telegramIpcAllowed(event) || !parsed.success) return telegramResult("invalidToken");
+    return verifyTelegramBot(parsed.data);
+  });
+  ipcMain.handle("telegram:pair", (event, mode) => {
+    const parsed = telegramPairModeSchema.safeParse(mode);
+    if (!telegramIpcAllowed(event) || !parsed.success) return telegramResult("genericError");
+    return pairTelegramChat(parsed.data);
+  });
+  ipcMain.handle("telegram:test-chat", (event, chatId) => {
+    const parsed = telegramChatIdSchema.safeParse(chatId);
+    if (!telegramIpcAllowed(event) || !parsed.success) return telegramResult("genericError");
+    return testTelegramChat(parsed.data);
+  });
+  ipcMain.handle("telegram:remove-chat", (event, chatId) => {
+    const parsed = telegramChatIdSchema.safeParse(chatId);
+    if (!telegramIpcAllowed(event) || !parsed.success) return telegramResult("genericError");
+    const settings = telegramSettings();
+    settings.chats = settings.chats.filter((chat) => chat.id !== parsed.data);
+    if (settings.chats.length === 0) {
+      settings.autoTunnel = false;
+      clearTunnelTimers();
+    }
+    writeDesktopSettings();
+    return telegramResult();
+  });
+  ipcMain.handle("telegram:set-auto-tunnel", (event, enabled) => {
+    const parsed = z.boolean().safeParse(enabled);
+    if (!telegramIpcAllowed(event) || !parsed.success) return telegramResult("genericError");
+    return telegramResult(setAutoTunnelEnabled(parsed.data));
+  });
+  ipcMain.handle("telegram:close", (event) => {
+    if (!telegramIpcAllowed(event)) return telegramResult("genericError");
+    telegramWindow.close();
+    return telegramResult();
+  });
 }
 
 function installApplicationMenu() {
   const localText = localAiStrings(app);
+  const telegramText = stringsForLocale(app.getLocale());
   const addressItems = lanAddresses.length
     ? lanAddresses.map((item) => {
         const origin = lanOrigin(item.address);
@@ -367,22 +826,34 @@ function installApplicationMenu() {
           { label: "기본 공유 주소", submenu: addressItems },
           { label: localText.caDownload, enabled: Boolean(desktopSettings?.localHttps), click: () => openInBrowser(caDownloadUrl()) },
           { type: "separator" },
-          { id: "tunnel-status", label: "상태: 꺼짐", enabled: false },
+          { label: telegramText.tunnelTelegram, click: openTelegramSetup },
+          {
+            type: "checkbox",
+            label: telegramText.autoLabel,
+            checked: Boolean(telegramSettings().autoTunnel),
+            click: (item) => {
+              const error = setAutoTunnelEnabled(item.checked);
+              if (!error) return;
+              item.checked = false;
+              dialog.showMessageBox({ type: "warning", title: telegramText.autoLabel, message: telegramText[error] });
+            },
+          },
+          { id: "tunnel-status", label: telegramText.tunnelStatusOff, enabled: false },
           { type: "separator" },
-          { id: "tunnel-start", label: "Cloudflare 공개 URL 만들기", click: () => void startQuickTunnel() },
+          { id: "tunnel-start", label: telegramText.tunnelStart, click: () => void startQuickTunnel() },
           {
             id: "tunnel-copy",
-            label: "공개 URL 복사",
+            label: telegramText.tunnelCopy,
             enabled: false,
             click: () => tunnelUrl && clipboard.writeText(tunnelUrl),
           },
           {
             id: "tunnel-open",
-            label: "공개 URL 브라우저에서 열기",
+            label: telegramText.tunnelOpen,
             enabled: false,
             click: () => tunnelUrl && openInBrowser(tunnelUrl),
           },
-          { id: "tunnel-stop", label: "공개 터널 종료", enabled: false, click: stopQuickTunnel },
+          { id: "tunnel-stop", label: telegramText.tunnelStop, enabled: false, click: () => stopQuickTunnel("manual") },
         ],
       },
       { role: "editMenu" },
@@ -403,7 +874,7 @@ function applyNavigationPolicy(contents) {
   });
 
   contents.on("will-navigate", (event, url) => {
-    if (isInternalAdminUrl(url)) return;
+    if (isInternalAdminUrl(url) || isTelegramSetupUrl(url)) return;
     event.preventDefault();
     openInBrowser(url);
   });
@@ -479,6 +950,7 @@ async function start() {
 
   if (!mainWindow || mainWindow.isDestroyed()) return;
   await mainWindow.loadURL(`${adminOrigin}/admin`);
+  if (telegramSettings().autoTunnel) void startQuickTunnel({ interactive: false });
 
   if (localHttpsError) {
     const text = localAiStrings(app);
@@ -519,6 +991,7 @@ if (localAiInstallIndex >= 0) {
 } else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  registerTelegramIpc();
   app.on("second-instance", () => {
     if (!mainWindow) createWindow();
     if (mainWindow?.isMinimized()) mainWindow.restore();
@@ -538,7 +1011,8 @@ if (localAiInstallIndex >= 0) {
       void requestQuit();
       return;
     }
-    stopQuickTunnel();
+    clearTunnelTimers();
+    stopQuickTunnel("quit");
   });
   app.on("window-all-closed", () => app.quit());
 }

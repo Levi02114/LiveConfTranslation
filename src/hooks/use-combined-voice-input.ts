@@ -32,6 +32,7 @@ const voiceEventSchema = z.union([
     reason: z.enum([
       "busy",
       "key-required",
+      "google-unavailable",
       "local-unavailable",
       "speaker-required",
       "invalid-language",
@@ -341,6 +342,8 @@ export function useServerVoiceInput({
               ? strings.busy
               : event.reason === "key-required"
                 ? strings.keyRequired
+                : event.reason === "google-unavailable"
+                  ? strings.googleUnavailable
                 : event.reason === "local-unavailable"
                   ? strings.localUnavailable
                 : event.reason === "speaker-required"

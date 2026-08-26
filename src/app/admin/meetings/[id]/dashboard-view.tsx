@@ -25,6 +25,7 @@ import type {
 } from "@/lib/repo";
 
 import { AdminBusyOverlay } from "../../admin-busy-overlay";
+import { MinutesDownloadButtons } from "./minutes-download-dialog";
 import { TranscriptionContextSettings } from "./session-settings";
 
 /** 실시간 번역에 남겨 둘 줄 수. 대시보드는 기록이 아니라 감시용이다. */
@@ -207,6 +208,8 @@ export function DashboardView({
 
   const copyBtn =
     "min-h-9 shrink-0 cursor-pointer whitespace-nowrap border border-line px-2 py-1 font-mono text-[11px] text-muted transition-colors hover:bg-fg hover:text-bg sm:min-h-0";
+  const minutesBtn =
+    "cursor-pointer border border-line px-3 py-2 font-mono text-[12px] text-muted transition-colors hover:border-fg hover:bg-fg hover:text-bg";
 
   return (
     <div lang={lang} className="mx-auto max-w-[980px] px-4 pt-20 pb-12 sm:px-8 sm:pb-16">
@@ -241,6 +244,12 @@ export function DashboardView({
           {strings.dashboard.log}
         </button>
         <span className="font-mono text-[11px] text-muted">{strings.dashboard.popup}</span>
+        <MinutesDownloadButtons
+          meetingId={meeting.id}
+          languages={languages}
+          strings={strings.log}
+          buttonClass={minutesBtn}
+        />
       </div>
 
       <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-baseline sm:justify-between sm:gap-5">
@@ -257,7 +266,11 @@ export function DashboardView({
               ? ` (${strings.list.engineNoKey})`
               : ""}
             {" · "}
-            {strings.list.transcriptionProvider}: {meeting.transcriptionProvider === "local" ? strings.list.transcriptionLocal : strings.list.transcriptionOpenai}
+            {strings.list.transcriptionProvider}: {meeting.transcriptionProvider === "local"
+              ? strings.list.transcriptionLocal
+              : meeting.transcriptionProvider === "google"
+                ? strings.list.transcriptionGoogle
+                : strings.list.transcriptionOpenai}
           </div>
         </div>
         {closed ? (

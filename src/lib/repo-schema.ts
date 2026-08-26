@@ -6,10 +6,14 @@ import { engineIdSchema } from "@/lib/translate/types";
 export const languageCodeSchema = z.string().trim().min(1).max(35);
 export const meetingStatusSchema = z.enum(["open", "closed"]);
 export const inputModeSchema = z.enum(["human", "realtime"]);
-export const transcriptionProviderSchema = z.enum(["openai", "local"]);
+export const transcriptionProviderSchema = z.enum(["openai", "google", "local"]);
 export const pageKindSchema = z.enum(["input", "output", "combined", "combined-input", "capture"]);
 export const translationStatusSchema = z.enum(["ok", "error"]);
-export const storedSecretIdSchema = z.union([engineIdSchema, z.literal("openai-admin")]);
+export const storedSecretIdSchema = z.union([
+  engineIdSchema,
+  z.literal("openai-admin"),
+  z.literal("google-speech"),
+]);
 export type StoredSecretId = z.infer<typeof storedSecretIdSchema>;
 
 export const meetingRowSchema = z.object({

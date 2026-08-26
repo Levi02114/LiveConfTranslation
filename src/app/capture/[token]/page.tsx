@@ -4,8 +4,7 @@ import { notFound } from "next/navigation";
 import { getStrings } from "@/lib/i18n";
 import { getLanguage } from "@/lib/languages";
 import { getMeeting, getPageByToken, getRecentMessages, isPageEnabled } from "@/lib/repo";
-import { engineKey } from "@/lib/secrets";
-import { localTranscriptionConfigured } from "@/lib/local-runtime";
+import { transcriptionProviderConfigured } from "@/lib/secrets";
 
 import { CaptureView } from "./capture-view";
 
@@ -44,8 +43,8 @@ export default async function CapturePage({
       meetingTitle={meeting.title}
       history={getRecentMessages(meeting.id).filter((message) => message.lang === page.lang)}
       initiallyClosed={meeting.status === "closed"}
-      voiceAvailable={meeting.transcriptionProvider === "local" ? localTranscriptionConfigured() : Boolean(engineKey("openai"))}
-      localTranscription={meeting.transcriptionProvider === "local"}
+      voiceAvailable={transcriptionProviderConfigured(meeting.transcriptionProvider)}
+      serverTranscription={meeting.transcriptionProvider !== "openai"}
     />
   );
 }

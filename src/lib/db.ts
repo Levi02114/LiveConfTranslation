@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS meetings (
   source_lang TEXT,                           -- 이전 단일 원음 모드 호환용(신규 데이터는 NULL)
   speaker_labels INTEGER NOT NULL DEFAULT 0,  -- 입력자 닉네임을 확정 기록에 남길지
   translation_model TEXT,                    -- 세션 생성 시 확정한 번역 모델
-  transcription_provider TEXT NOT NULL DEFAULT 'openai', -- 'openai' | 'local'
+  transcription_provider TEXT NOT NULL DEFAULT 'openai', -- 'openai' | 'google' | 'local'
   created_at  INTEGER NOT NULL,
   closed_at   INTEGER
 );

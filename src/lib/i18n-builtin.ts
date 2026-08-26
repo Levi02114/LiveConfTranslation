@@ -52,6 +52,7 @@ export type UiStrings = {
   capture: {
     toggle: string;
     keyRequired: string;
+    googleUnavailable: string;
     localUnavailable: string;
     microphone: string;
     start: string;
@@ -153,6 +154,7 @@ const ko: UiStrings = {
   capture: {
     toggle: "자동 음성 입력 사용",
     keyRequired: "OpenAI API 키가 등록되지 않았습니다",
+    googleUnavailable: "Google Speech 서비스 계정이 등록되지 않았습니다",
     localUnavailable: "로컬 음성 인식 모델이 설치되지 않았습니다",
     microphone: "마이크",
     start: "전사 시작",
@@ -238,6 +240,7 @@ const vi: UiStrings = {
   capture: {
     toggle: "Sử dụng nhập liệu bằng giọng nói tự động",
     keyRequired: "Chưa đăng ký khóa API OpenAI",
+    googleUnavailable: "Chưa đăng ký tài khoản dịch vụ Google Speech",
     localUnavailable: "Chưa cài đặt mô hình nhận dạng giọng nói cục bộ",
     microphone: "Micrô",
     start: "Bắt đầu phiên âm",
@@ -327,6 +330,7 @@ const th: UiStrings = {
   capture: {
     toggle: "ใช้การป้อนข้อมูลด้วยเสียงอัตโนมัติ",
     keyRequired: "ยังไม่ได้ลงทะเบียนคีย์ OpenAI API",
+    googleUnavailable: "ยังไม่ได้ลงทะเบียนบัญชีบริการ Google Speech",
     localUnavailable: "ยังไม่ได้ติดตั้งโมเดลรู้จำเสียงภายในเครื่อง",
     microphone: "ไมโครโฟน",
     start: "เริ่มถอดเสียง",
@@ -412,6 +416,7 @@ const si: UiStrings = {
   capture: {
     toggle: "ස්වයංක්‍රීය හඬ ආදානය භාවිත කරන්න",
     keyRequired: "OpenAI API යතුර ලියාපදිංචි කර නැත",
+    googleUnavailable: "Google Speech සේවා ගිණුම ලියාපදිංචි කර නැත",
     localUnavailable: "දේශීය හඬ හඳුනාගැනීමේ ආකෘතිය ස්ථාපනය කර නැත",
     microphone: "මයික්‍රෆෝනය",
     start: "පිටපත් කිරීම අරඹන්න",
@@ -536,6 +541,7 @@ export type AdminStrings = {
     model: string;
     transcriptionProvider: string;
     transcriptionOpenai: string;
+    transcriptionGoogle: string;
     transcriptionLocal: string;
     notInstalled: string;
     localGlossaryUnsupported: string;
@@ -622,7 +628,19 @@ export type AdminStrings = {
     presetFailed: string;
     presetLanguageMismatch: string;
   };
-  log: { notice: string; title: string; download: string; empty: string };
+  log: {
+    notice: string;
+    title: string;
+    download: string;
+    downloadPdf: string;
+    selectTranslations: string;
+    sourcesAlwaysIncluded: string;
+    cancel: string;
+    minutesTitle: string;
+    translation: string;
+    generatedAt: string;
+    empty: string;
+  };
   keys: {
     button: string;
     title: string;
@@ -632,6 +650,23 @@ export type AdminStrings = {
     registered: string;
     placeholder: string;
     replacePlaceholder: string;
+    save: string;
+    saving: string;
+    remove: string;
+    saveFailed: string;
+    removeFailed: string;
+  };
+  speechCredentials: {
+    button: string;
+    title: string;
+    engineLabel: string;
+    close: string;
+    note: string;
+    none: string;
+    registered: string;
+    chooseFile: string;
+    noFile: string;
+    invalidFile: string;
     save: string;
     saving: string;
     remove: string;
@@ -772,6 +807,7 @@ const adminKo: AdminStrings = {
     model: "언어모델",
     transcriptionProvider: "음성 인식 엔진",
     transcriptionOpenai: "OpenAI 실시간 전사",
+    transcriptionGoogle: "Google Cloud Speech-to-Text (Chirp 2)",
     transcriptionLocal: "로컬 AI (Whisper)",
     notInstalled: "설치되지 않음",
     localGlossaryUnsupported: "Local AI 번역에는 단어집이 적용되지 않습니다",
@@ -862,7 +898,14 @@ const adminKo: AdminStrings = {
   log: {
     notice: "이 창은 로그 전용입니다 · 네비게이션 없음",
     title: "로그",
-    download: ".txt 다운로드",
+    download: "회의록 .txt 다운로드",
+    downloadPdf: "회의록 .pdf 다운로드",
+    selectTranslations: "회의록에 표시할 번역 언어",
+    sourcesAlwaysIncluded: "선택과 관계없이 번역 전 원문은 모두 포함됩니다.",
+    cancel: "취소",
+    minutesTitle: "회의록",
+    translation: "번역",
+    generatedAt: "생성 시각",
     empty: "표시할 로그가 없습니다",
   },
   keys: {
@@ -879,6 +922,23 @@ const adminKo: AdminStrings = {
     remove: "삭제",
     saveFailed: "키를 저장하지 못했습니다",
     removeFailed: "키를 지우지 못했습니다",
+  },
+  speechCredentials: {
+    button: "서비스 계정 등록",
+    title: "Google 음성 인식 인증",
+    engineLabel: "Google Cloud Speech-to-Text · Chirp 2",
+    close: "닫기",
+    note: "Google 서비스 계정 JSON은 암호화되어 관리자 데이터베이스에 저장되며 화면으로 다시 꺼내 볼 수 없습니다.",
+    none: "없음",
+    registered: "등록됨",
+    chooseFile: "JSON 파일 선택",
+    noFile: "선택한 파일 없음",
+    invalidFile: "JSON 파일을 읽지 못했습니다",
+    save: "저장",
+    saving: "저장 중",
+    remove: "삭제",
+    saveFailed: "서비스 계정을 저장하지 못했습니다",
+    removeFailed: "서비스 계정을 지우지 못했습니다",
   },
   openaiUsage: {
     button: "사용량 조회",
@@ -1015,6 +1075,7 @@ const adminVi: AdminStrings = {
     model: "Mô hình ngôn ngữ",
     transcriptionProvider: "Công cụ nhận dạng giọng nói",
     transcriptionOpenai: "Phiên âm thời gian thực OpenAI",
+    transcriptionGoogle: "Google Cloud Speech-to-Text (Chirp 2)",
     transcriptionLocal: "AI cục bộ (Whisper)",
     notInstalled: "Chưa cài đặt",
     localGlossaryUnsupported: "Bản dịch AI cục bộ không áp dụng bảng thuật ngữ",
@@ -1105,7 +1166,14 @@ const adminVi: AdminStrings = {
   log: {
     notice: "Cửa sổ chỉ dành cho nhật ký · Không có điều hướng",
     title: "Nhật ký",
-    download: "Tải .txt",
+    download: "Tải biên bản .txt",
+    downloadPdf: "Tải biên bản .pdf",
+    selectTranslations: "Ngôn ngữ bản dịch hiển thị trong biên bản",
+    sourcesAlwaysIncluded: "Mọi nội dung gốc trước khi dịch luôn được bao gồm, bất kể lựa chọn.",
+    cancel: "Hủy",
+    minutesTitle: "Biên bản phiên",
+    translation: "Bản dịch",
+    generatedAt: "Thời gian tạo",
     empty: "Không có nhật ký để hiển thị",
   },
   keys: {
@@ -1122,6 +1190,23 @@ const adminVi: AdminStrings = {
     remove: "Xóa",
     saveFailed: "Không lưu được khóa",
     removeFailed: "Không xóa được khóa",
+  },
+  speechCredentials: {
+    button: "Đăng ký tài khoản dịch vụ",
+    title: "Xác thực nhận dạng giọng nói Google",
+    engineLabel: "Google Cloud Speech-to-Text · Chirp 2",
+    close: "Đóng",
+    note: "Tệp JSON tài khoản dịch vụ Google được mã hóa trong cơ sở dữ liệu quản trị và không thể xem lại trên màn hình.",
+    none: "Chưa có",
+    registered: "Đã đăng ký",
+    chooseFile: "Chọn tệp JSON",
+    noFile: "Chưa chọn tệp",
+    invalidFile: "Không đọc được tệp JSON",
+    save: "Lưu",
+    saving: "Đang lưu",
+    remove: "Xóa",
+    saveFailed: "Không lưu được tài khoản dịch vụ",
+    removeFailed: "Không xóa được tài khoản dịch vụ",
   },
   openaiUsage: {
     button: "Xem mức sử dụng",
@@ -1258,6 +1343,7 @@ const adminTh: AdminStrings = {
     model: "โมเดลภาษา",
     transcriptionProvider: "เครื่องมือรู้จำเสียง",
     transcriptionOpenai: "ถอดเสียงแบบเรียลไทม์ OpenAI",
+    transcriptionGoogle: "Google Cloud Speech-to-Text (Chirp 2)",
     transcriptionLocal: "AI ภายในเครื่อง (Whisper)",
     notInstalled: "ยังไม่ได้ติดตั้ง",
     localGlossaryUnsupported: "การแปลด้วย AI ภายในเครื่องไม่ใช้คลังคำศัพท์",
@@ -1348,7 +1434,14 @@ const adminTh: AdminStrings = {
   log: {
     notice: "หน้าต่างนี้ใช้สำหรับบันทึกเท่านั้น · ไม่มีเมนูนำทาง",
     title: "บันทึก",
-    download: "ดาวน์โหลด .txt",
+    download: "ดาวน์โหลดรายงานเซสชัน .txt",
+    downloadPdf: "ดาวน์โหลดรายงานเซสชัน .pdf",
+    selectTranslations: "ภาษาคำแปลที่จะแสดงในรายงาน",
+    sourcesAlwaysIncluded: "ข้อความต้นฉบับก่อนแปลทั้งหมดจะรวมอยู่เสมอ ไม่ว่าจะเลือกภาษาใด",
+    cancel: "ยกเลิก",
+    minutesTitle: "รายงานเซสชัน",
+    translation: "คำแปล",
+    generatedAt: "เวลาที่สร้าง",
     empty: "ไม่มีบันทึกที่จะแสดง",
   },
   keys: {
@@ -1365,6 +1458,23 @@ const adminTh: AdminStrings = {
     remove: "ลบ",
     saveFailed: "บันทึกคีย์ไม่สำเร็จ",
     removeFailed: "ลบคีย์ไม่สำเร็จ",
+  },
+  speechCredentials: {
+    button: "ลงทะเบียนบัญชีบริการ",
+    title: "การยืนยันตัวตนสำหรับการรู้จำเสียง Google",
+    engineLabel: "Google Cloud Speech-to-Text · Chirp 2",
+    close: "ปิด",
+    note: "ไฟล์ JSON ของบัญชีบริการ Google จะถูกเข้ารหัสในฐานข้อมูลผู้ดูแลระบบและไม่สามารถเรียกดูบนหน้าจอได้อีก",
+    none: "ไม่มี",
+    registered: "ลงทะเบียนแล้ว",
+    chooseFile: "เลือกไฟล์ JSON",
+    noFile: "ยังไม่ได้เลือกไฟล์",
+    invalidFile: "อ่านไฟล์ JSON ไม่ได้",
+    save: "บันทึก",
+    saving: "กำลังบันทึก",
+    remove: "ลบ",
+    saveFailed: "บันทึกบัญชีบริการไม่สำเร็จ",
+    removeFailed: "ลบบัญชีบริการไม่สำเร็จ",
   },
   openaiUsage: {
     button: "ดูการใช้งาน",
@@ -1501,6 +1611,7 @@ const adminSi: AdminStrings = {
     model: "භාෂා ආකෘතිය",
     transcriptionProvider: "හඬ හඳුනාගැනීමේ එන්ජිම",
     transcriptionOpenai: "OpenAI සජීවී පිටපත් කිරීම",
+    transcriptionGoogle: "Google Cloud Speech-to-Text (Chirp 2)",
     transcriptionLocal: "දේශීය AI (Whisper)",
     notInstalled: "ස්ථාපනය කර නැත",
     localGlossaryUnsupported: "දේශීය AI පරිවර්තනයට පදකෝෂය යෙදෙන්නේ නැත",
@@ -1591,7 +1702,14 @@ const adminSi: AdminStrings = {
   log: {
     notice: "මෙම කවුළුව ලොගය සඳහා පමණි · සංචාලනය නැත",
     title: "ලොගය",
-    download: ".txt බාගන්න",
+    download: "සැසි වාර්තාව .txt බාගන්න",
+    downloadPdf: "සැසි වාර්තාව .pdf බාගන්න",
+    selectTranslations: "වාර්තාවේ පෙන්විය යුතු පරිවර්තන භාෂා",
+    sourcesAlwaysIncluded: "තේරීම කුමක් වුවත් පරිවර්තනයට පෙර සියලු මුල් පෙළ සෑමවිටම ඇතුළත් වේ.",
+    cancel: "අවලංගු කරන්න",
+    minutesTitle: "සැසි වාර්තාව",
+    translation: "පරිවර්තනය",
+    generatedAt: "සාදන ලද වේලාව",
     empty: "පෙන්වීමට ලොග සටහන් නැත",
   },
   keys: {
@@ -1608,6 +1726,23 @@ const adminSi: AdminStrings = {
     remove: "මකන්න",
     saveFailed: "යතුර සුරැකිය නොහැකි විය",
     removeFailed: "යතුර මැකිය නොහැකි විය",
+  },
+  speechCredentials: {
+    button: "සේවා ගිණුම ලියාපදිංචි කරන්න",
+    title: "Google හඬ හඳුනාගැනීමේ සත්‍යාපනය",
+    engineLabel: "Google Cloud Speech-to-Text · Chirp 2",
+    close: "වසන්න",
+    note: "Google සේවා ගිණුම් JSON ගොනුව සංකේතනය කර පරිපාලක දත්ත ගබඩාවේ තබන අතර තිරයෙන් නැවත බැලිය නොහැක.",
+    none: "නැත",
+    registered: "ලියාපදිංචියි",
+    chooseFile: "JSON ගොනුව තෝරන්න",
+    noFile: "ගොනුවක් තෝරා නැත",
+    invalidFile: "JSON ගොනුව කියවිය නොහැක",
+    save: "සුරකින්න",
+    saving: "සුරකිමින්",
+    remove: "මකන්න",
+    saveFailed: "සේවා ගිණුම සුරැකිය නොහැකි විය",
+    removeFailed: "සේවා ගිණුම මැකිය නොහැකි විය",
   },
   openaiUsage: {
     button: "භාවිතය බලන්න",

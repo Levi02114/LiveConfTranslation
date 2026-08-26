@@ -59,7 +59,7 @@ import { parseRequiredSqlRow, parseSqlRow, parseSqlRows } from "@/lib/sqlite-sch
 
 export type MeetingStatus = "open" | "closed";
 export type InputMode = "human" | "realtime";
-export type TranscriptionProvider = "openai" | "local";
+export type TranscriptionProvider = "openai" | "google" | "local";
 export type PageKind = "input" | "output" | "combined" | "combined-input" | "capture";
 
 /**
@@ -815,6 +815,8 @@ export function getLogLines(
         at: message.created_at,
         lang: sourceLang,
         kind: "source",
+        body: message.body,
+        speakerName: message.speaker_name,
         text: formatSourceLine(message.created_at, message.body, message.speaker_name),
       });
     }
@@ -829,6 +831,8 @@ export function getLogLines(
         at: translation.created_at,
         lang,
         kind: "translation",
+        body: translation.body,
+        speakerName: message.speaker_name,
         text: formatTranslationLine(
           translation.created_at,
           lang,

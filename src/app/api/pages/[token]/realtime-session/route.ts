@@ -40,7 +40,11 @@ function resolveVoicePage(token: string) {
     (page.kind !== "input" && page.kind !== "capture")
   ) return null;
   const meeting = getMeeting(page.meetingId);
-  if (!meeting || (page.kind === "capture" && meeting.inputMode !== "realtime")) return null;
+  if (
+    !meeting ||
+    meeting.transcriptionProvider !== "openai" ||
+    (page.kind === "capture" && meeting.inputMode !== "realtime")
+  ) return null;
   return { page, meeting, lang: page.lang };
 }
 

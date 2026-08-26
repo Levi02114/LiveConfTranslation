@@ -16,6 +16,7 @@ import {
 import type { ServerMessage } from "@/lib/realtime/protocol";
 
 import { AdminBusyOverlay } from "../../../admin-busy-overlay";
+import { MinutesDownloadButtons } from "../minutes-download-dialog";
 
 export function LogView({
   meetingId,
@@ -56,6 +57,8 @@ export function LogView({
           at: message.createdAt,
           lang: message.lang,
           kind: "source",
+          body: message.body,
+          speakerName: message.speakerName,
           text: formatSourceLine(message.createdAt, message.body, message.speakerName),
         };
         if (!current) return [...prev, next];
@@ -77,6 +80,8 @@ export function LogView({
           at: message.createdAt,
           lang: message.lang,
           kind: "translation",
+          body: message.body,
+          speakerName: message.speakerName,
           text: formatTranslationLine(
             message.createdAt,
             message.lang,
@@ -109,22 +114,11 @@ export function LogView({
     );
   };
 
-  /**
-   * 화면에서 보고 있는 필터 그대로 받아야 한다. 그래서 클라이언트가 만든 텍스트를
-   * 내려받는 대신 같은 조건을 서버에 넘긴다 — 파일 내용이 한 곳에서만 만들어진다.
-   */
-  const downloadUrl = useMemo(() => {
-    const params = new URLSearchParams();
-    params.set("format", "txt");
-    // 전부 선택한 상태는 필터 없음과 같다. URL 을 짧게 둔다.
-    if (selected.length !== languages.length) {
-      for (const code of selected) params.append("lang", code);
-    }
-    return `/api/meetings/${meetingId}/log?${params.toString()}`;
-  }, [meetingId, selected, languages.length]);
-
   const nameOf = (code: LanguageCode) =>
     languages.find((language) => language.code === code)?.label ?? code;
+
+  const downloadButton =
+    "cursor-pointer border border-fg px-4 py-2 font-mono text-[13px] transition-colors hover:bg-fg hover:text-bg";
 
   return (
     <div lang={lang} className="mx-auto max-w-[840px] px-7 pt-14 pb-16">
@@ -143,17 +137,19 @@ export function LogView({
         {strings.log.notice}
       </div>
 
-      <div className="flex items-baseline justify-between gap-4">
-        <div className="truncate font-mono text-[13px] text-muted">
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+        <div className="w-full min-w-0 truncate font-mono text-[13px] text-muted sm:flex-1">
           {strings.log.title} · {meetingTitle}
         </div>
-        <a
-          href={downloadUrl}
-          download
-          className="shrink-0 cursor-pointer border border-fg px-4 py-2 font-mono text-[13px] transition-colors hover:bg-fg hover:text-bg"
-        >
-          {strings.log.download}
-        </a>
+        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+          <MinutesDownloadButtons
+            meetingId={meetingId}
+            languages={languages}
+            strings={strings.log}
+            buttonClass={downloadButton}
+            defaultSelected={selected}
+          />
+        </div>
       </div>
 
       <div className="mt-2 flex flex-wrap gap-5 border-b border-line py-4 font-mono text-[13px]">

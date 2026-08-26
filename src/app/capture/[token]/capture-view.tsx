@@ -20,7 +20,7 @@ export function CaptureView({
   history,
   initiallyClosed,
   voiceAvailable,
-  localTranscription,
+  serverTranscription,
 }: {
   token: string;
   language: Language;
@@ -29,7 +29,7 @@ export function CaptureView({
   history: Message[];
   initiallyClosed: boolean;
   voiceAvailable: boolean;
-  localTranscription: boolean;
+  serverTranscription: boolean;
 }) {
   const [messages, setMessages] = useState(history);
   const [closed, setClosed] = useState(initiallyClosed);
@@ -40,7 +40,7 @@ export function CaptureView({
     closed,
     requestPermissionOnMount: voiceAvailable,
     lang: language.code,
-    forceServerTransport: localTranscription,
+    forceServerTransport: serverTranscription,
   });
   const { stop: stopVoice } = voice;
 

@@ -18,6 +18,7 @@ import { transcriptionProviderSchema } from "@/lib/repo-schema";
 
 import { AdminBusyOverlay } from "./admin-busy-overlay";
 import { EngineKeysDialog, type EngineKeyStatus } from "./engine-keys-dialog";
+import { GoogleSpeechDialog, type GoogleSpeechStatus } from "./google-speech-dialog";
 import { GlossaryDialog } from "./glossary-dialog";
 import { LanguageDialog } from "./language-dialog";
 import { OpenaiModelSelect } from "./openai-model-select";
@@ -38,7 +39,7 @@ const meetingResponseSchema = z.object({
     speakerLabels: z.boolean(),
     transcriptionContext: z.string().nullable(),
     translationModel: z.string().nullable(),
-    transcriptionProvider: z.enum(["openai", "local"]),
+    transcriptionProvider: z.enum(["openai", "google", "local"]),
     createdAt: z.number(),
     closedAt: z.number().nullable(),
   }).optional(),
@@ -54,6 +55,7 @@ export function MeetingList({
   defaultLangs,
   engines: initialEngines,
   engineKeys,
+  googleSpeechCredentials,
   defaultEngine,
   openaiModel,
   presets,
@@ -69,6 +71,7 @@ export function MeetingList({
   defaultLangs: LanguageCode[];
   engines: { id: EngineId; label: string; configured: boolean }[];
   engineKeys: EngineKeyStatus[];
+  googleSpeechCredentials: GoogleSpeechStatus;
   defaultEngine: EngineId;
   /** OpenAI 번역에 쓰는 고정 언어모델. */
   openaiModel: string;
@@ -497,10 +500,17 @@ export function MeetingList({
             className="max-w-full border border-line bg-bg px-2.5 py-1.5 font-mono text-[13px] outline-none"
           >
             <option value="openai">{strings.list.transcriptionOpenai}</option>
+            <option value="google">{strings.list.transcriptionGoogle}</option>
             <option value="local" disabled={!localTranscriptionAvailable}>
               {strings.list.transcriptionLocal}{localTranscriptionAvailable ? "" : ` · ${strings.list.notInstalled}`}
             </option>
           </select>
+          {transcriptionProvider === "google" ? (
+            <GoogleSpeechDialog
+              strings={strings.speechCredentials}
+              initial={googleSpeechCredentials}
+            />
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-3.5">

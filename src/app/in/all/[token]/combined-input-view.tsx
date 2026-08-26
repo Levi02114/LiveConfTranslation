@@ -30,6 +30,7 @@ export function CombinedInputView({
   history,
   initiallyClosed,
   voiceAvailable,
+  requireVoiceLanguage,
   speakerLabels,
 }: {
   token: string;
@@ -43,6 +44,7 @@ export function CombinedInputView({
   history: CombinedEntry[];
   initiallyClosed: boolean;
   voiceAvailable: boolean;
+  requireVoiceLanguage: boolean;
   speakerLabels: boolean;
 }) {
   const [entries, setEntries] = useState(history);
@@ -78,6 +80,7 @@ export function CombinedInputView({
       setFallbackNotice(strings.capture.fallback.replace("{language}", nameOf(lang))),
     [nameOf, strings.capture.fallback],
   );
+  const voiceLanguageReady = !requireVoiceLanguage || Boolean(inputLang);
   const voice = useServerVoiceInput({
     token,
     strings: strings.capture,
@@ -88,7 +91,8 @@ export function CombinedInputView({
     lang: inputLang || null,
     autoSubmit: voiceMode,
     onTranscript: appendTranscript,
-    requestPermissionOnMount: voiceAvailable,
+    enabled: voiceAvailable && voiceLanguageReady,
+    requestPermissionOnMount: voiceAvailable && voiceLanguageReady,
   });
   const { stop: stopVoice } = voice;
 
@@ -289,6 +293,7 @@ export function CombinedInputView({
 
   const selectInputLanguage = (next: LanguageCode | "") => {
     if (voice.state !== "idle") return;
+    if (!next && requireVoiceLanguage) setVoiceMode(false);
     setInputLang(next);
     setPendingLanguageBody(null);
     try {
@@ -411,7 +416,7 @@ export function CombinedInputView({
 
             <label
               className={`flex items-center gap-2 ${
-                voiceAvailable && !closed && speakerReady && voice.state === "idle"
+                voiceAvailable && voiceLanguageReady && !closed && speakerReady && voice.state === "idle"
                   ? "cursor-pointer"
                   : "cursor-not-allowed opacity-40"
               }`}
@@ -419,7 +424,7 @@ export function CombinedInputView({
               <input
                 type="checkbox"
                 checked={voiceMode}
-                disabled={!voiceAvailable || closed || !speakerReady || voice.state !== "idle"}
+                disabled={!voiceAvailable || !voiceLanguageReady || closed || !speakerReady || voice.state !== "idle"}
                 onChange={(event) => selectVoiceMode(event.target.checked)}
                 className="h-[15px] w-[15px] accent-[var(--fg)]"
               />
@@ -432,6 +437,7 @@ export function CombinedInputView({
               </select>
             ) : null}
             {!voiceAvailable ? <span className="text-muted">{strings.capture.keyRequired}</span> : null}
+            {voiceAvailable && !voiceLanguageReady ? <span className="text-muted">{strings.input.chooseLanguage}</span> : null}
             {voice.state !== "idle" ? (
               <span className="text-muted">
                 {voice.state === "active" ? strings.capture.listening : strings.capture.starting}
@@ -461,7 +467,7 @@ export function CombinedInputView({
               className={`app-text field-sizing-content max-h-[220px] min-h-11 w-full min-w-0 flex-1 resize-none border-none bg-transparent outline-none ${voiceMode && !voice.partial ? "opacity-40" : ""}`}
             />
             <div className="flex shrink-0 gap-2 sm:w-auto">
-              {!voiceMode && voiceAvailable ? (
+              {!voiceMode && voiceAvailable && voiceLanguageReady ? (
                 <button type="button" aria-label={voiceAction} title={voiceAction} onClick={() => voice.state === "active" ? voice.stop() : void voice.start()} disabled={closed || !speakerReady || voice.state === "starting"} className={`flex min-h-11 min-w-11 cursor-pointer items-center justify-center border border-fg transition-colors disabled:cursor-default disabled:opacity-30 ${voice.state === "active" ? "bg-fg text-bg" : "hover:bg-fg hover:text-bg"}`}>
                   <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M9 21h6" /></svg>
                 </button>

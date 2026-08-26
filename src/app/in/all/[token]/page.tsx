@@ -11,8 +11,7 @@ import {
   getRecentCombined,
   isPageEnabled,
 } from "@/lib/repo";
-import { engineKey } from "@/lib/secrets";
-import { localTranscriptionConfigured } from "@/lib/local-runtime";
+import { transcriptionProviderConfigured } from "@/lib/secrets";
 
 import { CombinedInputView } from "./combined-input-view";
 
@@ -65,7 +64,8 @@ export default async function CombinedInputPage({
       meetingTitle={meeting.title}
       history={getRecentCombined(meeting.id)}
       initiallyClosed={meeting.status === "closed"}
-      voiceAvailable={meeting.transcriptionProvider === "local" ? localTranscriptionConfigured() : Boolean(engineKey("openai"))}
+      voiceAvailable={transcriptionProviderConfigured(meeting.transcriptionProvider)}
+      requireVoiceLanguage={meeting.transcriptionProvider === "google"}
       speakerLabels={meeting.speakerLabels}
     />
   );
