@@ -81,3 +81,33 @@ test("긴 다국어 회의록은 잘리지 않고 여러 A4 페이지로 이어�
   assert.ok((raw.match(/\/Type \/Page\b/g) ?? []).length >= 2);
   assert.ok(raw.includes("%%EOF"));
 });
+
+test("싱할라어 제목과 본문에 내장 Noto 폰트를 사용한다", async () => {
+  const pdf = await renderMeetingMinutesPdf({
+    meetingTitle: "සිංහල Meeting 0827",
+    languageCodes: ["si"],
+    displayLanguage: "ko",
+    generatedAt: 1_787_683_200_000,
+    labels: {
+      minutesTitle: "회의록",
+      source: "원문",
+      translation: "번역",
+      generatedAt: "생성 시각",
+      edited: "수정됨",
+      empty: "표시할 로그가 없습니다",
+    },
+    lines: [{
+      messageId: 1,
+      revision: 0,
+      editedAt: null,
+      at: 1_787_683_200_000,
+      lang: "si",
+      kind: "source",
+      body: "Meeting — ඔයාගේ නම මොකක්ද?",
+      speakerName: null,
+      text: "",
+    }],
+  });
+
+  assert.match(pdf.toString("latin1"), /NotoSansSinhala-Regular/);
+});

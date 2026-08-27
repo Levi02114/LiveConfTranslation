@@ -74,7 +74,7 @@ Windows 설치본은 Node.js나 개발 도구를 따로 설치하지 않아도 �
 [최신 릴리스 페이지](https://github.com/Levi02114/LiveConfTranslation/releases/latest)에서 다음 중
 하나를 내려받습니다.
 
-현재 배포 버전: [v0.9.19](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.19)
+현재 배포 버전: [v0.9.20](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.20)
 
 - `... Setup ... .exe`: Windows에 설치하는 버전
 - `... .exe`: 설치 없이 실행하는 포터블 버전(온라인 엔진 전용)
@@ -1003,6 +1003,8 @@ Electron 앱을 닫을 때 진행 중인 세션이 있으면 종료 여부를 �
   번역들과 연한 회색 묶음으로 구분합니다. 긴 문장은 자동으로 줄바꿈되고 다음 페이지로 이어집니다.
 
 두 형식 모두 언어 선택과 관계없이 번역하기 전 원문 전체를 항상 포함합니다.
+v0.9.20부터 Windows 설치형과 포터블에도 싱할라어 PDF 폰트가 내장되어 운영체제 폰트
+설치 여부와 관계없이 싱할라 원문·번역을 표시합니다.
 
 로그 팝업에서도 언어 체크박스를 고른 뒤 `.txt` 또는 `.pdf`를 내려받을 수 있습니다.
 수정된 원문과 번역에는 수정 표시가 포함되고, 실패한 번역은 회의록에 넣지 않습니다.

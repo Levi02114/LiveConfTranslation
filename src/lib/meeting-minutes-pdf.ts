@@ -24,6 +24,7 @@ type ContainerRange = {
 };
 
 const WINDOWS_FONTS = "C:/Windows/Fonts";
+const APP_ROOT = globalThis.__liveConfTranslationAppRoot ?? process.cwd();
 const GENERIC_FONTS: readonly FontSource[] = [
   { path: `${WINDOWS_FONTS}/arial.ttf` },
   { path: "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf" },
@@ -50,6 +51,7 @@ const SCRIPT_FONTS = new Map<string, readonly FontSource[]>([
     { path: "/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf" },
   ]],
   ["Sinh", [
+    { path: join(APP_ROOT, "public", "fonts", "NotoSansSinhala-Variable.ttf") },
     { path: `${WINDOWS_FONTS}/Nirmala.ttf` },
     { path: "/usr/share/fonts/truetype/noto/NotoSansSinhala-Regular.ttf" },
   ]],
@@ -102,19 +104,18 @@ function fontFor(code: LanguageCode): FontSource {
   for (const font of GENERIC_FONTS) {
     if (existsSync(/* turbopackIgnore: true */ font.path)) return font;
   }
-  const appRoot = globalThis.__liveConfTranslationAppRoot ?? process.cwd();
   return {
-    path: join(appRoot, "node_modules", "@fontsource", "unifont", "files", "unifont-latin-400-normal.woff"),
+    path: join(APP_ROOT, "node_modules", "@fontsource", "unifont", "files", "unifont-latin-400-normal.woff"),
   };
 }
 
 function fontForText(text: string, fallback: LanguageCode): FontSource {
   const scripts: ReadonlyArray<[RegExp, LanguageCode]> = [
-    [/\p{Script=Latin}/u, "en"],
     [/\p{Script=Hangul}/u, "ko"],
     [/\p{Script=Sinhala}/u, "si"],
     [/\p{Script=Thai}/u, "th"],
     [/\p{Script=Han}/u, "zh-CN"],
+    [/\p{Script=Latin}/u, "en"],
   ];
   return fontFor(scripts.find(([pattern]) => pattern.test(text))?.[1] ?? fallback);
 }
@@ -172,11 +173,13 @@ export async function renderMeetingMinutesPdf(input: {
   const containers: ContainerRange[] = [];
 
   setFont(document, headerFont).fontSize(10).fillColor("#666666").text(input.labels.minutesTitle);
-  document.moveDown(0.35).fontSize(22).fillColor("#111111").text(input.meetingTitle, {
+  document.moveDown(0.35);
+  setFont(document, fontForText(input.meetingTitle, input.displayLanguage))
+    .fontSize(22).fillColor("#111111").text(input.meetingTitle, {
     width: contentWidth,
     lineGap: 2,
   });
-  document.moveDown(0.55).fontSize(9).fillColor("#666666").text(
+  setFont(document, headerFont).moveDown(0.55).fontSize(9).fillColor("#666666").text(
     `${input.languageCodes.join(" · ")}  /  ${input.labels.generatedAt}: ${formatTimestamp(input.generatedAt ?? Date.now())}`,
     { width: contentWidth },
   );
