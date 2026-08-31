@@ -96,7 +96,9 @@ function languageCue(lang: LanguageCode): string {
 const SHARED_RULES =
   "Transcribe every intelligible spoken word, including brief acknowledgements and hesitations. " +
   "Preserve wording, names, numbers, and terminology. " +
-  "Never summarize, translate, answer, invent speaker labels, or add unspoken text.";
+  "Never summarize, translate, answer, invent speaker labels, or add unspoken text. " +
+  "Transcribe only intelligible speech. Do not guess or invent words from silence, background noise, clipping, or unclear audio. " +
+  "Omit uncertain content rather than supplying plausible wording. Preserve clearly spoken wording exactly; do not censor or sanitize it.";
 
 function cleanTitle(title: string): string {
   return title.replace(/\s+/g, " ").trim().slice(0, 160);

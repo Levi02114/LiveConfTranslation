@@ -69,6 +69,7 @@ export type UiStrings = {
     invalidLanguage: string;
     fallback: string;
     level: string;
+    noSignal: string;
     levelTooQuiet: string;
     levelClipping: string;
   };
@@ -171,6 +172,7 @@ const ko: UiStrings = {
     invalidLanguage: "선택한 입력 언어를 사용할 수 없습니다",
     fallback: "언어를 확인하지 못해 {language}(으)로 처리했습니다",
     level: "입력 음량",
+    noSignal: "마이크 입력이 감지되지 않습니다. 연결을 확인해 주세요",
     levelTooQuiet: "소리가 너무 작습니다 — 마이크를 가까이 하세요",
     levelClipping: "소리가 너무 큽니다 — 조금 떨어지세요",
   },
@@ -257,6 +259,7 @@ const vi: UiStrings = {
     invalidLanguage: "Không thể sử dụng ngôn ngữ nhập đã chọn",
     fallback: "Không xác định được ngôn ngữ nên đã xử lý bằng {language}",
     level: "Âm lượng đầu vào",
+    noSignal: "Không phát hiện tín hiệu micrô. Hãy kiểm tra kết nối.",
     levelTooQuiet: "Âm thanh quá nhỏ — hãy lại gần micrô hơn",
     levelClipping: "Âm thanh quá lớn — hãy tránh xa micrô một chút",
   },
@@ -347,6 +350,7 @@ const th: UiStrings = {
     invalidLanguage: "ไม่สามารถใช้ภาษาที่เลือกได้",
     fallback: "ไม่สามารถระบุภาษาได้ จึงประมวลผลเป็น {language}",
     level: "ระดับเสียงที่เข้า",
+    noSignal: "ไม่พบสัญญาณไมโครโฟน โปรดตรวจสอบการเชื่อมต่อ",
     levelTooQuiet: "เสียงเบาเกินไป — โปรดเข้าใกล้ไมโครโฟน",
     levelClipping: "เสียงดังเกินไป — โปรดอยู่ห่างจากไมโครโฟนเล็กน้อย",
   },
@@ -433,6 +437,7 @@ const si: UiStrings = {
     invalidLanguage: "තෝරාගත් ආදාන භාෂාව භාවිත කළ නොහැක",
     fallback: "භාෂාව හඳුනාගත නොහැකි නිසා {language} ලෙස සැකසීය",
     level: "ආදාන ශබ්ද මට්ටම",
+    noSignal: "මයික්‍රෆෝන ආදානයක් අනාවරණය නොවේ. සම්බන්ධතාව පරීක්ෂා කරන්න.",
     levelTooQuiet: "හඬ ඉතා මෘදුයි — මයික්‍රෆෝනයට ළං වන්න",
     levelClipping: "හඬ ඉතා වැඩියි — මයික්‍රෆෝනයෙන් ටිකක් ඈත් වන්න",
   },

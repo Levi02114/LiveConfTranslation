@@ -23,6 +23,23 @@ test("짧게 작아진 것은 안내를 띄우지 않고, 계속 작으면 띄�
   assert.equal(tracker.update(0.001, 0.1, 2_800).tooQuiet, false);
 });
 
+test("디지털 무음이 5초 이어질 때만 연결 경고를 띄우고 신호가 오면 거둔다", () => {
+  const tracker = new VoiceMeterTracker();
+  assert.equal(tracker.update(0, 0, 0).noSignal, false);
+  assert.equal(tracker.update(0, 0, 4_999).noSignal, false);
+  assert.equal(tracker.update(0, 0, 5_000).noSignal, true);
+  assert.equal(tracker.update(0.001, 0.001, 5_100).noSignal, false);
+  assert.equal(tracker.update(0, 0, 5_200).noSignal, false);
+});
+
+test("작지만 유효한 신호는 저음량 안내만 띄운다", () => {
+  const tracker = new VoiceMeterTracker();
+  tracker.update(0.001, 0.001, 0);
+  const meter = tracker.update(0.001, 0.001, 5_000);
+  assert.equal(meter.tooQuiet, true);
+  assert.equal(meter.noSignal, false);
+});
+
 test("클리핑은 피크 순간에 뜨고 잠시 유지된다", () => {
   const tracker = new VoiceMeterTracker();
   assert.equal(tracker.update(0.5, 0.99, 0).clipping, true);
@@ -35,4 +52,5 @@ test("비정상 입력은 0 으로 눌러 담는다", () => {
   const meter = tracker.update(Number.NaN, Number.NaN, 0);
   assert.equal(meter.level, 0);
   assert.equal(meter.clipping, false);
+  assert.equal(meter.noSignal, false);
 });

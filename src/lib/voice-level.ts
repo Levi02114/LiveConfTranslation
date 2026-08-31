@@ -8,6 +8,8 @@
 // ponytail: 현장 마이크 편차가 크므로 안내가 너무 뜨거나 안 뜨면 이 값들만 조정한다.
 const QUIET_RMS = 0.008; // 이 RMS 미만이면 "너무 작다" 후보
 const QUIET_HOLD_MS = 2_500; // 이 시간 연속으로 작아야 안내를 띄운다
+const NO_SIGNAL_RMS = 0.00001; // 사실상 디지털 무음인 경우만 연결 경고 후보
+const NO_SIGNAL_HOLD_MS = 5_000; // 정상적인 말 사이 정적에는 경고하지 않는다
 const CLIP_PEAK = 0.98; // 이 피크 이상이면 클리핑
 const CLIP_HOLD_MS = 1_000; // 클리핑 안내를 유지하는 시간
 export const METER_INTERVAL_MS = 100; // UI 갱신 주기
@@ -16,6 +18,7 @@ export type VoiceMeter = {
   /** 표시용 음량. -60dB..0dB 를 0..1 로 눌러 담는다. */
   level: number;
   clipping: boolean;
+  noSignal: boolean;
   tooQuiet: boolean;
 };
 
@@ -27,6 +30,7 @@ export function meterLevel(rms: number): number {
 
 export class VoiceMeterTracker {
   private quietSince: number | null = null;
+  private noSignalSince: number | null = null;
   private clipUntil = 0;
 
   update(rms: number, peak: number, now: number): VoiceMeter {
@@ -36,10 +40,17 @@ export class VoiceMeterTracker {
     } else {
       this.quietSince = null;
     }
+    if (level <= NO_SIGNAL_RMS) {
+      this.noSignalSince ??= now;
+    } else {
+      this.noSignalSince = null;
+    }
     if (peak >= CLIP_PEAK) this.clipUntil = now + CLIP_HOLD_MS;
     return {
       level: meterLevel(level),
       clipping: now < this.clipUntil,
+      noSignal:
+        this.noSignalSince !== null && now - this.noSignalSince >= NO_SIGNAL_HOLD_MS,
       tooQuiet: this.quietSince !== null && now - this.quietSince >= QUIET_HOLD_MS,
     };
   }

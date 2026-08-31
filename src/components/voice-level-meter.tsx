@@ -15,11 +15,13 @@ export function VoiceLevelMeter({
   strings: UiStrings["capture"];
 }) {
   if (!meter) return null;
-  const hint = meter.clipping
-    ? strings.levelClipping
-    : meter.tooQuiet
-      ? strings.levelTooQuiet
-      : null;
+  const hint = meter.noSignal
+    ? strings.noSignal
+    : meter.clipping
+      ? strings.levelClipping
+      : meter.tooQuiet
+        ? strings.levelTooQuiet
+        : null;
   return (
     <div className="flex min-w-[160px] flex-1 flex-wrap items-center gap-x-2.5 gap-y-1">
       <div
@@ -36,7 +38,12 @@ export function VoiceLevelMeter({
         />
       </div>
       {hint ? (
-        <span className="min-w-0 font-mono text-[11px] leading-4 text-fg">{hint}</span>
+        <span
+          role="status"
+          className={`ml-auto w-full min-w-0 text-right font-mono text-[11px] leading-4 sm:w-auto ${meter.noSignal ? "text-warning" : "text-fg"}`}
+        >
+          {hint}
+        </span>
       ) : null}
     </div>
   );

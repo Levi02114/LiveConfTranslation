@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * 색은 순수 흑백만 쓴다.
+ * 본문 색은 순수 흑백만 쓰고, 오류·경고 상태에만 의미 색을 쓴다.
  *   라이트 = 흰 배경 / 검은 글씨
  *   다크   = 검은 배경 / 흰 글씨
  * 회의 화면을 멀리서 읽는 사람이 있으므로 대비를 깎지 않는다.
@@ -16,6 +16,7 @@
   --line: #e4e4e4;
   --panel: #f6f6f6;
   --error: #c40000;
+  --warning: #a64b00;
 }
 
 :root[data-theme="dark"] {
@@ -25,6 +26,7 @@
   --line: #262626;
   --panel: #0d0d0d;
   --error: #ff6b6b;
+  --warning: #ffad42;
 }
 
 /* 사용자가 고르기 전에는 기기 설정을 따른다. */
@@ -36,6 +38,7 @@
     --line: #262626;
     --panel: #0d0d0d;
     --error: #ff6b6b;
+    --warning: #ffad42;
   }
 }
 
@@ -69,6 +72,7 @@
   --color-line: var(--line);
   --color-panel: var(--panel);
   --color-error: var(--error);
+  --color-warning: var(--warning);
   --font-sans: var(--font-sans-stack);
   --font-mono: var(--font-mono-stack);
 }

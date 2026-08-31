@@ -40,6 +40,16 @@ test("통합 세션 프롬프트에도 화자 이름이 들어간다", () => {
   assert.match(params.prompt, /The current speaker's name is "Priya"/);
 });
 
+test("단일·통합 전사는 불명확한 음성을 추측하지 않고 명확한 발언을 보존한다", () => {
+  for (const prompt of [
+    buildSingleSessionParams("ko", "테스트 세션").prompt,
+    buildCombinedSessionParams(["ko", "vi"], "ko", "테스트 세션").prompt,
+  ]) {
+    assert.match(prompt, /Do not guess or invent words from silence/);
+    assert.match(prompt, /do not censor or sanitize it/);
+  }
+});
+
 test("지역 태그는 기본 하위 태그로 환산해 힌트를 본다", () => {
   const { supported, unsupported } = splitTranscribeHintLangs(["zh-CN", "si"]);
   assert.deepEqual(supported, ["zh-CN"]);

@@ -74,7 +74,7 @@ Windows 설치본은 Node.js나 개발 도구를 따로 설치하지 않아도 �
 [최신 릴리스 페이지](https://github.com/Levi02114/LiveConfTranslation/releases/latest)에서 다음 중
 하나를 내려받습니다.
 
-현재 배포 버전: [v0.9.20](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.20)
+현재 배포 버전: [v0.9.21](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.21)
 
 - `... Setup ... .exe`: Windows에 설치하는 버전
 - `... .exe`: 설치 없이 실행하는 포터블 버전(온라인 엔진 전용)
@@ -708,7 +708,8 @@ API 키 없이 동작하지만 첫 모델 로딩과 CPU 전사는 온라인 Real
 
 음성 수집 중에는 마이크 옆에 **입력 음량 막대**가 표시됩니다. 소리가 너무 작거나
 클리핑(입력 과다)이 감지되면 막대 옆에 안내가 나타나므로, 인식이 이상하면 마이크
-거리나 입력 음량부터 확인하세요.
+거리나 입력 음량부터 확인하세요. 마이크를 시작한 뒤 입력 신호가 5초 동안 전혀 감지되지
+않으면 주황색 연결 확인 안내가 나타납니다.
 
 ### 여러 언어 속기사가 동시에 입력할 때
 
@@ -776,6 +777,8 @@ OpenAI 실시간 전사는 OpenAI API 키, Google Chirp 2는 Google 서비스 �
 - 마이크 API는 `localhost`를 제외하면 HTTPS가 필요합니다.
 - 다른 기기의 마이크를 쓰려면 [Cloudflare 공개 URL](#cloudflare-공개-url)을 사용하세요.
 - 큰 소음, 멀리 있는 마이크, 여러 사람의 동시 발화는 정확도를 낮춥니다.
+- 불명확한 소음이나 무음에서 그럴듯한 말을 추측하지 않도록 전사 지시문을 적용합니다.
+  명확하게 들린 발언은 욕설을 포함해 검열하거나 순화하지 않습니다.
 
 ## 번역 엔진과 폴백 엔진
 
