@@ -23,12 +23,24 @@ function state(): LeaseState {
 
 const clientKey = (pageId: string, clientId: string) => `${pageId}:${clientId}`;
 
-export function claimCapture(meetingId: string, pageId: string, clientId: string): Lease | null {
+function pruneExpired(now = Date.now()): void {
+  for (const [leaseId, lease] of state().leases) {
+    if (lease.expiresAt > now) continue;
+    state().leases.delete(leaseId);
+    state().clients.delete(clientKey(lease.pageId, lease.clientId));
+  }
+}
+
+export function claimCapture(
+  meetingId: string,
+  pageId: string,
+  clientId: string,
+): Lease | null {
   const now = Date.now();
+  pruneExpired(now);
   const key = clientKey(pageId, clientId);
   const currentId = state().clients.get(key);
   const current = currentId ? state().leases.get(currentId) : undefined;
-  if (current && current.expiresAt <= now) state().leases.delete(current.leaseId);
 
   const lease: Lease = {
     meetingId,
@@ -49,15 +61,28 @@ export function claimExclusiveCapture(
   clientId: string,
 ): Lease | null {
   const now = Date.now();
-  for (const [leaseId, lease] of state().leases) {
-    if (lease.expiresAt <= now) {
-      state().leases.delete(leaseId);
-      state().clients.delete(clientKey(lease.pageId, lease.clientId));
-      continue;
-    }
+  pruneExpired(now);
+  for (const lease of state().leases.values()) {
     if (lease.pageId === pageId && lease.clientId !== clientId) return null;
   }
   return claimCapture(meetingId, pageId, clientId);
+}
+
+export function listActiveCaptures(meetingId: string): Array<{
+  participantId: string;
+}> {
+  pruneExpired();
+  return [...state().leases.values()]
+    .filter((lease) => lease.meetingId === meetingId)
+    .map((lease) => ({ participantId: lease.clientId }));
+}
+
+export function releaseParticipantCaptures(meetingId: string, participantId: string): void {
+  for (const [leaseId, lease] of state().leases) {
+    if (lease.meetingId !== meetingId || lease.clientId !== participantId) continue;
+    state().leases.delete(leaseId);
+    state().clients.delete(clientKey(lease.pageId, lease.clientId));
+  }
 }
 
 export function renewCapture(pageId: string, leaseId: string): Lease | null {

@@ -23,6 +23,7 @@ type Params = { params: Promise<{ token: string }> };
 const startSchema = z.object({
   clientId: z.string().min(8).max(100),
   speakerName: z.string().trim().min(1).max(40).regex(/^[^\r\n]+$/).optional(),
+  autoSubmit: z.boolean().optional(),
 });
 const leaseSchema = z.object({ leaseId: z.string().uuid() });
 const clientSecretSchema = z.object({

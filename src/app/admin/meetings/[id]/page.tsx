@@ -12,7 +12,6 @@ import {
   getMeetingLanguageConfigs,
   getMeetingLangs,
   getMeetingPages,
-  getRecentCombined,
   listLanguages,
 } from "@/lib/repo";
 import { engineCoverage, refreshEngineSupport } from "@/lib/translate";
@@ -61,7 +60,6 @@ export default async function DashboardPage({
       languages={langs.map((code) => getLanguage(code, lang))}
       pages={getMeetingPages(id)}
       languageConfigs={getMeetingLanguageConfigs(id)}
-      history={getRecentCombined(id, 40)}
       coverage={engineCoverage(meeting.engine, activeLangs)}
       fallbackCoverage={
         meeting.fallbackEngine ? engineCoverage(meeting.fallbackEngine, activeLangs) : null

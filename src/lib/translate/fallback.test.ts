@@ -34,14 +34,22 @@ test("선택한 폴백만 미지원 언어 번역을 대신한다", async () => 
         messages: z.array(z.object({ content: z.string() })).min(1),
       }).parse(JSON.parse(String(init?.body)));
       openaiSystemPrompt = body.messages[0].content;
-      return Response.json({ choices: [{ message: { content: "안녕하세요" } }] });
+      return Response.json({
+        choices: [{ message: { content: /Chinese/.test(openaiSystemPrompt) ? "你好" : "안녕하세요" } }],
+      });
     }
     throw new Error(`예상하지 못한 요청: ${url}`);
   };
 
   try {
     const { encryptSecret, maskSecret } = await import("../crypto");
-    const { replaceGlossaryEntries, upsertEngineSecret } = await import("../repo");
+    const {
+      createMeeting,
+      getRecentCombined,
+      insertMessage,
+      replaceGlossaryEntries,
+      upsertEngineSecret,
+    } = await import("../repo");
     for (const [engine, key] of [
       ["deepl", "test-deepl-key"],
       ["openai", "test-openai-key"],
@@ -79,6 +87,45 @@ test("선택한 폴백만 미지원 언어 번역을 대신한다", async () => 
     assert.match(openaiSystemPrompt, /실시간 세션에서 원어민이 실제로 말하듯/);
     assert.match(openaiSystemPrompt, /සජීවී පරිවර්තනය/);
     assert.match(openaiSystemPrompt, /라이브 번역/);
+
+    const meeting = createMeeting({
+      title: "출력 전용 언어 테스트",
+      config: {
+        languages: [
+          { lang: "ko", inputEnabled: true, outputEnabled: false },
+          { lang: "zh-CN", inputEnabled: false, outputEnabled: true },
+        ],
+        speakerLabels: false,
+        combinedInputFallbackLang: null,
+      },
+      engine: "openai",
+      fallbackEngine: null,
+      translationModel: "gpt-5.6-luna",
+      transcriptionProvider: "openai",
+    });
+    const message = insertMessage({
+      meetingId: meeting.id,
+      pageId: null,
+      lang: "ko",
+      body: "안녕하세요",
+    });
+    const { translateMessage } = await import("../pipeline");
+    await translateMessage({
+      meeting,
+      messageId: message.id,
+      sourceLang: message.lang,
+      body: message.body,
+      revision: message.revision,
+      createdAt: message.createdAt,
+    });
+    assert.deepEqual(
+      getRecentCombined(meeting.id)[0]?.translations.map(({ lang, body, status }) => ({
+        lang,
+        body,
+        status,
+      })),
+      [{ lang: "zh-CN", body: "你好", status: "ok" }],
+    );
   } finally {
     globalThis.fetch = originalFetch;
     if (originalDatabasePath === undefined) delete process.env.DATABASE_PATH;

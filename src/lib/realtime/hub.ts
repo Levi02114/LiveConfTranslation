@@ -24,6 +24,7 @@ export type Connection = {
   lang: LanguageCode | null;
   name: string;
   nameClaimed: boolean;
+  ip?: string;
   draft: string;
   send: (message: ServerMessage, serialized?: string) => void;
   close?: () => void;
@@ -55,6 +56,8 @@ function room(meetingId: string): Set<Connection> {
  * 배포 규칙을 한 곳에 모아 둔다. 페이지 종류가 늘어도 여기만 보면 된다.
  */
 function shouldDeliver(connection: Connection, message: ServerMessage): boolean {
+  // 관리자 명령은 대상 연결에 직접 보내며 회의 전체로 배포하지 않는다.
+  if (message.t === "voice-stop") return false;
   if (message.t === "meeting-closed" || message.t === "hello") return true;
 
   switch (connection.kind) {
@@ -177,6 +180,37 @@ export function broadcastPresence(
 /** 지금 이 입력 페이지에 몇 명이 붙어 있는지 (대시보드 표시에 쓴다) */
 export function countInputPeers(meetingId: string, lang: LanguageCode): number {
   return inputPeers(meetingId, lang).length;
+}
+
+export function listInputParticipants(meetingId: string): Array<{
+  participantId: string;
+  speakerName: string | null;
+  lang: LanguageCode | null;
+  ip: string;
+}> {
+  return [...(state().rooms.get(meetingId) ?? [])]
+    .filter(
+      (connection) =>
+        connection.kind === "input" || connection.kind === "combined-input",
+    )
+    .map((connection) => ({
+      participantId: connection.clientId,
+      speakerName: connection.nameClaimed ? connection.name : null,
+      lang: connection.lang,
+      ip: connection.ip ?? "—",
+    }));
+}
+
+/** 해당 입력 참가자에게만 마이크 중지 명령을 보낸다. */
+export function stopInputVoice(meetingId: string, participantId: string): boolean {
+  const connection = [...(state().rooms.get(meetingId) ?? [])].find(
+    (candidate) =>
+      (candidate.kind === "input" || candidate.kind === "combined-input") &&
+      candidate.clientId === participantId,
+  );
+  if (!connection) return false;
+  connection.send({ t: "voice-stop" });
+  return true;
 }
 
 /** 설정에서 꺼진 입력·출력 페이지의 기존 연결도 즉시 끊는다. */

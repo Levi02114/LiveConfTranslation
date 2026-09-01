@@ -8,6 +8,7 @@ import { VoiceLevelMeter } from "@/components/voice-level-meter";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { upsertSource, upsertTranslation } from "@/lib/combined-entry";
+import { newBrowserId } from "@/lib/browser-id";
 import type { UiStrings } from "@/lib/i18n-builtin";
 import { type Language, textDirection } from "@/lib/languages";
 import type { Peer, ServerMessage } from "@/lib/realtime/protocol";
@@ -56,6 +57,7 @@ export function InputView({
   const [speakerPromptOpen, setSpeakerPromptOpen] = useState(false);
   const [speakerClaimed, setSpeakerClaimed] = useState(!speakerLabels);
   const [speakerError, setSpeakerError] = useState<string | null>(null);
+  const [participantId] = useState(newBrowserId);
   const targetLanguage = useMemo(() => [language], [language]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -66,6 +68,7 @@ export function InputView({
   }, []);
   const voice = useVoiceInput({
     token,
+    participantId,
     strings: strings.capture,
     closed,
     autoSubmit: voiceMode,
@@ -111,13 +114,18 @@ export function InputView({
       setEntries((prev) => upsertTranslation(prev, message));
     } else if (message.t === "presence") {
       setPeers(message.peers);
+    } else if (message.t === "voice-stop") {
+      stopVoice(false);
     } else if (message.t === "meeting-closed") {
       setClosed(true);
       stopVoice(false);
     }
   }, [stopVoice, strings.speaker.duplicate, token]);
 
-  const { state, send } = useRealtime(`token=${encodeURIComponent(token)}`, onMessage);
+  const { state, send } = useRealtime(
+    `token=${encodeURIComponent(token)}&clientId=${participantId}`,
+    onMessage,
+  );
   const speakerReady = !speakerLabels || (speakerClaimed && Boolean(speakerName.trim()));
 
   useEffect(() => {

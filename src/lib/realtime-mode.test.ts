@@ -87,12 +87,19 @@ test("세션은 언어별 입력 페이지를 만들고 음성 전사를 멱등 
     const leases = await import("./realtime/capture-lease");
     const active = leases.claimCapture(meeting.id, input.id, "first-device");
     assert.ok(active);
+    assert.deepEqual(leases.listActiveCaptures(meeting.id), [
+      { participantId: "first-device" },
+    ]);
+    leases.releaseParticipantCaptures(meeting.id, "first-device");
+    assert.equal(leases.ownsCapture(input.id, active.leaseId), false);
+    const restarted = leases.claimCapture(meeting.id, input.id, "first-device");
+    assert.ok(restarted);
     const sameLanguage = leases.claimCapture(meeting.id, input.id, "second-device");
     assert.ok(sameLanguage);
     assert.notEqual(sameLanguage.leaseId, active.leaseId);
     const otherLanguage = leases.claimCapture(meeting.id, inputs[1].id, "second-device");
     assert.ok(otherLanguage);
-    leases.releaseCapture(input.id, active.leaseId);
+    leases.releaseCapture(input.id, restarted.leaseId);
     assert.ok(leases.claimCapture(meeting.id, input.id, "second-device"));
     leases.releaseMeetingCaptures(meeting.id);
 

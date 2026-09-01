@@ -582,6 +582,13 @@ export type AdminStrings = {
     output: string;
     capture: string;
     combinedInput: string;
+    participantStatus: string;
+    participantNone: string;
+    microphoneOn: string;
+    microphoneOff: string;
+    stopMicrophone: string;
+    stoppingMicrophone: string;
+    stopMicrophoneFailed: string;
     live: string;
     source: string;
     done: string;
@@ -849,6 +856,13 @@ const adminKo: AdminStrings = {
     output: "출력",
     capture: "음성 수집",
     combinedInput: "통합 입력",
+    participantStatus: "접속 참가자",
+    participantNone: "접속 중인 참가자가 없습니다",
+    microphoneOn: "마이크 켜짐",
+    microphoneOff: "마이크 꺼짐",
+    stopMicrophone: "마이크 끄기",
+    stoppingMicrophone: "끄는 중",
+    stopMicrophoneFailed: "마이크를 끄지 못했습니다",
     live: "실시간 번역",
     source: "원문",
     done: "완료",
@@ -1117,6 +1131,13 @@ const adminVi: AdminStrings = {
     output: "Bản dịch",
     capture: "Thu âm",
     combinedInput: "Nhập liệu tổng hợp",
+    participantStatus: "Người tham gia đang kết nối",
+    participantNone: "Không có người tham gia nào đang kết nối",
+    microphoneOn: "Micrô bật",
+    microphoneOff: "Micrô tắt",
+    stopMicrophone: "Tắt micrô",
+    stoppingMicrophone: "Đang tắt",
+    stopMicrophoneFailed: "Không thể tắt micrô",
     live: "Dịch trực tiếp",
     source: "Nguồn",
     done: "Hoàn tất",
@@ -1385,6 +1406,13 @@ const adminTh: AdminStrings = {
     output: "คำแปล",
     capture: "รับเสียง",
     combinedInput: "ป้อนข้อมูลรวม",
+    participantStatus: "ผู้เข้าร่วมที่เชื่อมต่ออยู่",
+    participantNone: "ไม่มีผู้เข้าร่วมที่เชื่อมต่ออยู่",
+    microphoneOn: "ไมโครโฟนเปิด",
+    microphoneOff: "ไมโครโฟนปิด",
+    stopMicrophone: "ปิดไมโครโฟน",
+    stoppingMicrophone: "กำลังปิด",
+    stopMicrophoneFailed: "ไม่สามารถปิดไมโครโฟนได้",
     live: "การแปลแบบเรียลไทม์",
     source: "ต้นฉบับ",
     done: "เสร็จ",
@@ -1653,6 +1681,13 @@ const adminSi: AdminStrings = {
     output: "පරිවර්තනය",
     capture: "හඬ ග්‍රහණය",
     combinedInput: "ඒකාබද්ධ ඇතුළත් කිරීම",
+    participantStatus: "සම්බන්ධ වී සිටින සහභාගිවන්නන්",
+    participantNone: "සම්බන්ධ වී සිටින සහභාගිවන්නන් නැත",
+    microphoneOn: "මයික්‍රෆෝනය ක්‍රියාත්මකයි",
+    microphoneOff: "මයික්‍රෆෝනය අක්‍රියයි",
+    stopMicrophone: "මයික්‍රෆෝනය අක්‍රිය කරන්න",
+    stoppingMicrophone: "අක්‍රිය කරමින්",
+    stopMicrophoneFailed: "මයික්‍රෆෝනය අක්‍රිය කළ නොහැකි විය",
     live: "තත්‍ය කාලීන පරිවර්තනය",
     source: "මූලාශ්‍රය",
     done: "සම්පූර්ණයි",

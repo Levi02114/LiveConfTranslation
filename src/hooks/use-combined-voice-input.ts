@@ -44,6 +44,7 @@ type VoiceEvent = z.infer<typeof voiceEventSchema>;
 
 type ServerVoiceInputOptions = {
   token: string;
+  participantId?: string;
   strings: UiStrings["capture"];
   closed: boolean;
   speakerName?: string | null;
@@ -58,6 +59,7 @@ type ServerVoiceInputOptions = {
 
 export function useServerVoiceInput({
   token,
+  participantId,
   strings,
   closed,
   speakerName,
@@ -137,9 +139,9 @@ export function useServerVoiceInput({
 
   useEffect(() => {
     if (!enabled) return;
-    clientId.current = newBrowserId();
+    clientId.current = participantId || newBrowserId();
     return disconnect;
-  }, [disconnect, enabled]);
+  }, [disconnect, enabled, participantId]);
 
   useEffect(() => {
     if (!enabled || !navigator.mediaDevices?.enumerateDevices) return;
@@ -299,6 +301,7 @@ export function useServerVoiceInput({
         t: "start",
         speakerName: speakerName || undefined,
         lang: lang || undefined,
+        autoSubmit,
       }));
       ws.onmessage = (message) => {
         let value;
@@ -363,7 +366,7 @@ export function useServerVoiceInput({
       setError(strings.permission);
       disconnect();
     }
-  }, [closed, deviceId, disconnect, enabled, lang, langs, refreshDevices, speakerName, state, strings, submitTranscript, token, updateMeter]);
+  }, [autoSubmit, closed, deviceId, disconnect, enabled, lang, langs, refreshDevices, speakerName, state, strings, submitTranscript, token, updateMeter]);
 
   return { state, partial, error, devices, deviceId, setDeviceId, start, stop, meter };
 }

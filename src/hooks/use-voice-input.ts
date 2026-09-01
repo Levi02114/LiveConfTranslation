@@ -37,6 +37,7 @@ const AUDIO_ANALYSIS_INTERVAL_MS = 50;
 
 export function useVoiceInput({
   token,
+  participantId,
   strings,
   closed,
   autoSubmit = true,
@@ -47,6 +48,7 @@ export function useVoiceInput({
   forceServerTransport = false,
 }: {
   token: string;
+  participantId?: string;
   strings: UiStrings["capture"];
   closed: boolean;
   autoSubmit?: boolean;
@@ -63,6 +65,7 @@ export function useVoiceInput({
   );
   const serverVoice = useServerVoiceInput({
     token,
+    participantId,
     strings,
     closed,
     autoSubmit,
@@ -178,9 +181,9 @@ export function useVoiceInput({
 
   useEffect(() => {
     if (serverTransport) return;
-    clientId.current = newBrowserId();
+    clientId.current = participantId || newBrowserId();
     return () => disconnect();
-  }, [disconnect, serverTransport]);
+  }, [disconnect, participantId, serverTransport]);
 
   const refreshDevices = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -455,6 +458,7 @@ export function useVoiceInput({
       body: JSON.stringify({
         clientId: clientId.current,
         speakerName: speakerName || undefined,
+        autoSubmit,
       }),
     }).then(async (response) => ({
       response,
@@ -546,7 +550,7 @@ export function useVoiceInput({
       setError(cause instanceof Error && cause.message ? cause.message : strings.permission);
       disconnect();
     }
-  }, [closed, deviceId, disconnect, endpoint, handleEvent, monitorSilence, refreshDevices, serverTransport, speakerName, state, strings]);
+  }, [autoSubmit, closed, deviceId, disconnect, endpoint, handleEvent, monitorSilence, refreshDevices, serverTransport, speakerName, state, strings]);
 
   const webRtcVoice = {
     state,

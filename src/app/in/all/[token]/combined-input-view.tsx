@@ -9,6 +9,7 @@ import { VoiceLevelMeter } from "@/components/voice-level-meter";
 import { useServerVoiceInput } from "@/hooks/use-combined-voice-input";
 import { useRealtime } from "@/hooks/use-realtime";
 import { upsertSource, upsertTranslation } from "@/lib/combined-entry";
+import { newBrowserId } from "@/lib/browser-id";
 import type { UiStrings } from "@/lib/i18n-builtin";
 import { parseJsonResponse } from "@/lib/json-response";
 import { type Language, type LanguageCode, textDirection } from "@/lib/languages";
@@ -63,6 +64,7 @@ export function CombinedInputView({
   const [speakerPromptOpen, setSpeakerPromptOpen] = useState(false);
   const [speakerClaimed, setSpeakerClaimed] = useState(!speakerLabels);
   const [speakerError, setSpeakerError] = useState<string | null>(null);
+  const [participantId] = useState(newBrowserId);
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -83,6 +85,7 @@ export function CombinedInputView({
   const voiceLanguageReady = !requireVoiceLanguage || Boolean(inputLang);
   const voice = useServerVoiceInput({
     token,
+    participantId,
     strings: strings.capture,
     closed,
     speakerName: speakerName.trim() || null,
@@ -120,12 +123,17 @@ export function CombinedInputView({
       setEntries((current) => upsertTranslation(current, message));
     } else if (message.t === "presence") {
       setPeers(message.peers);
+    } else if (message.t === "voice-stop") {
+      stopVoice();
     } else if (message.t === "meeting-closed") {
       setClosed(true);
       stopVoice();
     }
   }, [stopVoice, strings.speaker.duplicate, token]);
-  const { state, send } = useRealtime(`token=${encodeURIComponent(token)}`, onMessage);
+  const { state, send } = useRealtime(
+    `token=${encodeURIComponent(token)}&clientId=${participantId}`,
+    onMessage,
+  );
   const speakerReady = !speakerLabels || (speakerClaimed && Boolean(speakerName.trim()));
 
   useEffect(() => {

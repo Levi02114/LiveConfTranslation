@@ -7,7 +7,9 @@ import {
   disconnectDisabledPages,
   join,
   leave,
+  listInputParticipants,
   publish,
+  stopInputVoice,
   type Connection,
 } from "./hub";
 import type { ServerMessage } from "./protocol";
@@ -197,5 +199,55 @@ test("통합 입력도 전체 원문·번역을 받고 일반 입력과 닉네�
   } finally {
     leave(combined);
     leave(regular);
+  }
+});
+
+test("관리자는 모든 입력 참가자를 조회하고 한 명의 마이크만 중지한다", () => {
+  const firstMessages: ServerMessage[] = [];
+  const secondMessages: ServerMessage[] = [];
+  const first: Connection = {
+    clientId: "voice-first",
+    meetingId: "voice-control-meeting",
+    kind: "input",
+    lang: "ko",
+    name: "Levi",
+    nameClaimed: true,
+    ip: "192.168.0.10",
+    draft: "",
+    send: (message) => firstMessages.push(message),
+  };
+  const second: Connection = {
+    ...first,
+    clientId: "voice-second",
+    lang: "vi",
+    name: "Minh",
+    nameClaimed: false,
+    ip: "192.168.0.11",
+    send: (message) => secondMessages.push(message),
+  };
+
+  join(first);
+  join(second);
+  try {
+    assert.deepEqual(listInputParticipants(first.meetingId), [
+      {
+        participantId: "voice-first",
+        speakerName: "Levi",
+        lang: "ko",
+        ip: "192.168.0.10",
+      },
+      {
+        participantId: "voice-second",
+        speakerName: null,
+        lang: "vi",
+        ip: "192.168.0.11",
+      },
+    ]);
+    assert.equal(stopInputVoice(first.meetingId, "voice-first"), true);
+    assert.deepEqual(firstMessages, [{ t: "voice-stop" }]);
+    assert.deepEqual(secondMessages, []);
+  } finally {
+    leave(first);
+    leave(second);
   }
 });

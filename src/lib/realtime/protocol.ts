@@ -47,6 +47,7 @@ export const serverMessageSchema = z.union([
     createdAt: z.number(),
   }),
   z.object({ t: z.literal("presence"), peers: z.array(peerSchema) }),
+  z.object({ t: z.literal("voice-stop") }),
   z.object({ t: z.literal("meeting-closed"), closedAt: z.number() }),
 ]);
 export type ServerMessage = z.infer<typeof serverMessageSchema>;

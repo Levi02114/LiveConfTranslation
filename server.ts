@@ -15,7 +15,7 @@
 
 import { createServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
-import type { Server as HttpServer } from "node:http";
+import type { IncomingMessage, Server as HttpServer } from "node:http";
 import type { Server as HttpsServer } from "node:https";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
@@ -159,7 +159,7 @@ serverInstance.on("upgrade", (request, socket, head) => {
   }
 
   wss.handleUpgrade(request, socket, head, (ws) => {
-    attach(ws, resolved);
+    attach(ws, resolved, connectionIp(request));
   });
 });
 }
@@ -170,7 +170,17 @@ type Target = {
   meetingId: string;
   kind: Connection["kind"];
   lang: LanguageCode | null;
+  clientId: string | null;
 };
+
+const connectionIpSchema = z.string().trim().min(1).max(64);
+
+function connectionIp(request: IncomingMessage): string {
+  const cloudflare = connectionIpSchema.safeParse(request.headers["cf-connecting-ip"]);
+  const remote = connectionIpSchema.safeParse(request.socket.remoteAddress);
+  const value = cloudflare.success ? cloudflare.data : remote.success ? remote.data : "—";
+  return value.startsWith("::ffff:") ? value.slice(7) : value.slice(0, 64);
+}
 
 /**
  * 업그레이드 요청이 어느 회의의 무엇으로 붙으려는지 판정한다.
@@ -184,7 +194,7 @@ function resolveConnectionTarget(url: URL, cookie: string | undefined): Target |
     // 대시보드: 관리자만 회의 전체를 볼 수 있다.
     if (!isAdminFromCookieHeader(cookie)) return null;
     if (!getMeeting(meetingId)) return null;
-    return { meetingId, kind: "dashboard", lang: null };
+    return { meetingId, kind: "dashboard", lang: null, clientId: null };
   }
 
   const token = url.searchParams.get("token");
@@ -194,7 +204,11 @@ function resolveConnectionTarget(url: URL, cookie: string | undefined): Target |
   if (!page || !isPageEnabled(page)) return null;
   if (!getMeeting(page.meetingId)) return null;
 
-  return { meetingId: page.meetingId, kind: page.kind, lang: page.lang };
+  const requestedClientId = url.searchParams.get("clientId");
+  const clientId = requestedClientId && /^[a-f0-9]{32}$/.test(requestedClientId)
+    ? requestedClientId
+    : null;
+  return { meetingId: page.meetingId, kind: page.kind, lang: page.lang, clientId };
 }
 
 type TranscriptionTarget = {
@@ -257,6 +271,7 @@ const transcriptionClientMessageSchema = z.union([
     t: z.literal("start"),
     speakerName: z.string().optional(),
     lang: z.string().trim().min(1).max(35).optional(),
+    autoSubmit: z.boolean().optional(),
   }),
   z.object({ t: z.literal("heartbeat") }),
   z.object({ t: z.literal("commit") }),
@@ -700,8 +715,8 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   ws.on("error", cleanup);
 }
 
-function attach(ws: WebSocket, target: Target) {
-  const clientId = randomUUID();
+function attach(ws: WebSocket, target: Target, ip: string) {
+  const clientId = target.clientId ?? randomUUID();
 
   // 이름은 입력 페이지에서만 쓰인다(서로를 구분해야 하므로). 보기 전용 연결에는
   // 번호를 붙이지 않는다 — 참석자에게 "입력자 3" 이라는 이름이 생기면 혼란스럽다.
@@ -717,6 +732,7 @@ function attach(ws: WebSocket, target: Target) {
     lang: target.lang,
     name,
     nameClaimed: false,
+    ip,
     draft: "",
     send: (message: ServerMessage, serialized?: string) => {
       if (ws.readyState !== ws.OPEN) return;

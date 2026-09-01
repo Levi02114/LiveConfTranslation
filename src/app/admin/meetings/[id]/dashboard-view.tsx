@@ -1,24 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { z } from "zod";
 
 import { AppearanceControls } from "@/components/appearance-controls";
 import { generateQr, QrDialog, type QrImage } from "@/components/qr-dialog";
 import { copyText } from "@/lib/clipboard";
 import { useSetAdminLang } from "@/hooks/use-admin-lang";
 import { usePublicOrigin } from "@/hooks/use-public-origin";
-import { useRealtime } from "@/hooks/use-realtime";
-import {
-  translationFailureText,
-  type AdminStrings,
-  type UiStrings,
-} from "@/lib/i18n-builtin";
+import type { AdminStrings, UiStrings } from "@/lib/i18n-builtin";
 import type { Language, LanguageCode } from "@/lib/languages";
-import { formatClock, formatTimestamp } from "@/lib/log-format";
-import type { ServerMessage } from "@/lib/realtime/protocol";
+import { formatTimestamp } from "@/lib/log-format";
 import type {
-  CombinedEntry,
   Meeting,
   MeetingLanguageConfig,
   Page,
@@ -28,26 +22,22 @@ import { AdminBusyOverlay } from "../../admin-busy-overlay";
 import { MinutesDownloadButtons } from "./minutes-download-dialog";
 import { TranscriptionContextSettings } from "./session-settings";
 
-/** 실시간 번역에 남겨 둘 줄 수. 대시보드는 기록이 아니라 감시용이다. */
-const FLOW_LIMIT = 60;
-
-type Flow = {
-  key: string;
-  messageId: number;
-  revision: number;
-  editedAt: number | null;
-  at: number;
-  route: string;
-  body: string;
-  status: "source" | "done" | "failed";
-};
+const participantResponseSchema = z.object({
+  participants: z.array(z.object({
+    participantId: z.string(),
+    speakerName: z.string().nullable(),
+    lang: z.string().nullable(),
+    ip: z.string(),
+    microphoneOn: z.boolean(),
+  })),
+});
+type Participant = z.infer<typeof participantResponseSchema>["participants"][number];
 
 export function DashboardView({
   meeting,
   languages,
   pages,
   languageConfigs,
-  history,
   coverage,
   fallbackCoverage,
   lang,
@@ -59,7 +49,6 @@ export function DashboardView({
   languages: Language[];
   pages: Page[];
   languageConfigs: MeetingLanguageConfig[];
-  history: CombinedEntry[];
   coverage: { engine: string; label: string; configured: boolean; unsupported: LanguageCode[] };
   fallbackCoverage: {
     engine: string;
@@ -74,12 +63,14 @@ export function DashboardView({
 }) {
   const [closed, setClosed] = useState(meeting.status === "closed");
   const [closedAt, setClosedAt] = useState<number | null>(meeting.closedAt);
-  const [flows, setFlows] = useState<Flow[]>(() => seedFlows(history, languages, ui));
   const [copied, setCopied] = useState<{ key: string; ok: boolean } | null>(null);
   const [qr, setQr] = useState<QrImage | null>(null);
   const [qrError, setQrError] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [stoppingVoice, setStoppingVoice] = useState<string | null>(null);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const qrDialogRef = useRef<HTMLDialogElement>(null);
   const setLang = useSetAdminLang();
   const [navigating, startNavigation] = useTransition();
@@ -89,58 +80,40 @@ export function DashboardView({
   // Electron 이 Quick Tunnel을 켜면 공개 주소로 즉시 교체한다.
   const origin = usePublicOrigin();
 
-  const nameOf = useCallback(
-    (code: LanguageCode) =>
-      languages.find((language) => language.code === code)?.label ?? code,
-    [languages],
-  );
+  const nameOf = (code: LanguageCode) =>
+    languages.find((language) => language.code === code)?.label ?? code;
+  const participantLabel = (participant: Participant) => {
+    const language = participant.lang ? nameOf(participant.lang) : ui.input.autoLanguage;
+    return meeting.speakerLabels && participant.speakerName
+      ? `${participant.speakerName} · ${language}`
+      : `${language} · ${participant.ip}`;
+  };
 
-  const onMessage = useCallback(
-    (message: ServerMessage) => {
-      if (message.t === "message") {
-        setFlows((prev) => {
-          const current = prev.find((flow) => flow.key === `m${message.messageId}`);
-          const cleared = !current || message.revision <= current.revision
-            ? prev
-            : prev.filter((flow) => flow.messageId !== message.messageId || flow.status === "source");
-          return push(cleared, {
-            key: `m${message.messageId}`,
-            messageId: message.messageId,
-            revision: message.revision,
-            editedAt: message.editedAt,
-            at: message.createdAt,
-            route: nameOf(message.lang),
-            body: withSpeaker(message.body, message.speakerName),
-            status: "source",
-          });
+  useEffect(() => {
+    if (closed) return;
+
+    let disposed = false;
+    const refresh = async () => {
+      try {
+        const response = await fetch(`/api/meetings/${meeting.id}/voice-status`, {
+          cache: "no-store",
         });
-      } else if (message.t === "translation") {
-        setFlows((prev) =>
-          push(prev, {
-            key: `t${message.messageId}-${message.lang}`,
-            messageId: message.messageId,
-            revision: message.revision,
-            editedAt: message.editedAt,
-            at: message.createdAt,
-            route: `→ ${nameOf(message.lang)}`,
-            body: withSpeaker(
-              message.status === "ok"
-                ? message.body
-                : translationFailureText(message.error, ui.status),
-              message.speakerName,
-            ),
-            status: message.status === "ok" ? "done" : "failed",
-          }),
-        );
-      } else if (message.t === "meeting-closed") {
-        setClosed(true);
-        setClosedAt(message.closedAt);
+        const payload = participantResponseSchema.safeParse(await response.json());
+        if (!disposed && response.ok && payload.success) {
+          setParticipants(payload.data.participants);
+        }
+      } catch {
+        // 잠깐 끊겨도 마지막 정상 상태를 유지하고 다음 주기에 다시 확인한다.
       }
-    },
-    [nameOf, ui.status],
-  );
+    };
 
-  useRealtime(`meeting=${encodeURIComponent(meeting.id)}`, onMessage);
+    void refresh();
+    const interval = setInterval(refresh, 3_000);
+    return () => {
+      disposed = true;
+      clearInterval(interval);
+    };
+  }, [closed, meeting.id]);
 
   const close = async () => {
     if (closing) return;
@@ -154,10 +127,34 @@ export function DashboardView({
       }
       setClosed(true);
       setClosedAt(Date.now());
+      setParticipants([]);
     } catch {
       setCloseError(strings.list.closeFailed);
     } finally {
       setClosing(false);
+    }
+  };
+
+  const stopParticipantVoice = async (participantId: string) => {
+    if (stoppingVoice) return;
+    setStoppingVoice(participantId);
+    setVoiceError(null);
+    try {
+      const response = await fetch(`/api/meetings/${meeting.id}/voice-status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ participantId }),
+      });
+      if (!response.ok) throw new Error("stop failed");
+      setParticipants((current) => current.map((participant) =>
+        participant.participantId === participantId
+          ? { ...participant, microphoneOn: false }
+          : participant,
+      ));
+    } catch {
+      setVoiceError(strings.dashboard.stopMicrophoneFailed);
+    } finally {
+      setStoppingVoice(null);
     }
   };
 
@@ -296,25 +293,65 @@ export function DashboardView({
 
       {closeError ? <div className="mt-4 font-mono text-[12px]">{closeError}</div> : null}
 
-      <TranscriptionContextSettings
-        meetingId={meeting.id}
-        initialContext={meeting.transcriptionContext}
-        strings={strings}
-      />
-
-      {coverage.unsupported.length ? (
-        <div className="mt-4 border border-line px-4 py-3 font-mono text-[12px] text-muted">
-          {strings.dashboard.unsupportedEngine
-            .replace("{engine}", coverage.label)
-            .replace("{languages}", coverage.unsupported.map(nameOf).join(" · "))
-            .replace(
-              "{fallback}",
-              fallbackCoverage?.label ?? strings.list.noFallback,
-            )}
+      <section className="mt-5 border-y border-line py-4">
+        <div className="font-mono text-[11px] text-muted">
+          {strings.dashboard.participantStatus}
         </div>
-      ) : null}
+        <div aria-live="polite" className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {participants.length ? participants.map((participant) => (
+            <div
+              key={participant.participantId}
+              className="grid h-[5.5rem] min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-2 overflow-hidden border border-line px-3 py-2 font-mono text-[11px]"
+            >
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <span
+                  aria-hidden
+                  className={`h-2 w-2 shrink-0 rounded-full ${participant.microphoneOn ? "bg-fg" : "border border-line"}`}
+                />
+                <span
+                  className="min-w-0 truncate whitespace-nowrap"
+                  title={participantLabel(participant)}
+                >
+                  {participantLabel(participant)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="shrink-0 text-muted">
+                  {participant.microphoneOn
+                    ? strings.dashboard.microphoneOn
+                    : strings.dashboard.microphoneOff}
+                </span>
+                {participant.microphoneOn ? (
+                  <button
+                    type="button"
+                    disabled={Boolean(stoppingVoice)}
+                    onClick={() => void stopParticipantVoice(participant.participantId)}
+                    className="max-w-[60%] shrink-0 cursor-pointer truncate whitespace-nowrap border border-line px-2 py-1 hover:border-fg disabled:cursor-default disabled:opacity-30"
+                  >
+                    {stoppingVoice === participant.participantId
+                      ? strings.dashboard.stoppingMicrophone
+                      : strings.dashboard.stopMicrophone}
+                  </button>
+                ) : (
+                  <span
+                    aria-hidden
+                    className="invisible max-w-[60%] shrink-0 truncate whitespace-nowrap border px-2 py-1"
+                  >
+                    {strings.dashboard.stopMicrophone}
+                  </span>
+                )}
+              </div>
+            </div>
+          )) : (
+            <p className="font-mono text-[11px] text-muted">
+              {strings.dashboard.participantNone}
+            </p>
+          )}
+        </div>
+        {voiceError ? <p className="mt-2 font-mono text-[11px]">{voiceError}</p> : null}
+      </section>
 
-      <section className="mt-10">
+      <section className="mt-7">
         <div className="mb-1 font-mono text-[11px] text-muted">{strings.dashboard.pages}</div>
         <div
           className={`hidden gap-x-5 gap-y-3 border-b border-line py-3 font-mono text-[11px] text-muted lg:grid ${
@@ -429,38 +466,23 @@ export function DashboardView({
         ) : null}
       </section>
 
-      <section className="mt-12">
-        <div className="mb-1 font-mono text-[11px] text-muted">{strings.dashboard.live}</div>
-        {flows.length === 0 ? (
-          <p className="py-4 font-mono text-[12px] text-muted">{ui.status.noContent}</p>
-        ) : null}
-        {flows.map((flow) => (
-          <div
-            key={flow.key}
-            className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-1 border-t border-line py-3 sm:gap-3.5 sm:py-2.5 xl:grid-cols-[auto_auto_minmax(0,1fr)_auto]"
-          >
-            <div className="col-start-1 row-start-1 font-mono text-[12px] text-muted">
-              {formatClock(flow.at)}
-            </div>
-            <div className="col-start-2 row-start-1 truncate font-mono text-[12px] xl:max-w-[10rem]">
-              {flow.route}
-            </div>
-            <div className="app-text col-start-2 col-end-4 row-start-2 [text-wrap:pretty] xl:col-start-3 xl:col-end-4 xl:row-start-1">
-              {flow.body}
-              {flow.editedAt ? (
-                <span className="mt-1 block font-mono text-[11px] text-muted">
-                  ({ui.message.edited})
-                </span>
-              ) : null}
-            </div>
-            <div
-              className={`col-start-3 row-start-1 font-mono text-[11px] xl:col-start-4 ${flow.status === "failed" ? "text-fg" : "text-muted"}`}
-            >
-              {strings.dashboard[flow.status]}
-            </div>
-          </div>
-        ))}
-      </section>
+      {coverage.unsupported.length ? (
+        <div className="mt-6 border border-line px-4 py-3 font-mono text-[12px] text-muted">
+          {strings.dashboard.unsupportedEngine
+            .replace("{engine}", coverage.label)
+            .replace("{languages}", coverage.unsupported.map(nameOf).join(" · "))
+            .replace(
+              "{fallback}",
+              fallbackCoverage?.label ?? strings.list.noFallback,
+            )}
+        </div>
+      ) : null}
+
+      <TranscriptionContextSettings
+        meetingId={meeting.id}
+        initialContext={meeting.transcriptionContext}
+        strings={strings}
+      />
 
       <QrDialog
         dialogRef={qrDialogRef}
@@ -527,57 +549,4 @@ function UrlCell({
       </div>
     </div>
   );
-}
-
-function push(prev: Flow[], next: Flow): Flow[] {
-  const index = prev.findIndex((flow) => flow.key === next.key);
-  if (index >= 0) {
-    if (prev[index]!.revision > next.revision) return prev;
-    const updated = prev.slice();
-    updated[index] = next;
-    return updated;
-  }
-  return [next, ...prev].slice(0, FLOW_LIMIT);
-}
-
-/** 대시보드를 늦게 열어도 직전 흐름이 보이도록 지난 기록을 같은 모양으로 편다. */
-function seedFlows(history: CombinedEntry[], languages: Language[], ui: UiStrings): Flow[] {
-  const nameOf = (code: LanguageCode) =>
-    languages.find((language) => language.code === code)?.label ?? code;
-
-  const flows: Flow[] = [];
-  for (const entry of history) {
-    flows.push({
-      key: `m${entry.messageId}`,
-      messageId: entry.messageId,
-      revision: entry.revision,
-      editedAt: entry.editedAt,
-      at: entry.createdAt,
-      route: nameOf(entry.sourceLang),
-      body: withSpeaker(entry.sourceBody, entry.speakerName),
-      status: "source",
-    });
-    for (const translation of entry.translations) {
-      flows.push({
-        key: `t${entry.messageId}-${translation.lang}`,
-        messageId: entry.messageId,
-        revision: entry.revision,
-        editedAt: entry.editedAt,
-        at: entry.createdAt,
-        route: `→ ${nameOf(translation.lang)}`,
-        body: withSpeaker(
-          translation.status === "ok"
-            ? translation.body
-            : translationFailureText(translation.error, ui.status),
-          entry.speakerName,
-        ),
-        status: translation.status === "ok" ? "done" : "failed",
-      });
-    }
-  }
-  return flows.slice(-FLOW_LIMIT).reverse();
-}
-
-function withSpeaker(body: string, speakerName: string | null): string {
-  return speakerName ? `(${speakerName}) ${body}` : body;
 }
