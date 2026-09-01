@@ -9,6 +9,7 @@ import {
   isPageEnabled,
 } from "@/lib/repo";
 import { cleanTranscript } from "@/lib/transcript-clean";
+import { rewriteTranscript } from "@/lib/transcript-rewrite";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -18,6 +19,7 @@ const schema = z.object({
   body: z.string().trim().min(1).max(5000),
   lang: z.string().trim().min(1).max(35).optional(),
   speakerName: z.string().trim().min(1).max(40).regex(/^[^\r\n]+$/).optional(),
+  rewrite: z.boolean().optional(),
 });
 
 export async function POST(request: Request, { params }: Params) {
@@ -66,11 +68,20 @@ export async function POST(request: Request, { params }: Params) {
     return Response.json({ dropped: true, inserted: false }, { status: 200 });
   }
 
+  const rewritten = parsed.data.rewrite
+    ? await rewriteTranscript({
+        meeting,
+        lang: detectedLang,
+        body: cleaned,
+        speakerName: parsed.data.speakerName,
+      })
+    : cleaned;
+  const body = cleanTranscript(rewritten) ?? cleaned;
   const result = acceptTranscript({
     meeting,
     pageId: page.id,
     lang: detectedLang,
-    body: cleaned,
+    body,
     ingestKey: parsed.data.ingestKey,
     speakerName: meeting.speakerLabels ? parsed.data.speakerName : null,
   });

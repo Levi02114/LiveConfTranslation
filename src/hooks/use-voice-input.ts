@@ -41,6 +41,7 @@ export function useVoiceInput({
   strings,
   closed,
   autoSubmit = true,
+  rewrite = false,
   speakerName,
   onTranscript,
   requestPermissionOnMount = false,
@@ -52,6 +53,7 @@ export function useVoiceInput({
   strings: UiStrings["capture"];
   closed: boolean;
   autoSubmit?: boolean;
+  rewrite?: boolean;
   speakerName?: string | null;
   onTranscript?: (body: string) => void;
   requestPermissionOnMount?: boolean;
@@ -69,6 +71,7 @@ export function useVoiceInput({
     strings,
     closed,
     autoSubmit,
+    rewrite,
     speakerName,
     onTranscript,
     langs: lang ? [lang] : [],
@@ -244,6 +247,7 @@ export function useVoiceInput({
             ingestKey: `${clientId.current}:${itemId}:${contentIndex}`,
             body,
             speakerName: speakerName || undefined,
+            rewrite,
           }),
         });
         if (response.ok) return;
@@ -255,7 +259,7 @@ export function useVoiceInput({
         disconnect(false);
       }
     },
-    [autoSubmit, disconnect, onTranscript, speakerName, strings.lost, token],
+    [autoSubmit, disconnect, onTranscript, rewrite, speakerName, strings.lost, token],
   );
 
   const flushTranscripts = useCallback(

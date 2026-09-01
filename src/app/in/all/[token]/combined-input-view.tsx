@@ -31,6 +31,7 @@ export function CombinedInputView({
   history,
   initiallyClosed,
   voiceAvailable,
+  rewriteAvailable,
   requireVoiceLanguage,
   speakerLabels,
 }: {
@@ -45,6 +46,7 @@ export function CombinedInputView({
   history: CombinedEntry[];
   initiallyClosed: boolean;
   voiceAvailable: boolean;
+  rewriteAvailable: boolean;
   requireVoiceLanguage: boolean;
   speakerLabels: boolean;
 }) {
@@ -53,6 +55,7 @@ export function CombinedInputView({
   const [closed, setClosed] = useState(initiallyClosed);
   const [text, setText] = useState("");
   const [voiceMode, setVoiceMode] = useState(false);
+  const [rewrite, setRewrite] = useState(false);
   const [inputLang, setInputLang] = useState<LanguageCode | "">("");
   const [sending, setSending] = useState(false);
   const [pendingLanguageBody, setPendingLanguageBody] = useState<string | null>(null);
@@ -93,6 +96,7 @@ export function CombinedInputView({
     langs: inputLang ? [inputLang] : inputLanguages,
     lang: inputLang || null,
     autoSubmit: voiceMode,
+    rewrite,
     onTranscript: appendTranscript,
     enabled: voiceAvailable && voiceLanguageReady,
     requestPermissionOnMount: voiceAvailable && voiceLanguageReady,
@@ -438,6 +442,26 @@ export function CombinedInputView({
               />
               <span>{strings.capture.toggle}</span>
             </label>
+
+            {voiceMode ? (
+              <label
+                title={rewriteAvailable ? undefined : strings.capture.rewriteUnavailable}
+                className={`flex items-center gap-2 whitespace-nowrap ${
+                  rewriteAvailable && voice.state === "idle"
+                    ? "cursor-pointer"
+                    : "cursor-not-allowed opacity-40"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={rewrite}
+                  disabled={!rewriteAvailable || voice.state !== "idle"}
+                  onChange={(event) => setRewrite(event.target.checked)}
+                  className="h-[15px] w-[15px] accent-[var(--fg)]"
+                />
+                <span>{strings.capture.rewrite}</span>
+              </label>
+            ) : null}
 
             {voiceAvailable && voice.devices.length ? (
               <select aria-label={strings.capture.microphone} value={voice.deviceId} onChange={(event) => voice.setDeviceId(event.target.value)} disabled={voice.state !== "idle"} className="h-9 min-w-0 flex-1 border border-line bg-bg px-2 text-fg outline-none disabled:opacity-50 sm:max-w-[320px]">

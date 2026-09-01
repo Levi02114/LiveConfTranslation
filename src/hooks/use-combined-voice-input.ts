@@ -54,6 +54,7 @@ type ServerVoiceInputOptions = {
   enabled?: boolean;
   requestPermissionOnMount?: boolean;
   autoSubmit?: boolean;
+  rewrite?: boolean;
   onTranscript?: (body: string) => void;
 };
 
@@ -69,6 +70,7 @@ export function useServerVoiceInput({
   enabled = true,
   requestPermissionOnMount = true,
   autoSubmit = true,
+  rewrite = false,
   onTranscript,
 }: ServerVoiceInputOptions) {
   const [state, setState] = useState<VoiceState>("idle");
@@ -182,12 +184,13 @@ export function useServerVoiceInput({
           body: event.body,
           lang: event.lang,
           speakerName: speakerName || undefined,
+          rewrite,
         }),
       });
       if (!response.ok) throw new Error(strings.lost);
       if (event.usedFallback) onFallback(event.lang);
     },
-    [autoSubmit, onFallback, onTranscript, speakerName, strings.lost, token],
+    [autoSubmit, onFallback, onTranscript, rewrite, speakerName, strings.lost, token],
   );
 
   const stop = useCallback(() => {

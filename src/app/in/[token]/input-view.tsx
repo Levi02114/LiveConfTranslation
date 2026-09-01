@@ -29,6 +29,7 @@ export function InputView({
   history,
   initiallyClosed,
   voiceAvailable,
+  rewriteAvailable,
   serverTranscription,
   speakerLabels,
 }: {
@@ -41,6 +42,7 @@ export function InputView({
   history: CombinedEntry[];
   initiallyClosed: boolean;
   voiceAvailable: boolean;
+  rewriteAvailable: boolean;
   serverTranscription: boolean;
   speakerLabels: boolean;
 }) {
@@ -49,6 +51,7 @@ export function InputView({
   const [closed, setClosed] = useState(initiallyClosed);
   const [text, setText] = useState("");
   const [voiceMode, setVoiceMode] = useState(false);
+  const [rewrite, setRewrite] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [speakerName, setSpeakerName] = useState("");
@@ -72,6 +75,7 @@ export function InputView({
     strings: strings.capture,
     closed,
     autoSubmit: voiceMode,
+    rewrite,
     speakerName: speakerName.trim() || null,
     onTranscript: appendTranscript,
     lang: language.code,
@@ -448,6 +452,26 @@ export function InputView({
               />
               <span>{strings.capture.toggle}</span>
             </label>
+
+            {voiceMode ? (
+              <label
+                title={rewriteAvailable ? undefined : strings.capture.rewriteUnavailable}
+                className={`flex items-center gap-2 whitespace-nowrap ${
+                  rewriteAvailable && voice.state === "idle"
+                    ? "cursor-pointer"
+                    : "cursor-not-allowed opacity-40"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={rewrite}
+                  disabled={!rewriteAvailable || voice.state !== "idle"}
+                  onChange={(event) => setRewrite(event.target.checked)}
+                  className="h-[15px] w-[15px] accent-[var(--fg)]"
+                />
+                <span>{strings.capture.rewrite}</span>
+              </label>
+            ) : null}
 
             {!voiceAvailable ? (
               <span className="text-muted">{strings.capture.keyRequired}</span>

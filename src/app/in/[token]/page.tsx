@@ -61,6 +61,7 @@ export default async function InputPage({
       history={getRecentCombined(meeting.id)}
       initiallyClosed={meeting.status === "closed"}
       voiceAvailable={transcriptionProviderConfigured(meeting.transcriptionProvider)}
+      rewriteAvailable={transcriptionProviderConfigured("openai")}
       serverTranscription={meeting.transcriptionProvider !== "openai"}
       speakerLabels={meeting.speakerLabels}
     />

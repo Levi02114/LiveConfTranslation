@@ -51,6 +51,8 @@ export type UiStrings = {
   };
   capture: {
     toggle: string;
+    rewrite: string;
+    rewriteUnavailable: string;
     keyRequired: string;
     googleUnavailable: string;
     localUnavailable: string;
@@ -154,6 +156,8 @@ const ko: UiStrings = {
   },
   capture: {
     toggle: "자동 음성 입력 사용",
+    rewrite: "LLM 재작성",
+    rewriteUnavailable: "OpenAI API 키가 필요합니다",
     keyRequired: "OpenAI API 키가 등록되지 않았습니다",
     googleUnavailable: "Google Speech 서비스 계정이 등록되지 않았습니다",
     localUnavailable: "로컬 음성 인식 모델이 설치되지 않았습니다",
@@ -241,6 +245,8 @@ const vi: UiStrings = {
   },
   capture: {
     toggle: "Sử dụng nhập liệu bằng giọng nói tự động",
+    rewrite: "Hiệu chỉnh bằng LLM",
+    rewriteUnavailable: "Cần khóa API OpenAI",
     keyRequired: "Chưa đăng ký khóa API OpenAI",
     googleUnavailable: "Chưa đăng ký tài khoản dịch vụ Google Speech",
     localUnavailable: "Chưa cài đặt mô hình nhận dạng giọng nói cục bộ",
@@ -332,6 +338,8 @@ const th: UiStrings = {
   },
   capture: {
     toggle: "ใช้การป้อนข้อมูลด้วยเสียงอัตโนมัติ",
+    rewrite: "ปรับข้อความด้วย LLM",
+    rewriteUnavailable: "ต้องใช้คีย์ OpenAI API",
     keyRequired: "ยังไม่ได้ลงทะเบียนคีย์ OpenAI API",
     googleUnavailable: "ยังไม่ได้ลงทะเบียนบัญชีบริการ Google Speech",
     localUnavailable: "ยังไม่ได้ติดตั้งโมเดลรู้จำเสียงภายในเครื่อง",
@@ -419,6 +427,8 @@ const si: UiStrings = {
   },
   capture: {
     toggle: "ස්වයංක්‍රීය හඬ ආදානය භාවිත කරන්න",
+    rewrite: "LLM මඟින් සංශෝධනය",
+    rewriteUnavailable: "OpenAI API යතුර අවශ්‍යයි",
     keyRequired: "OpenAI API යතුර ලියාපදිංචි කර නැත",
     googleUnavailable: "Google Speech සේවා ගිණුම ලියාපදිංචි කර නැත",
     localUnavailable: "දේශීය හඬ හඳුනාගැනීමේ ආකෘතිය ස්ථාපනය කර නැත",
