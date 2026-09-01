@@ -62,6 +62,7 @@
     "files": [
       ".next/**/*",
       "!.next/cache/**/*",
+      "!.next/dev/**/*",
       "dist/server.cjs",
       "electron/**/*",
       "!electron/*.test.cjs",
