@@ -14,9 +14,10 @@ test("시스템 메모리에 맞춰 보수적인 로컬 모델을 추천한다",
 });
 
 test("로컬 AI 설치 문구는 기본 4개 언어에서 같은 키를 제공한다", () => {
-  const keys = Object.keys(stringsFor({ getLocale: () => "ko" })).sort();
+  const keys = Object.keys(stringsFor("ko")).sort();
+  assert.equal(stringsFor("ko").httpsFailed, "로컬 HTTPS 설정 실패");
   for (const locale of ["en", "vi", "th", "si"]) {
-    assert.deepEqual(Object.keys(stringsFor({ getLocale: () => locale })).sort(), keys);
+    assert.deepEqual(Object.keys(stringsFor(locale)).sort(), keys);
   }
 });
 

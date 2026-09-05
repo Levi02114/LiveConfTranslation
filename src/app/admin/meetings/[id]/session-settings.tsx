@@ -173,7 +173,7 @@ export function SessionConfigEditor({
     <section className="border-y border-line py-5">
       <div className="mb-4 font-mono text-[11px] text-muted">{strings.settings.heading}</div>
 
-      <div className="flex flex-wrap items-end gap-2.5">
+      <div data-guide="session-settings" className="flex flex-wrap items-end gap-2.5">
         <label className="min-w-[180px] flex-1 font-mono text-[11px] text-muted sm:max-w-[320px]">
           <span className="mb-1.5 block">{strings.settings.preset}</span>
           <select
@@ -347,7 +347,7 @@ export function TranscriptionContextSettings({
   };
 
   return (
-    <section className="mt-9 border-y border-line py-5">
+    <section data-guide="transcription-context" className="mt-9 border-y border-line py-5">
       <label className="block font-mono text-[11px] text-muted">
         <span className="block text-fg">{strings.settings.transcriptionContext}</span>
         <span className="mt-1 block leading-5">{strings.settings.transcriptionContextNote}</span>

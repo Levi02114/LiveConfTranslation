@@ -6,9 +6,21 @@
  * 서버(server.ts)도 불러오므로
  * `server-only`·`next/headers` 를 넣지 않는다.
  */
+import { openaiBaseUrl } from "@/lib/env";
 import { getLanguage, type LanguageCode } from "@/lib/languages";
-import { listGlossaryEntries } from "@/lib/repo";
+import {
+  getOpenAiTranscriptionHintSupport,
+  listGlossaryEntries,
+  upsertOpenAiTranscriptionHintSupport,
+} from "@/lib/repo";
+import { engineKey } from "@/lib/secrets";
 import { singleTranscriptionProfile } from "@/lib/transcription-profile";
+
+export type OpenAiTranscriptionModel = "gpt-live-transcribe" | "gpt-transcribe";
+const OPENAI_TRANSCRIPTION_MODELS: readonly OpenAiTranscriptionModel[] = [
+  "gpt-live-transcribe",
+  "gpt-transcribe",
+];
 
 /**
  * OpenAI 실시간 전사 API가 `languages` 힌트로 받는 코드(2026-08 실측).
@@ -45,15 +57,67 @@ export type TranscribeHintLangs = {
 };
 
 /** 힌트로 보낼 수 있는 코드만 남긴다. 지원 여부는 소문자 기준으로 본다. */
-export function splitTranscribeHintLangs(codes: readonly LanguageCode[]): TranscribeHintLangs {
+export function splitTranscribeHintLangs(
+  codes: readonly LanguageCode[],
+  model: OpenAiTranscriptionModel = "gpt-live-transcribe",
+): TranscribeHintLangs {
   const supported: LanguageCode[] = [];
   const unsupported: LanguageCode[] = [];
   for (const code of codes) {
     // 지원 여부는 기본 하위 태그(zh-CN → zh)로 판별한다.
     const primary = code.toLowerCase().split("-")[0];
-    (TRANSCRIBE_HINT_LANGS.includes(primary) ? supported : unsupported).push(code);
+    const verified = getOpenAiTranscriptionHintSupport(primary, model);
+    ((verified ?? TRANSCRIBE_HINT_LANGS.includes(primary)) ? supported : unsupported).push(code);
   }
   return { supported, unsupported };
+}
+
+/** 등록된 OpenAI 키로 새 언어의 힌트 지원 여부를 한 번 확인해 저장한다. */
+export async function verifyOpenAiTranscriptionHint(
+  code: LanguageCode,
+  key = engineKey("openai"),
+): Promise<void> {
+  if (!key) return;
+  const primary = code.toLowerCase().split("-")[0];
+
+  const unknownModels = OPENAI_TRANSCRIPTION_MODELS.filter(
+    (model) => getOpenAiTranscriptionHintSupport(primary, model) === null,
+  );
+  await Promise.all(unknownModels.map(async (model) => {
+    let response: Response;
+    try {
+      response = await fetch(`${openaiBaseUrl()}/realtime/client_secrets`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${key}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          session: {
+            type: "transcription",
+            audio: {
+              input: {
+                format: { type: "audio/pcm", rate: 24_000 },
+                transcription: { model, languages: [primary] },
+                turn_detection: null,
+              },
+            },
+          },
+        }),
+        signal: AbortSignal.timeout(8_000),
+      });
+    } catch {
+      return;
+    }
+
+    // 인증·할당량·일시 장애와 모델 접근 오류는 언어 미지원 증거가 아니다.
+    if (!response.ok) {
+      if (response.status !== 400) return;
+      const detail = await response.text().catch(() => "");
+      if (!/languages?|language code/i.test(detail)) return;
+    }
+    upsertOpenAiTranscriptionHintSupport(primary, model, response.ok);
+  }));
 }
 
 function glossaryTermsFor(langs: readonly LanguageCode[], limit: number): string[] {
@@ -120,10 +184,10 @@ export function buildSingleSessionParams(
   title: string,
   options: { farField?: boolean; context?: string | null; speaker?: string | null } = {},
 ): TranscribeSessionParams {
-  const { supported } = splitTranscribeHintLangs([lang]);
   const context = options.context?.replace(/\s+/g, " ").trim().slice(0, 300);
   const speaker = options.speaker ? cleanName(options.speaker) : "";
   const { model } = singleTranscriptionProfile(lang);
+  const { supported } = splitTranscribeHintLangs([lang], model);
   return {
     model,
     languages: supported.map((code) => code.toLowerCase().split("-")[0]),
@@ -151,7 +215,7 @@ export function buildCombinedSessionParams(
   title: string,
   options: { context?: string | null; speaker?: string | null } = {},
 ): TranscribeSessionParams {
-  const { supported, unsupported } = splitTranscribeHintLangs(langs);
+  const { supported, unsupported } = splitTranscribeHintLangs(langs, "gpt-transcribe");
   if (unsupported.length) {
     console.warn(
       `[transcribe] 언어 힌트 미지원 코드를 뺍니다: ${unsupported.join(", ")} (자동 감지로 동작)`,

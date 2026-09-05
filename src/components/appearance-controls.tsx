@@ -51,9 +51,10 @@ export function AppearanceControls({
     "inline-flex h-[1.3rem] cursor-pointer items-center justify-center border border-line px-[8px] leading-none transition-colors hover:bg-fg hover:text-bg";
 
   return (
-    <div className="fixed top-2.5 right-3 left-3 z-50 flex items-center justify-end gap-[6px] bg-bg font-mono text-[11px] text-muted sm:left-auto sm:right-3.5 sm:gap-3">
+    <div data-guide="appearance" className="fixed top-2.5 right-3 left-3 z-50 flex items-center justify-end gap-[6px] bg-bg font-mono text-[11px] text-muted sm:left-auto sm:right-3.5 sm:gap-3">
       {qr ? (
         <button
+          data-guide="admin-qr"
           type="button"
           onClick={qr.onClick}
           title={qr.label}

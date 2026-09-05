@@ -8,6 +8,7 @@ import { openaiBaseUrl } from "@/lib/env";
 import { type LanguageCode, languageLogName } from "@/lib/languages";
 import { engineKey, resolveOpenaiModel } from "@/lib/secrets";
 import { parseJsonResponse } from "@/lib/json-response";
+import { scriptLanguageOf } from "@/lib/script-language";
 
 const detectionResponseSchema = z.object({
   choices: z.array(z.object({ message: z.object({ content: z.string() }) })),
@@ -20,6 +21,11 @@ export async function detectTextLanguage(
   fallback: LanguageCode,
   provider: "openai" | "local" = "openai",
 ): Promise<{ lang: LanguageCode | null; usedFallback: boolean; confidence?: number }> {
+  // 한글·태국·싱할라·중일 문자는 그 자체가 충분한 증거다. 느린 인터넷에서
+  // 굳이 OpenAI 언어 감지 왕복을 기다리지 않는다.
+  const scripted = scriptLanguageOf(text, candidates);
+  if (scripted) return { lang: scripted, usedFallback: false, confidence: 1 };
+
   if (provider === "local") {
     try {
       const detected = await detectLocalTextLanguage(text, candidates);

@@ -5,7 +5,6 @@ import { publish } from "@/lib/realtime/hub";
 import {
   getMeetingActiveLangs,
   getRecentSourceBodies,
-  insertMessage,
   insertMessageOnce,
   type Meeting,
   type Message,
@@ -41,18 +40,20 @@ export function acceptMessage(input: {
   lang: LanguageCode;
   body: string;
   speakerName?: string | null;
+  ingestKey?: string;
 }) {
-  const message = insertMessage({
+  const result = insertMessageOnce({
     meetingId: input.meeting.id,
     pageId: input.pageId,
     lang: input.lang,
     body: input.body,
     speakerName: input.speakerName,
+    ingestKey: input.ingestKey,
   });
 
-  publishMessage(input.meeting.id, message);
+  if (result.inserted) publishMessage(input.meeting.id, result.message);
 
-  return message;
+  return result;
 }
 
 /** Realtime 완료 이벤트를 멱등하게 저장·배포한다. */

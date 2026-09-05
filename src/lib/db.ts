@@ -145,8 +145,8 @@ CREATE TABLE IF NOT EXISTS glossary_terms (
 );
 
 CREATE TABLE IF NOT EXISTS engine_settings (
-  engine      TEXT PRIMARY KEY,               -- 번역 엔진 또는 'transcription'
-  model       TEXT,                           -- 모델 또는 마지막 음성 인식 엔진
+  engine      TEXT PRIMARY KEY,               -- 번역 엔진, 'transcription', 전사 힌트 캐시
+  model       TEXT,                           -- 모델, 음성 인식 엔진 또는 캐시 값
   updated_at  INTEGER NOT NULL
 );
 

@@ -174,4 +174,7 @@ export const engineSettingRowSchema = z.object({
 export const transcriptionSettingRowSchema = z.object({
   model: transcriptionProviderSchema,
 });
+export const transcriptionHintSupportRowSchema = z.object({
+  model: z.enum(["supported", "unsupported"]).nullable(),
+});
 export const openaiModelRowSchema = z.object({ model: z.string() });

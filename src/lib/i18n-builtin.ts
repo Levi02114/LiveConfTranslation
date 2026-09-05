@@ -107,33 +107,9 @@ export type UiStrings = {
   error: { sendFailed: string; loadFailed: string; notFound: string };
 };
 
-/** 저장된 제공자 오류 코드를 현재 화면 언어의 안전한 안내로 바꾼다. */
-export function translationFailureText(
-  error: string | null | undefined,
-  strings: UiStrings["status"],
-): string {
-  const normalized = error?.toLowerCase() ?? "";
-  if (
-    error === "openai-billing-limit" ||
-    [
-      "credit_balance_exhausted",
-      "organization_spend_limit_exceeded",
-      "project_spend_limit_exceeded",
-      "organization_usage_limit_exceeded",
-      "insufficient_quota",
-      "current quota",
-    ].some((marker) => normalized.includes(marker))
-  ) return strings.openaiBilling;
-  if (
-    error === "openai-rate-limit" ||
-    (normalized.includes("openai") && normalized.includes("429"))
-  ) return strings.openaiRateLimit;
-  return strings.failed;
-}
-
 const ko: UiStrings = {
   connection: { connected: "연결됨", reconnecting: "다시 연결 중", disconnected: "연결 끊김" },
-  role: { input: "입력", output: "출력", combined: "통합 조회", combinedInput: "통합 입력", capture: "음성 수집" },
+  role: { input: "입력", output: "출력", combined: "통합 조회", combinedInput: "통합 음성/타자 입력", capture: "음성 수집" },
   input: {
     language: "입력 언어",
     autoLanguage: "자동 감지",
@@ -222,7 +198,7 @@ const vi: UiStrings = {
     reconnecting: "Đang kết nối lại",
     disconnected: "Mất kết nối",
   },
-  role: { input: "Nhập liệu", output: "Bản dịch", combined: "Xem tổng hợp", combinedInput: "Nhập liệu tổng hợp", capture: "Thu âm" },
+  role: { input: "Nhập liệu", output: "Bản dịch", combined: "Xem tổng hợp", combinedInput: "Nhập tổng hợp bằng giọng nói/bàn phím", capture: "Thu âm" },
   input: {
     language: "Ngôn ngữ nhập",
     autoLanguage: "Tự động nhận diện",
@@ -315,7 +291,7 @@ const th: UiStrings = {
     reconnecting: "กำลังเชื่อมต่อใหม่",
     disconnected: "การเชื่อมต่อขาด",
   },
-  role: { input: "ป้อนข้อมูล", output: "คำแปล", combined: "มุมมองรวม", combinedInput: "ป้อนข้อมูลรวม", capture: "รับเสียง" },
+  role: { input: "ป้อนข้อมูล", output: "คำแปล", combined: "มุมมองรวม", combinedInput: "ป้อนรวมด้วยเสียง/การพิมพ์", capture: "รับเสียง" },
   input: {
     language: "ภาษาที่ป้อน",
     autoLanguage: "ตรวจจับอัตโนมัติ",
@@ -404,7 +380,7 @@ const si: UiStrings = {
     reconnecting: "නැවත සම්බන්ධ වෙමින්",
     disconnected: "සම්බන්ධතාව බිඳී ඇත",
   },
-  role: { input: "ඇතුළත් කිරීම", output: "පරිවර්තනය", combined: "ඒකාබද්ධ දසුන", combinedInput: "ඒකාබද්ධ ඇතුළත් කිරීම", capture: "හඬ ග්‍රහණය" },
+  role: { input: "ඇතුළත් කිරීම", output: "පරිවර්තනය", combined: "ඒකාබද්ධ දසුන", combinedInput: "ඒකාබද්ධ හඬ/යතුරු ලියන ආදානය", capture: "හඬ ග්‍රහණය" },
   input: {
     language: "ආදාන භාෂාව",
     autoLanguage: "ස්වයංක්‍රීයව හඳුනාගන්න",
@@ -542,6 +518,33 @@ export type AdminStrings = {
     mismatch: string;
     failed: string;
     close: string;
+  };
+  guide: {
+    title: string;
+    close: string;
+    previous: string;
+    next: string;
+    continue: string;
+    finish: string;
+    step: string;
+    welcome: string;
+    appearance: string;
+    adminQr: string;
+    sessionBasics: string;
+    languages: string;
+    sessionSettings: string;
+    translation: string;
+    transcription: string;
+    fallback: string;
+    create: string;
+    sessionList: string;
+    overview: string;
+    records: string;
+    participants: string;
+    pages: string;
+    pageActions: string;
+    context: string;
+    done: string;
   };
   list: {
     heading: string;
@@ -817,6 +820,33 @@ const adminKo: AdminStrings = {
     failed: "비밀번호를 변경하지 못했습니다",
     close: "닫기",
   },
+  guide: {
+    title: "앱 사용 설명",
+    close: "설명 종료",
+    previous: "이전",
+    next: "다음",
+    continue: "세션 안내로 계속",
+    finish: "완료",
+    step: "{current} / {total}",
+    welcome: "강조되는 실제 화면을 따라 세션 생성부터 배포까지 살펴봅니다. 설정을 직접 눌러 확인할 수 있지만, 이 설명이 값을 바꾸거나 세션을 종료하지는 않습니다.",
+    appearance: "화면 언어, 밝기와 글자 크기를 조절합니다. 선택값은 이 브라우저에 저장되어 새로고침하거나 새 창을 열어도 유지됩니다.",
+    adminQr: "현재 공유 주소의 관리자 로그인 QR을 표시합니다. 관리자 전용이므로 일반 참가자에게는 배포하지 마세요.",
+    sessionBasics: "참가자 화면에도 보일 세션 제목을 입력합니다. 아래 언어 칩에서 사용할 언어를 두 개 이상 고릅니다.",
+    languages: "언어 칩을 눌러 세션 언어를 고릅니다. +는 언어 추가, 톱니바퀴는 UI 문구 번역·수정, 책 아이콘은 단어집 등록과 CSV 업로드·다운로드입니다.",
+    sessionSettings: "회의·집회 프리셋을 적용하거나 언어별 음성/타자 입력과 번역 출력을 정합니다. 닉네임, 통합 입력과 기본 언어도 여기서 켜며 현재 조합은 사용자 프리셋으로 저장할 수 있습니다.",
+    translation: "온라인 엔진은 API 키 등록에서 키를 저장합니다. OpenAI는 사용량 조회도 제공합니다. Local AI가 설치되어 있으면 API 키 없이 선택할 수 있으며, 설치 여부는 첫 실행 마법사에서 정합니다.",
+    transcription: "음성 인식 엔진을 OpenAI, Google 또는 설치된 로컬 Whisper 중에서 고릅니다. Google을 고르면 서비스 계정 JSON 등록 버튼이 함께 나타납니다.",
+    fallback: "주 번역 엔진이 지원하지 않거나 실패한 언어에만 쓸 폴백 엔진입니다. 선택 사항이며, 사용 안 함으로 두면 임의의 엔진으로 우회하지 않습니다.",
+    create: "세션 만들기를 누르면 현재 설정이 확정되고 세션 관리 페이지로 이동합니다. 생성 뒤에는 언어별 페이지 설정을 바꿀 수 없습니다.",
+    sessionList: "진행 중 세션을 누르면 관리 페이지가 열립니다. 종료는 새 입력을 막고, 종료된 세션의 삭제는 기록까지 영구 삭제합니다. 다음을 누른 뒤 실제 세션을 만들거나 열면 설명이 이어집니다.",
+    overview: "세션 제목, 언어, 번역·폴백·음성 엔진을 확인합니다. 세션 종료를 누르면 새 입력이 중단되므로 운영이 끝났을 때만 사용하세요.",
+    records: "로그 보기는 전체 기록을 새 창으로 엽니다. 회의록은 TXT 또는 PDF로 받을 수 있고, 다운로드 전에 포함할 번역 언어를 선택합니다. 원문은 항상 포함됩니다.",
+    participants: "현재 접속한 입력 참가자와 마이크 상태를 확인합니다. 닉네임을 쓰지 않으면 언어와 IP로 표시되며, 필요하면 켜진 마이크를 관리자가 끌 수 있습니다.",
+    pages: "언어별 음성/타자 입력과 번역 출력, 통합 조회·통합 입력, 참가자 안내·입력자 안내 주소입니다. 역할에 맞는 주소만 배포하세요.",
+    pageActions: "복사는 전체 주소를 저장하고, 새 창 열기는 실제 페이지를 확인합니다. QR 표시는 같은 주소의 QR을 열며 팝업의 이미지 다운로드로 PNG를 저장할 수 있습니다.",
+    context: "세션 주제, 사람 이름과 자주 나오는 용어를 적으면 다음 음성 인식부터 참고합니다. 세션을 만든 뒤에도 수정할 수 있습니다.",
+    done: "필수 운영 흐름을 모두 확인했습니다. 화면 언어를 바꾸면 이 설명도 함께 바뀌며, Electron 설정의 앱 설명 실행에서 언제든 다시 시작할 수 있습니다.",
+  },
   list: {
     heading: "세션",
     logout: "로그아웃",
@@ -862,10 +892,10 @@ const adminKo: AdminStrings = {
     pages: "페이지 URL — 참석자에게 배포",
     participantGuide: "참가자 안내",
     inputGuide: "입력자 안내",
-    input: "입력",
-    output: "출력",
+    input: "음성/타자 입력",
+    output: "번역 출력",
     capture: "음성 수집",
-    combinedInput: "통합 입력",
+    combinedInput: "통합 음성/타자 입력",
     participantStatus: "접속 참가자",
     participantNone: "접속 중인 참가자가 없습니다",
     microphoneOn: "마이크 켜짐",
@@ -897,11 +927,11 @@ const adminKo: AdminStrings = {
     languages: "언어별 페이지",
     addLanguage: "언어 추가",
     selectLanguage: "언어 선택",
-    input: "입력",
-    output: "출력",
+    input: "음성/타자 입력",
+    output: "번역 출력",
     nickname: "닉네임 사용",
     nicknameNote: "입력자가 이름을 정하고 모든 원문·번역·로그에 화자를 표시합니다.",
-    combinedInput: "통합 입력 사용",
+    combinedInput: "통합 음성/타자 입력 사용",
     combinedInputNote: "한 페이지에서 타자 또는 마이크로 여러 입력 언어를 자동 감지합니다.",
     combinedInputFallback: "언어 감지 실패 시 기본 언어",
     transcriptionContext: "음성 인식 참고 정보",
@@ -1092,6 +1122,33 @@ const adminVi: AdminStrings = {
     failed: "Không đổi được mật khẩu",
     close: "Đóng",
   },
+  guide: {
+    title: "Hướng dẫn sử dụng ứng dụng",
+    close: "Kết thúc hướng dẫn",
+    previous: "Quay lại",
+    next: "Tiếp",
+    continue: "Tiếp tục với trang phiên",
+    finish: "Hoàn tất",
+    step: "{current} / {total}",
+    welcome: "Hãy theo các vùng được tô sáng để xem quy trình từ tạo phiên đến phân phối. Bạn có thể bấm các điều khiển thật để thử; hướng dẫn không tự đổi cài đặt hay kết thúc phiên.",
+    appearance: "Điều chỉnh ngôn ngữ hiển thị, giao diện sáng/tối và cỡ chữ. Lựa chọn được lưu trong trình duyệt này và giữ nguyên khi tải lại hoặc mở cửa sổ mới.",
+    adminQr: "Hiển thị mã QR đăng nhập quản trị bằng địa chỉ chia sẻ hiện tại. Đây là mã dành cho quản trị viên, không gửi cho người tham dự thông thường.",
+    sessionBasics: "Nhập tên phiên sẽ hiển thị cho người tham dự. Chọn ít nhất hai ngôn ngữ bằng các thẻ ngôn ngữ bên dưới.",
+    languages: "Bấm thẻ để chọn ngôn ngữ của phiên. Dấu + thêm ngôn ngữ, bánh răng dịch và sửa nội dung UI, biểu tượng sách quản lý bảng thuật ngữ cùng nhập/xuất CSV.",
+    sessionSettings: "Áp dụng mẫu Cuộc họp/Hội nghị hoặc chọn nhập bằng giọng nói/bàn phím và đầu ra bản dịch cho từng ngôn ngữ. Cũng có thể bật tên hiển thị, nhập tổng hợp, ngôn ngữ mặc định và lưu cấu hình thành mẫu riêng.",
+    translation: "Với công cụ trực tuyến, lưu khóa ở nút đăng ký API. OpenAI còn có phần xem mức sử dụng. Nếu Local AI đã được cài trong trình hướng dẫn khởi động đầu tiên, bạn có thể chọn mà không cần khóa API.",
+    transcription: "Chọn nhận dạng giọng nói OpenAI, Google hoặc Whisper cục bộ đã cài. Khi chọn Google, nút đăng ký tệp JSON của tài khoản dịch vụ sẽ xuất hiện.",
+    fallback: "Công cụ dự phòng chỉ xử lý ngôn ngữ mà công cụ chính không hỗ trợ hoặc xử lý thất bại. Đây là tùy chọn; nếu không dùng, ứng dụng sẽ không tự chuyển sang công cụ khác.",
+    create: "Bấm Tạo phiên để chốt cấu hình hiện tại và mở trang quản lý phiên. Không thể đổi cấu hình trang theo ngôn ngữ sau khi tạo.",
+    sessionList: "Bấm phiên đang diễn ra để quản lý. Kết thúc sẽ chặn dữ liệu mới; xóa phiên đã kết thúc sẽ xóa vĩnh viễn cả nhật ký. Sau khi bấm Tiếp, hãy tạo hoặc mở một phiên thật để tiếp tục hướng dẫn.",
+    overview: "Kiểm tra tên phiên, ngôn ngữ và các công cụ dịch, dự phòng, nhận dạng giọng nói. Chỉ kết thúc phiên khi vận hành đã xong vì thao tác này chặn dữ liệu mới.",
+    records: "Xem nhật ký mở toàn bộ bản ghi trong cửa sổ mới. Có thể tải biên bản TXT hoặc PDF và chọn ngôn ngữ dịch trước khi tải; bản gốc luôn được bao gồm.",
+    participants: "Xem người nhập đang kết nối và trạng thái micrô. Nếu không dùng tên hiển thị, danh sách dùng ngôn ngữ và IP; quản trị viên có thể tắt micrô đang bật khi cần.",
+    pages: "Đây là địa chỉ nhập giọng nói/bàn phím, đầu ra bản dịch, xem/nhập tổng hợp, hướng dẫn người tham dự và người nhập. Chỉ gửi đúng địa chỉ cho từng vai trò.",
+    pageActions: "Sao chép lưu toàn bộ địa chỉ; Mở cửa sổ mới dùng để kiểm tra trang thật. Hiện QR tạo mã cho cùng địa chỉ và nút tải ảnh trong cửa sổ QR lưu tệp PNG.",
+    context: "Nhập chủ đề phiên, tên người và từ thường gặp để dùng từ lần nhận dạng giọng nói tiếp theo. Có thể sửa phần này cả sau khi tạo phiên.",
+    done: "Bạn đã xem xong quy trình vận hành chính. Hướng dẫn đổi theo ngôn ngữ hiển thị và có thể mở lại bất cứ lúc nào từ Chạy hướng dẫn ứng dụng trong menu Cài đặt của Electron.",
+  },
   list: {
     heading: "Phiên",
     logout: "Đăng xuất",
@@ -1137,10 +1194,10 @@ const adminVi: AdminStrings = {
     pages: "URL trang — gửi cho người tham dự",
     participantGuide: "Hướng dẫn người tham dự",
     inputGuide: "Hướng dẫn người nhập",
-    input: "Nhập liệu",
-    output: "Bản dịch",
+    input: "Nhập bằng giọng nói/bàn phím",
+    output: "Đầu ra bản dịch",
     capture: "Thu âm",
-    combinedInput: "Nhập liệu tổng hợp",
+    combinedInput: "Nhập tổng hợp bằng giọng nói/bàn phím",
     participantStatus: "Người tham gia đang kết nối",
     participantNone: "Không có người tham gia nào đang kết nối",
     microphoneOn: "Micrô bật",
@@ -1172,11 +1229,11 @@ const adminVi: AdminStrings = {
     languages: "Trang theo ngôn ngữ",
     addLanguage: "Thêm ngôn ngữ",
     selectLanguage: "Chọn ngôn ngữ",
-    input: "Nhập liệu",
-    output: "Bản dịch",
+    input: "Nhập bằng giọng nói/bàn phím",
+    output: "Đầu ra bản dịch",
     nickname: "Dùng tên hiển thị",
     nicknameNote: "Người nhập đặt tên và tên người nói xuất hiện trong bản gốc, bản dịch và nhật ký.",
-    combinedInput: "Dùng trang nhập liệu tổng hợp",
+    combinedInput: "Dùng nhập tổng hợp bằng giọng nói/bàn phím",
     combinedInputNote: "Tự động nhận diện nhiều ngôn ngữ nhập bằng bàn phím hoặc micrô trên một trang.",
     combinedInputFallback: "Ngôn ngữ mặc định khi không nhận diện được",
     transcriptionContext: "Thông tin hỗ trợ nhận dạng giọng nói",
@@ -1367,6 +1424,33 @@ const adminTh: AdminStrings = {
     failed: "เปลี่ยนรหัสผ่านไม่สำเร็จ",
     close: "ปิด",
   },
+  guide: {
+    title: "คู่มือการใช้แอป",
+    close: "จบคำแนะนำ",
+    previous: "ย้อนกลับ",
+    next: "ถัดไป",
+    continue: "ต่อไปยังหน้าจัดการเซสชัน",
+    finish: "เสร็จสิ้น",
+    step: "{current} / {total}",
+    welcome: "ทำตามส่วนที่ไฮไลต์เพื่อดูขั้นตอนตั้งแต่สร้างเซสชันจนถึงแจกจ่าย คุณกดส่วนควบคุมจริงเพื่อทดลองได้ แต่คำแนะนำจะไม่เปลี่ยนค่าหรือจบเซสชันให้เอง",
+    appearance: "ปรับภาษาที่แสดง ธีมสว่าง/มืด และขนาดตัวอักษร ค่าจะถูกบันทึกในเบราว์เซอร์นี้และคงอยู่เมื่อโหลดใหม่หรือเปิดหน้าต่างใหม่",
+    adminQr: "แสดง QR สำหรับเข้าสู่ระบบผู้ดูแลด้วยที่อยู่แชร์ปัจจุบัน QR นี้สำหรับผู้ดูแลเท่านั้น ไม่ควรแจกให้ผู้เข้าร่วมทั่วไป",
+    sessionBasics: "กรอกชื่อเซสชันที่ผู้เข้าร่วมจะเห็น แล้วเลือกอย่างน้อยสองภาษาจากปุ่มภาษาด้านล่าง",
+    languages: "กดปุ่มภาษาเพื่อเลือกภาษาของเซสชัน ปุ่ม + ใช้เพิ่มภาษา เฟืองใช้แปลและแก้ข้อความ UI และไอคอนหนังสือใช้จัดการคลังคำศัพท์พร้อมนำเข้า/ส่งออก CSV",
+    sessionSettings: "ใช้ค่าที่ตั้งไว้สำหรับการประชุม/การชุมนุม หรือกำหนดการป้อนด้วยเสียง/การพิมพ์และผลลัพธ์การแปลของแต่ละภาษา ที่นี่ยังเปิดชื่อที่แสดง การป้อนรวม ภาษาเริ่มต้น และบันทึกเป็นค่าที่ตั้งไว้ส่วนตัวได้",
+    translation: "เครื่องมือออนไลน์บันทึกคีย์ผ่านปุ่มลงทะเบียน API และ OpenAI มีหน้าดูการใช้งาน หากติดตั้ง Local AI ในตัวช่วยเริ่มต้นแล้ว สามารถเลือกใช้ได้โดยไม่ต้องมีคีย์ API",
+    transcription: "เลือกการรู้จำเสียงจาก OpenAI, Google หรือ Whisper ภายในเครื่องที่ติดตั้งไว้ เมื่อเลือก Google จะมีปุ่มลงทะเบียนไฟล์ JSON ของบัญชีบริการ",
+    fallback: "เครื่องมือสำรองใช้เฉพาะภาษาที่เครื่องมือหลักไม่รองรับหรือทำงานล้มเหลว เป็นตัวเลือกเสริม และเมื่อเลือกไม่ใช้ แอปจะไม่เปลี่ยนไปใช้เครื่องมืออื่นเอง",
+    create: "กดสร้างเซสชันเพื่อยืนยันค่าปัจจุบันและเปิดหน้าจัดการ หลังสร้างแล้วจะเปลี่ยนการตั้งค่าหน้าตามภาษาไม่ได้",
+    sessionList: "กดเซสชันที่กำลังดำเนินการเพื่อจัดการ การจบเซสชันจะหยุดข้อมูลใหม่ และการลบเซสชันที่จบแล้วจะลบบันทึกถาวร หลังจากกดถัดไป ให้สร้างหรือเปิดเซสชันจริงเพื่อดูคำแนะนำต่อ",
+    overview: "ตรวจสอบชื่อเซสชัน ภาษา เครื่องมือแปล เครื่องมือสำรอง และเครื่องมือรู้จำเสียง ใช้จบเซสชันเมื่อการดำเนินงานเสร็จแล้วเท่านั้น เพราะจะหยุดข้อมูลใหม่",
+    records: "ดูบันทึกจะเปิดประวัติทั้งหมดในหน้าต่างใหม่ ดาวน์โหลดรายงานเป็น TXT หรือ PDF และเลือกภาษาคำแปลก่อนดาวน์โหลดได้ โดยต้นฉบับรวมอยู่เสมอ",
+    participants: "ดูผู้ป้อนข้อมูลที่เชื่อมต่อและสถานะไมโครโฟน หากไม่ใช้ชื่อที่แสดง ระบบจะแสดงภาษาและ IP และผู้ดูแลสามารถปิดไมโครโฟนที่เปิดอยู่ได้",
+    pages: "ส่วนนี้มีที่อยู่สำหรับป้อนด้วยเสียง/การพิมพ์ ผลลัพธ์การแปล ดูและป้อนรวม รวมถึงคู่มือผู้เข้าร่วมและผู้ป้อนข้อมูล แจกเฉพาะที่อยู่ที่ตรงกับบทบาท",
+    pageActions: "คัดลอกจะเก็บที่อยู่เต็ม เปิดหน้าต่างใหม่ใช้ตรวจสอบหน้าจริง และแสดง QR จะสร้าง QR ของที่อยู่เดียวกัน โดยปุ่มดาวน์โหลดรูปภาพในหน้าต่าง QR จะบันทึกเป็น PNG",
+    context: "กรอกหัวข้อเซสชัน ชื่อบุคคล และคำที่พบบ่อยเพื่อใช้กับการรู้จำเสียงครั้งถัดไป ส่วนนี้แก้ไขได้หลังสร้างเซสชัน",
+    done: "คุณดูขั้นตอนการใช้งานหลักครบแล้ว คำแนะนำจะเปลี่ยนตามภาษาที่แสดง และเปิดใหม่ได้ทุกเมื่อจาก เริ่มคู่มือแอป ในเมนูการตั้งค่าของ Electron",
+  },
   list: {
     heading: "เซสชัน",
     logout: "ออกจากระบบ",
@@ -1412,10 +1496,10 @@ const adminTh: AdminStrings = {
     pages: "URL หน้า — แจกจ่ายให้ผู้เข้าร่วม",
     participantGuide: "คู่มือผู้เข้าร่วม",
     inputGuide: "คู่มือผู้ป้อนข้อมูล",
-    input: "ป้อนข้อมูล",
-    output: "คำแปล",
+    input: "ป้อนด้วยเสียง/การพิมพ์",
+    output: "ผลลัพธ์การแปล",
     capture: "รับเสียง",
-    combinedInput: "ป้อนข้อมูลรวม",
+    combinedInput: "ป้อนรวมด้วยเสียง/การพิมพ์",
     participantStatus: "ผู้เข้าร่วมที่เชื่อมต่ออยู่",
     participantNone: "ไม่มีผู้เข้าร่วมที่เชื่อมต่ออยู่",
     microphoneOn: "ไมโครโฟนเปิด",
@@ -1447,11 +1531,11 @@ const adminTh: AdminStrings = {
     languages: "หน้าตามภาษา",
     addLanguage: "เพิ่มภาษา",
     selectLanguage: "เลือกภาษา",
-    input: "ป้อนข้อมูล",
-    output: "คำแปล",
+    input: "ป้อนด้วยเสียง/การพิมพ์",
+    output: "ผลลัพธ์การแปล",
     nickname: "ใช้ชื่อที่แสดง",
     nicknameNote: "ผู้ป้อนข้อมูลกำหนดชื่อ และแสดงผู้พูดในต้นฉบับ คำแปล และบันทึกทั้งหมด",
-    combinedInput: "ใช้หน้าป้อนข้อมูลรวม",
+    combinedInput: "ใช้การป้อนรวมด้วยเสียง/การพิมพ์",
     combinedInputNote: "ตรวจจับหลายภาษาจากการพิมพ์หรือไมโครโฟนโดยอัตโนมัติในหน้าเดียว",
     combinedInputFallback: "ภาษาเริ่มต้นเมื่อตรวจจับไม่ได้",
     transcriptionContext: "ข้อมูลช่วยการรู้จำเสียง",
@@ -1642,6 +1726,33 @@ const adminSi: AdminStrings = {
     failed: "මුරපදය වෙනස් කළ නොහැකි විය",
     close: "වසන්න",
   },
+  guide: {
+    title: "යෙදුම් භාවිත මාර්ගෝපදේශය",
+    close: "මාර්ගෝපදේශය අවසන් කරන්න",
+    previous: "ආපසු",
+    next: "ඊළඟ",
+    continue: "සැසි මාර්ගෝපදේශයට යන්න",
+    finish: "අවසන්",
+    step: "{current} / {total}",
+    welcome: "උද්දීපනය කරන සැබෑ තිර කොටස් අනුගමනය කර සැසියක් සෑදීමේ සිට බෙදාහැරීම දක්වා බලන්න. ඔබට පාලක ඔබා පරීක්ෂා කළ හැකි නමුත් මෙම මාර්ගෝපදේශය සැකසුම් වෙනස් කරන්නේ හෝ සැසිය අවසන් කරන්නේ නැත.",
+    appearance: "දර්ශන භාෂාව, ආලෝක/අඳුරු තේමාව සහ අකුරු ප්‍රමාණය සකසන්න. තේරීම් මෙම බ්‍රවුසරයේ සුරැකී නැවත පූරණය කළත් නව කවුළුවක විවෘත කළත් පවතී.",
+    adminQr: "වත්මන් බෙදාගැනීමේ ලිපිනය සඳහා පරිපාලක පිවිසුම් QR එක පෙන්වයි. මෙය පරිපාලකයන් සඳහා පමණක් වන බැවින් සාමාන්‍ය සහභාගිවන්නන්ට බෙදා නොදෙන්න.",
+    sessionBasics: "සහභාගිවන්නන්ට ද පෙනෙන සැසි නම ඇතුළත් කර පහත භාෂා බොත්තම්වලින් අවම වශයෙන් භාෂා දෙකක් තෝරන්න.",
+    languages: "සැසි භාෂා තෝරා ගැනීමට භාෂා බොත්තම් ඔබන්න. + භාෂාවක් එක් කරයි, ගියර් නිරූපකය UI පෙළ පරිවර්තනය හා සංස්කරණය කරයි, පොත් නිරූපකය පදකෝෂය සහ CSV ආයාත/නිර්යාත පාලනය කරයි.",
+    sessionSettings: "රැස්වීම/මහජන රැස්වීම පෙරසැකසුමක් යොදන්න හෝ එක් එක් භාෂාවට හඬ/යතුරු ලියන ආදානය සහ පරිවර්තන ප්‍රතිදානය සකසන්න. පෙන්වන නම, ඒකාබද්ධ ආදානය, පෙරනිමි භාෂාව සක්‍රිය කර ඔබේම පෙරසැකසුමක් ලෙස සුරැකිය හැක.",
+    translation: "මාර්ගගත එන්ජින් සඳහා API ලියාපදිංචි කිරීමෙන් යතුර සුරකින්න. OpenAI භාවිත විස්තර ද පෙන්වයි. පළමු ආරම්භක විශාරදයෙන් Local AI ස්ථාපනය කර ඇත්නම් API යතුරක් නොමැතිව එය තෝරා ගත හැක.",
+    transcription: "OpenAI, Google හෝ ස්ථාපිත දේශීය Whisper අතරින් හඬ හඳුනාගැනීම තෝරන්න. Google තෝරාගත් විට සේවා ගිණුම් JSON ගොනුව ලියාපදිංචි කිරීමේ බොත්තම පෙන්වයි.",
+    fallback: "විකල්ප එන්ජිම භාවිත වන්නේ ප්‍රධාන එන්ජිම සහය නොදක්වන හෝ අසාර්ථක වන භාෂා සඳහා පමණි. මෙය අත්‍යවශ්‍ය නොවන අතර භාවිත නොකරන විට යෙදුම වෙනත් එන්ජිමකට ස්වයංක්‍රීයව මාරු නොවේ.",
+    create: "වත්මන් සැකසුම් තහවුරු කර සැසි කළමනාකරණ පිටුව විවෘත කිරීමට සැසියක් සාදන්න ඔබන්න. සැසිය සෑදූ පසු භාෂා පිටු සැකසුම් වෙනස් කළ නොහැක.",
+    sessionList: "ක්‍රියාත්මක සැසියක් කළමනාකරණය කිරීමට එය ඔබන්න. අවසන් කිරීම නව ආදානය නවත්වන අතර අවසන් සැසියක් මැකීම ලොග් ද ස්ථිරව මකයි. ඊළඟ ඔබා සැබෑ සැසියක් සාදන්න හෝ විවෘත කරන්න; එවිට මාර්ගෝපදේශය දිගටම යයි.",
+    overview: "සැසි නම, භාෂා, පරිවර්තන, විකල්ප සහ හඬ එන්ජින් පරීක්ෂා කරන්න. නව ආදානය නවත්වන බැවින් මෙහෙයුම අවසන් වූ විට පමණක් සැසිය අවසන් කරන්න.",
+    records: "ලොගය බලන්න මගින් සම්පූර්ණ ඉතිහාසය නව කවුළුවක විවෘත වේ. TXT හෝ PDF වාර්තාවක් බාගත කිරීමට පෙර පරිවර්තන භාෂා තෝරා ගත හැකි අතර මූලාශ්‍ර පෙළ සැමවිටම ඇතුළත් වේ.",
+    participants: "සම්බන්ධ වූ ආදාන සහභාගිවන්නන් සහ මයික්‍රෆෝන තත්ත්වය බලන්න. පෙන්වන නම අක්‍රිය නම් භාෂාව සහ IP පෙන්වන අතර අවශ්‍ය විට පරිපාලකයාට ක්‍රියාත්මක මයික්‍රෆෝනයක් නවත්වන්න පුළුවන්.",
+    pages: "මෙහි භාෂා අනුව හඬ/යතුරු ලියන ආදාන, පරිවර්තන ප්‍රතිදාන, ඒකාබද්ධ දසුන සහ ආදානය, සහභාගිවන්නන්ගේ සහ ආදානකරුවන්ගේ මාර්ගෝපදේශ ලිපින ඇත. එක් එක් භූමිකාවට නිවැරදි ලිපිනය පමණක් බෙදා දෙන්න.",
+    pageActions: "පිටපත් කරන්න සම්පූර්ණ ලිපිනය සුරකියි; නව කවුළුවක විවෘත කිරීම සැබෑ පිටුව පරීක්ෂා කරයි. QR පෙන්වන්න එකම ලිපිනය සඳහා QR එකක් විවෘත කරන අතර රූපය බාගන්න මගින් PNG ගොනුව සුරකියි.",
+    context: "ඊළඟ හඬ හඳුනාගැනීමේ සිට යොදා ගැනීමට සැසි මාතෘකාව, පුද්ගල නම් සහ නිතර භාවිත වන පද ඇතුළත් කරන්න. සැසිය සෑදූ පසුවත් මෙය සංස්කරණය කළ හැක.",
+    done: "ප්‍රධාන මෙහෙයුම් ක්‍රියාවලිය සම්පූර්ණයෙන් බැලුවා. දර්ශන භාෂාව සමඟ මෙම මාර්ගෝපදේශය ද වෙනස් වන අතර Electron සැකසුම් මෙනුවේ යෙදුම් මාර්ගෝපදේශය අරඹන්න මගින් ඕනෑම වේලාවක නැවත ආරම්භ කළ හැක.",
+  },
   list: {
     heading: "සැසි",
     logout: "පිටවන්න",
@@ -1687,10 +1798,10 @@ const adminSi: AdminStrings = {
     pages: "පිටු URL — සහභාගිවන්නන්ට බෙදා දෙන්න",
     participantGuide: "සහභාගිවන්නන්ගේ මාර්ගෝපදේශය",
     inputGuide: "ඇතුළත් කරන්නන්ගේ මාර්ගෝපදේශය",
-    input: "ඇතුළත් කිරීම",
-    output: "පරිවර්තනය",
+    input: "හඬ/යතුරු ලියන ආදානය",
+    output: "පරිවර්තන ප්‍රතිදානය",
     capture: "හඬ ග්‍රහණය",
-    combinedInput: "ඒකාබද්ධ ඇතුළත් කිරීම",
+    combinedInput: "ඒකාබද්ධ හඬ/යතුරු ලියන ආදානය",
     participantStatus: "සම්බන්ධ වී සිටින සහභාගිවන්නන්",
     participantNone: "සම්බන්ධ වී සිටින සහභාගිවන්නන් නැත",
     microphoneOn: "මයික්‍රෆෝනය ක්‍රියාත්මකයි",
@@ -1722,11 +1833,11 @@ const adminSi: AdminStrings = {
     languages: "භාෂා අනුව පිටු",
     addLanguage: "භාෂාවක් එක් කරන්න",
     selectLanguage: "භාෂාව තෝරන්න",
-    input: "ඇතුළත් කිරීම",
-    output: "පරිවර්තනය",
+    input: "හඬ/යතුරු ලියන ආදානය",
+    output: "පරිවර්තන ප්‍රතිදානය",
     nickname: "පෙන්වන නම භාවිත කරන්න",
     nicknameNote: "ඇතුළත් කරන්නා නමක් තෝරන අතර සියලු මූලාශ්‍ර, පරිවර්තන සහ ලොග්වල කථිකයා පෙන්වයි.",
-    combinedInput: "ඒකාබද්ධ ඇතුළත් කිරීම භාවිත කරන්න",
+    combinedInput: "ඒකාබද්ධ හඬ/යතුරු ලියන ආදානය භාවිත කරන්න",
     combinedInputNote: "එක් පිටුවක යතුරු ලියනයෙන් හෝ මයික්‍රෆෝනයෙන් භාෂා කිහිපයක් ස්වයංක්‍රීයව හඳුනා ගනී.",
     combinedInputFallback: "භාෂාව හඳුනාගත නොහැකි විට පෙරනිමි භාෂාව",
     transcriptionContext: "හඬ හඳුනාගැනීම සඳහා උපකාරක තොරතුරු",

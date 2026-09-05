@@ -2,17 +2,23 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import {
-  parseServerMessage,
-  type ClientMessage,
-  type ServerMessage,
-} from "@/lib/realtime/protocol";
+import { parseServerMessage } from "@/lib/client-json";
+import type { ClientMessage, ServerMessage } from "@/lib/realtime/protocol";
 
 export type ConnectionState = "connecting" | "open" | "closed";
 export type RealtimeConnection = {
   state: ConnectionState;
   send: (message: ClientMessage) => void;
 };
+
+const MAX_DRAFT_BUFFERED_BYTES = 64 * 1024;
+
+export function shouldSendRealtimeMessage(
+  message: ClientMessage,
+  bufferedAmount: number,
+): boolean {
+  return message.t !== "draft" || !message.text || bufferedAmount <= MAX_DRAFT_BUFFERED_BYTES;
+}
 
 /**
  * 서버(`server.ts`)의 `/ws` 에 붙어 실시간 메시지를 받는다.
@@ -93,7 +99,11 @@ export function useRealtime(
 
   const send = useCallback((message: ClientMessage) => {
     const socket = socketRef.current;
-    if (socket && socket.readyState === WebSocket.OPEN) {
+    if (
+      socket &&
+      socket.readyState === WebSocket.OPEN &&
+      shouldSendRealtimeMessage(message, socket.bufferedAmount)
+    ) {
       socket.send(JSON.stringify(message));
     }
   }, []);

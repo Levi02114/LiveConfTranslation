@@ -3,7 +3,8 @@ import test from "node:test";
 
 import { z } from "zod";
 
-import { parseClientMessage, parseServerMessage } from "./realtime/protocol";
+import { parseServerMessage } from "./client-json";
+import { parseClientMessage } from "./realtime/protocol";
 import { parseRequiredSqlRow, SqlDataIntegrityError } from "./sqlite-schema";
 
 test("외부 메시지와 SQLite 행을 런타임에서 검증한다", () => {

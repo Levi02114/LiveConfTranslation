@@ -86,8 +86,8 @@ const UI = {
   },
 };
 
-function stringsFor(app) {
-  const locale = app.getLocale().toLowerCase();
+function stringsFor(value) {
+  const locale = String(value).toLowerCase();
   return UI[locale.startsWith("ko") ? "ko" : locale.startsWith("vi") ? "vi" : locale.startsWith("th") ? "th" : locale.startsWith("si") ? "si" : "en"];
 }
 

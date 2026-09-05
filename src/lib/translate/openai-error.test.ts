@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { FALLBACK_UI, translationFailureText } from "../i18n-builtin";
+import { FALLBACK_UI } from "../i18n-builtin";
+import { translationFailureText } from "../translation-failure";
 import { classifyOpenAiError } from "./openai";
 
 test("OpenAI 429 결제 부족과 순간 요청 제한을 구분한다", () => {

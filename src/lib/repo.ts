@@ -41,6 +41,7 @@ import {
   promptCueRowSchema,
   recentTranslationRowSchema,
   sessionPresetRowSchema,
+  transcriptionHintSupportRowSchema,
   transcriptionSettingRowSchema,
   translationCountRowSchema,
   uiStringRowSchema,
@@ -890,7 +891,41 @@ export type CombinedEntry = {
 };
 
 export function getRecentCombined(meetingId: string, limit: number | null = null): CombinedEntry[] {
-  const messages = getRecentMessages(meetingId, limit);
+  return combinedEntries(getRecentMessages(meetingId, limit));
+}
+
+/** 재연결 시 생성·수정·번역된 원문만 다시 조립한다. */
+export function getCombinedSince(meetingId: string, since: number): CombinedEntry[] {
+  const rows = parseSqlRows(
+    messageRowSchema,
+    getDb().prepare(
+      `SELECT m.* FROM messages m
+       WHERE m.meeting_id = ?
+         AND (
+           COALESCE(m.edited_at, m.created_at) >= ?
+           OR EXISTS (
+             SELECT 1 FROM translations t
+             WHERE t.message_id = m.id AND t.created_at >= ?
+           )
+         )
+       ORDER BY m.id`,
+    ).all(meetingId, since, since),
+    "통합 조회 변경분",
+  );
+  return combinedEntries(rows.map((row) => ({
+    id: row.id,
+    meetingId: row.meeting_id,
+    pageId: row.page_id,
+    lang: row.lang,
+    body: row.body,
+    speakerName: row.speaker_name,
+    revision: row.revision,
+    editedAt: row.edited_at,
+    createdAt: row.created_at,
+  })));
+}
+
+function combinedEntries(messages: Message[]): CombinedEntry[] {
   if (messages.length === 0) return [];
 
   // 메시지 목록이 정해진 뒤 번역을 한 번에 가져온다. 메시지마다 조회하면 N+1 이 된다.
@@ -1070,6 +1105,41 @@ export function isLanguageUsed(code: LanguageCode): boolean {
   return Boolean(row) || listSessionPresets().some((preset) =>
     preset.languages.some((language) => language.lang === code),
   );
+}
+
+/** OpenAI 실시간 전사 언어 힌트의 등록 시 검증 결과. */
+export function getOpenAiTranscriptionHintSupport(
+  code: LanguageCode,
+  model: string,
+): boolean | null {
+  const row = parseSqlRow(
+    transcriptionHintSupportRowSchema,
+    getDb()
+      .prepare(`SELECT model FROM engine_settings WHERE engine = ?`)
+      .get(`transcription-hint:${model}:${code.toLowerCase()}`),
+    "OpenAI 전사 언어 힌트 검증 결과",
+  );
+  return row ? row.model === "supported" : null;
+}
+
+export function upsertOpenAiTranscriptionHintSupport(
+  code: LanguageCode,
+  model: string,
+  supported: boolean,
+): void {
+  getDb()
+    .prepare(
+      `INSERT INTO engine_settings (engine, model, updated_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT (engine) DO UPDATE SET
+         model = excluded.model,
+         updated_at = excluded.updated_at`,
+    )
+    .run(
+      `transcription-hint:${model}:${code.toLowerCase()}`,
+      supported ? "supported" : "unsupported",
+      Date.now(),
+    );
 }
 
 // ---------------------------------------------------------- UI 문구

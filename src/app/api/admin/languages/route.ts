@@ -17,6 +17,7 @@ import {
   listLanguages,
 } from "@/lib/repo";
 import { ENGINE_IDS, getEngine, isEngineId, refreshEngineSupport } from "@/lib/translate";
+import { verifyOpenAiTranscriptionHint } from "@/lib/transcribe-config";
 import { translateLanguagePromptCue, translateUiStrings } from "@/lib/ui-translate";
 
 /**
@@ -100,15 +101,16 @@ export async function POST(request: Request) {
    * 관리자는 다른 엔진으로 「다시 번역」하거나 손으로 고칠 수 있다.
    * 여기서 되돌려 버리면 왜 실패했는지 확인할 기회조차 사라진다.
    */
-  const result = await translateUiStrings(code, engine);
-  try {
-    await translateLanguagePromptCue(code, engine);
-  } catch (error) {
-    console.warn(
-      `[languages] ${code} 문체 지시문을 번역하지 못했습니다:`,
-      error instanceof Error ? error.message : error,
-    );
-  }
+  const [result] = await Promise.all([
+    translateUiStrings(code, engine),
+    translateLanguagePromptCue(code, engine).catch((error) => {
+      console.warn(
+        `[languages] ${code} 문체 지시문을 번역하지 못했습니다:`,
+        error instanceof Error ? error.message : error,
+      );
+    }),
+    verifyOpenAiTranscriptionHint(code),
+  ]);
 
   return Response.json({ language: describe(code, "ko"), ...result }, { status: 201 });
 }

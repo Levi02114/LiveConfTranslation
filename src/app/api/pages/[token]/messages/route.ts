@@ -15,6 +15,7 @@ const schema = z.object({
   body: z.string().trim().min(1, "내용을 입력해 주세요").max(5000),
   lang: z.string().trim().min(1).max(35).optional(),
   speakerName: z.string().trim().min(1).max(40).regex(/^[^\r\n]+$/).optional(),
+  ingestKey: z.string().min(8).max(240).optional(),
 });
 
 /**
@@ -89,28 +90,35 @@ export async function POST(request: Request, { params }: Params) {
     );
   }
 
-  const message = acceptMessage({
+  const result = acceptMessage({
     meeting,
     pageId: page.id,
     lang: detected.lang,
     body: parsed.data.body,
     speakerName: meeting.speakerLabels ? parsed.data.speakerName : null,
+    ingestKey: parsed.data.ingestKey,
   });
+  const message = result.message;
 
-  void translateMessage({
-    meeting,
-    messageId: message.id,
-    sourceLang: detected.lang,
-    body: message.body,
-    speakerName: message.speakerName,
-    revision: message.revision,
-    editedAt: message.editedAt,
-    createdAt: message.createdAt,
-  }).catch((error) => {
-    // 개별 언어 실패는 파이프라인 안에서 이미 저장·배포된다.
-    // 여기까지 올라온 건 예상 못 한 오류라 서버 로그에만 남긴다.
-    console.error("[translate] 처리되지 않은 오류", error);
-  });
+  if (result.inserted) {
+    void translateMessage({
+      meeting,
+      messageId: message.id,
+      sourceLang: detected.lang,
+      body: message.body,
+      speakerName: message.speakerName,
+      revision: message.revision,
+      editedAt: message.editedAt,
+      createdAt: message.createdAt,
+    }).catch((error) => {
+      // 개별 언어 실패는 파이프라인 안에서 이미 저장·배포된다.
+      // 여기까지 올라온 건 예상 못 한 오류라 서버 로그에만 남긴다.
+      console.error("[translate] 처리되지 않은 오류", error);
+    });
+  }
 
-  return Response.json({ message, usedFallback: detected.usedFallback }, { status: 201 });
+  return Response.json(
+    { message, usedFallback: detected.usedFallback, inserted: result.inserted },
+    { status: result.inserted ? 201 : 200 },
+  );
 }

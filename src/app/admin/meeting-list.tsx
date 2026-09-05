@@ -17,6 +17,7 @@ import { engineIdSchema, isEngineId, type EngineId } from "@/lib/translate/types
 import { transcriptionProviderSchema } from "@/lib/repo-schema";
 
 import { AdminBusyOverlay } from "./admin-busy-overlay";
+import { AppGuide, continueAppGuideToDashboard } from "./app-guide";
 import { EngineKeysDialog, type EngineKeyStatus } from "./engine-keys-dialog";
 import { GoogleSpeechDialog, type GoogleSpeechStatus } from "./google-speech-dialog";
 import { GlossaryDialog } from "./glossary-dialog";
@@ -254,6 +255,7 @@ export function MeetingList({
         return;
       }
       const created = payload.meeting;
+      continueAppGuideToDashboard();
       startNavigation(() => router.push(`/admin/meetings/${created.id}`));
     } catch {
       setError(strings.list.createFailed);
@@ -360,6 +362,7 @@ export function MeetingList({
   return (
     <div className="mx-auto max-w-[840px] px-4 pt-20 pb-12 sm:px-8 sm:pb-16">
       <AdminBusyOverlay label={busyLabel} />
+      <AppGuide stage="admin" strings={strings} ui={ui} />
       <AppearanceControls
         strings={ui.appearance}
         qr={{ label: strings.dashboard.showQr, onClick: () => void showAdminQr() }}
@@ -389,13 +392,14 @@ export function MeetingList({
 
       <div className="flex flex-col gap-6 border-b border-line pt-6 pb-9">
         <input
+          data-guide="session-basics"
           value={title}
           onChange={(event) => setTitle(event.target.value)}
           placeholder={strings.list.titlePlaceholder}
           className="app-text border-0 border-b border-line bg-transparent py-1.5 outline-none focus:border-fg"
         />
 
-        <div>
+        <div data-guide="languages">
           <div className="mb-2.5 flex items-center gap-2 font-mono text-[11px] text-muted">
             <span>{strings.list.languages}</span>
             <LanguageDialog
@@ -463,7 +467,7 @@ export function MeetingList({
           disabled={pending}
         />
 
-        <div className="flex flex-wrap items-center gap-3.5">
+        <div data-guide="translation-engine" className="flex flex-wrap items-center gap-3.5">
           <div className="font-mono text-[11px] text-muted">{strings.list.engine}</div>
           <EngineSelect
             value={engine}
@@ -486,7 +490,7 @@ export function MeetingList({
           <p className="font-mono text-[11px] leading-5 text-muted">{strings.list.localGlossaryUnsupported}</p>
         ) : null}
 
-        <div className="flex flex-wrap items-center gap-3.5">
+        <div data-guide="transcription-engine" className="flex flex-wrap items-center gap-3.5">
           <label htmlFor="transcription-provider" className="font-mono text-[11px] text-muted">
             {strings.list.transcriptionProvider}
           </label>
@@ -513,7 +517,7 @@ export function MeetingList({
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3.5">
+        <div data-guide="fallback-engine" className="flex flex-wrap items-center gap-3.5">
           <div className="font-mono text-[11px] text-muted">
             {strings.list.fallbackEngine}
           </div>
@@ -535,7 +539,7 @@ export function MeetingList({
 
         {error ? <div className="font-mono text-[12px]">{error}</div> : null}
 
-        <div>
+        <div data-guide="create-session">
           <button
             type="button"
             onClick={() => void create()}
@@ -547,7 +551,7 @@ export function MeetingList({
         </div>
       </div>
 
-      <Section title={strings.list.active} empty={strings.list.noActive} count={open.length}>
+      <Section guide="session-list" title={strings.list.active} empty={strings.list.noActive} count={open.length}>
         {open.map((meeting) => (
           <div
             key={meeting.id}
@@ -555,9 +559,10 @@ export function MeetingList({
           >
             <button
               type="button"
-              onClick={() =>
-                startNavigation(() => router.push(`/admin/meetings/${meeting.id}`))
-              }
+              onClick={() => {
+                continueAppGuideToDashboard();
+                startNavigation(() => router.push(`/admin/meetings/${meeting.id}`));
+              }}
               className="flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-1.5 text-left hover:opacity-60 xl:flex-row xl:items-baseline xl:justify-between xl:gap-4"
             >
               <span className="app-text min-w-0 break-words">{meeting.title}</span>
@@ -588,9 +593,10 @@ export function MeetingList({
           >
             <button
               type="button"
-              onClick={() =>
-                startNavigation(() => router.push(`/admin/meetings/${meeting.id}`))
-              }
+              onClick={() => {
+                continueAppGuideToDashboard();
+                startNavigation(() => router.push(`/admin/meetings/${meeting.id}`));
+              }}
               className="flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-1.5 text-left hover:opacity-60 xl:flex-row xl:items-baseline xl:justify-between xl:gap-4"
             >
               <span className="app-text min-w-0 break-words">{meeting.title}</span>
@@ -667,11 +673,13 @@ function EngineSelect({
 }
 
 function Section({
+  guide,
   title,
   empty,
   count,
   children,
 }: {
+  guide?: string;
   title: string;
   empty: string;
   count: number;
@@ -679,7 +687,7 @@ function Section({
 }) {
   return (
     <div className="pt-8">
-      <div className="mb-1.5 font-mono text-[11px] text-muted">{title}</div>
+      <div data-guide={guide} className="mb-1.5 font-mono text-[11px] text-muted">{title}</div>
       {count === 0 ? <p className="py-4 font-mono text-[12px] text-muted">{empty}</p> : children}
     </div>
   );

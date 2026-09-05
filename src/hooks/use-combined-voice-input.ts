@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { z } from "zod";
 
 import { AudioTurnDetector } from "@/lib/audio-turn-detector";
 import { newBrowserId } from "@/lib/browser-id";
+import { parseVoiceEvent, type VoiceEventPayload } from "@/lib/client-json";
 import type { UiStrings } from "@/lib/i18n-builtin";
 import type { LanguageCode } from "@/lib/languages";
 import { NeuralTurnDetector, redemptionMsFor } from "@/lib/neural-turn-detector";
@@ -15,32 +15,6 @@ import {
 } from "@/lib/voice-level";
 
 type VoiceState = "idle" | "starting" | "active";
-const voiceEventSchema = z.union([
-  z.object({ t: z.literal("ready"), leaseId: z.string() }),
-  z.object({ t: z.literal("partial"), text: z.string() }),
-  z.object({
-    t: z.literal("transcript"),
-    itemId: z.string(),
-    contentIndex: z.number(),
-    body: z.string(),
-    lang: z.string(),
-    usedFallback: z.boolean(),
-    leaseId: z.string(),
-  }),
-  z.object({
-    t: z.literal("error"),
-    reason: z.enum([
-      "busy",
-      "key-required",
-      "google-unavailable",
-      "local-unavailable",
-      "speaker-required",
-      "invalid-language",
-      "lost",
-    ]),
-  }),
-]);
-type VoiceEvent = z.infer<typeof voiceEventSchema>;
 
 type ServerVoiceInputOptions = {
   token: string;
@@ -169,7 +143,7 @@ export function useServerVoiceInput({
   }, [enabled, refreshDevices, requestPermissionOnMount]);
 
   const submitTranscript = useCallback(
-    async (event: Extract<VoiceEvent, { t: "transcript" }>) => {
+    async (event: Extract<VoiceEventPayload, { t: "transcript" }>) => {
       if (!event.body.trim()) return;
       if (!autoSubmit) {
         onTranscript?.(event.body);
@@ -307,15 +281,8 @@ export function useServerVoiceInput({
         autoSubmit,
       }));
       ws.onmessage = (message) => {
-        let value;
-        try {
-          value = JSON.parse(String(message.data));
-        } catch {
-          return;
-        }
-        const parsed = voiceEventSchema.safeParse(value);
-        if (!parsed.success) return;
-        const event = parsed.data;
+        const event = parseVoiceEvent(String(message.data));
+        if (!event) return;
         if (event.t === "ready") {
           ready = true;
           setState("active");

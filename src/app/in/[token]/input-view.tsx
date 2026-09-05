@@ -6,6 +6,7 @@ import { AppearanceControls } from "@/components/appearance-controls";
 import { TranslationEntry } from "@/components/translation-entry";
 import { VoiceLevelMeter } from "@/components/voice-level-meter";
 import { useRealtime } from "@/hooks/use-realtime";
+import { postPageMessage, useSubmitQueue } from "@/hooks/use-submit-queue";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { upsertSource, upsertTranslation } from "@/lib/combined-entry";
 import { newBrowserId } from "@/lib/browser-id";
@@ -16,7 +17,7 @@ import type { CombinedEntry } from "@/lib/repo";
 import { appendTranscriptDraft } from "@/lib/transcript-draft";
 
 /** 초안은 타자마다 오간다. 글자당 한 번씩 보내지 않도록 묶어서 보낸다. */
-const DRAFT_INTERVAL_MS = 180;
+const DRAFT_INTERVAL_MS = 300;
 const NO_TARGET_LANGUAGES: Language[] = [];
 
 export function InputView({
@@ -52,7 +53,6 @@ export function InputView({
   const [text, setText] = useState("");
   const [voiceMode, setVoiceMode] = useState(false);
   const [rewrite, setRewrite] = useState(false);
-  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [speakerName, setSpeakerName] = useState("");
   const [speakerDraft, setSpeakerDraft] = useState("");
@@ -62,6 +62,7 @@ export function InputView({
   const [speakerError, setSpeakerError] = useState<string | null>(null);
   const [participantId] = useState(newBrowserId);
   const targetLanguage = useMemo(() => [language], [language]);
+  const { enqueue, sending } = useSubmitQueue();
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -163,15 +164,18 @@ export function InputView({
     send({ t: "name", name });
   }, [send, speakerLabels, speakerName, state]);
 
-  const flowSize = entries.reduce(
-    (count, entry) =>
-      count +
-      1 +
-      (entry.sourceLang !== language.code &&
-      entry.translations.some((translation) => translation.lang === language.code)
-        ? 1
-        : 0),
-    0,
+  const flowSize = useMemo(
+    () => entries.reduce(
+      (count, entry) =>
+        count +
+        1 +
+        (entry.sourceLang !== language.code &&
+        entry.translations.some((translation) => translation.lang === language.code)
+          ? 1
+          : 0),
+      0,
+    ),
+    [entries, language.code],
   );
 
   // 새 원문이나 이 페이지 언어의 번역이 들어오면 따라 내려간다.
@@ -236,39 +240,36 @@ export function InputView({
     }, DRAFT_INTERVAL_MS);
   };
 
-  const submit = async () => {
+  const submit = () => {
     const body = text.trim();
-    if (!body || sending || closed || !speakerReady) return;
+    if (!body || closed || !speakerReady) return;
 
     // 전송 버튼을 눌러도 iOS 가 키보드를 닫지 않도록 입력 포커스를 유지한다.
     textareaRef.current?.focus({ preventScroll: true });
-    setSending(true);
+    setText("");
+    send({ t: "draft", text: "" });
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
     setError(null);
-    try {
-      const response = await fetch(`/api/pages/${encodeURIComponent(token)}/messages`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ body, speakerName: speakerLabels ? speakerName.trim() : undefined }),
-      });
+    const restore = () => setText((current) => current.trim() ? `${body}\n${current}` : body);
+    const ingestKey = `typed:${participantId}:${newBrowserId()}`;
 
-      if (response.status === 409) {
-        setClosed(true);
-        return;
-      }
-      if (!response.ok) {
+    enqueue(async () => {
+      try {
+        const response = await postPageMessage(token, {
+          body,
+          ingestKey,
+          speakerName: speakerLabels ? speakerName.trim() : undefined,
+        });
+
+        if (response.status === 409) setClosed(true);
+        if (response.ok) return;
         setError(strings.error.sendFailed);
-        return;
+        restore();
+      } catch {
+        setError(strings.error.sendFailed);
+        restore();
       }
-
-      // 전송한 문장은 WebSocket 으로 되돌아온다. 여기서 직접 넣지 않는다.
-      setText("");
-      send({ t: "draft", text: "" });
-      if (textareaRef.current) textareaRef.current.style.height = "auto";
-    } catch {
-      setError(strings.error.sendFailed);
-    } finally {
-      setSending(false);
-    }
+    });
   };
 
   const selectVoiceMode = (enabled: boolean) => {
@@ -311,6 +312,21 @@ export function InputView({
 
   // 자기 자신은 서버가 이미 빼고 보낸다.
   const typing = peers.filter((peer) => peer.typing && peer.draft.trim());
+  const entryNodes = useMemo(
+    () => entries.map((entry) => (
+      <TranslationEntry
+        key={entry.messageId}
+        entry={entry}
+        languages={languages}
+        targetLanguages={entry.sourceLang === language.code ? NO_TARGET_LANGUAGES : targetLanguage}
+        strings={strings}
+        showSourceLanguage
+        editable={!closed && entry.pageId === pageId}
+        onEdit={edit}
+      />
+    )),
+    [closed, edit, entries, language.code, languages, pageId, strings, targetLanguage],
+  );
 
   return (
       /*
@@ -399,18 +415,7 @@ export function InputView({
               <p className="font-mono text-[12px] text-muted">{strings.status.noContent}</p>
             ) : null}
 
-            {entries.map((entry) => (
-              <TranslationEntry
-                key={entry.messageId}
-                entry={entry}
-                languages={languages}
-                targetLanguages={entry.sourceLang === language.code ? NO_TARGET_LANGUAGES : targetLanguage}
-                strings={strings}
-                showSourceLanguage
-                editable={!closed && entry.pageId === pageId}
-                onEdit={edit}
-              />
-            ))}
+            {entryNodes}
 
             {/* 같은 입력 페이지의 다른 속기사가 지금 치고 있는 문장. */}
             {typing.map((peer) => (
@@ -572,13 +577,13 @@ export function InputView({
                   !speakerReady ||
                   (voiceMode
                     ? voice.state === "starting"
-                    : voice.state !== "idle" || sending || !text.trim())
+                    : voice.state !== "idle" || !text.trim())
                 }
                 className="min-h-11 min-w-0 flex-1 cursor-pointer border border-fg px-4 py-2.5 font-mono text-[14px] transition-colors hover:bg-fg hover:text-bg disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fg sm:flex-none sm:px-6"
               >
                 {voiceMode
                   ? voiceActionText
-                  : sending
+                  : sending && !text.trim()
                     ? strings.input.sending
                     : strings.input.send}
               </button>

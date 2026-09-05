@@ -71,6 +71,7 @@ import {
   buildCombinedSessionParams,
   buildSingleSessionParams,
   splitTranscribeHintLangs,
+  TRANSCRIBE_HINT_LANGS,
 } from "@/lib/transcribe-config";
 import { singleTranscriptionProfile } from "@/lib/transcription-profile";
 import { RescueAudioTurns, RESCUE_MAX_BYTES, rescueTranscribe } from "@/lib/transcription-rescue";
@@ -450,7 +451,9 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
         const rescueLang = wrongFixedScript ? fixedLang ?? undefined : undefined;
         // `language=si` 는 배치 API도 400으로 거부한다. 실시간 힌트와 같은
         // 지원 목록을 쓰고, 미지원 언어는 이미 강한 프롬프트에만 맡긴다.
-        const apiLanguage = rescueLang && splitTranscribeHintLangs([rescueLang]).supported.length
+        const apiLanguage = rescueLang && TRANSCRIBE_HINT_LANGS.includes(
+          rescueLang.toLowerCase().split("-")[0],
+        )
           ? rescueLang.toLowerCase().split("-")[0]
           : undefined;
         const rescued = await rescueTranscribe({
@@ -697,7 +700,14 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
           ? [target.page.lang]
           : target.languages;
       rescueEnabled =
-        !local && !google && splitTranscribeHintLangs(rescueLangs).unsupported.length > 0;
+        !local && !google && splitTranscribeHintLangs(
+          rescueLangs,
+          selectedLang
+            ? singleTranscriptionProfile(selectedLang).model
+            : target.mode === "single"
+              ? singleTranscriptionProfile(target.page.lang).model
+              : "gpt-transcribe",
+        ).unsupported.length > 0;
       rescueAudio = rescueEnabled ? new RescueAudioTurns() : null;
       started = true;
       start();

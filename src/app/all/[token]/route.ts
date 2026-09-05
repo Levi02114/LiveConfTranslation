@@ -2,10 +2,12 @@ import { cookies } from "next/headers";
 
 import { ADMIN_LANG_COOKIE, ADMIN_LANG_MAX_AGE, toAdminLang } from "@/lib/admin-lang";
 import { getStrings } from "@/lib/i18n";
-import { translationFailureText, type UiStrings } from "@/lib/i18n-builtin";
+import type { UiStrings } from "@/lib/i18n-builtin";
 import { getLanguage, textDirection, type Language } from "@/lib/languages";
 import { formatClock } from "@/lib/log-format";
+import { compressedTextResponse } from "@/lib/http-response";
 import {
+  getCombinedSince,
   getMeeting,
   getMeetingActiveLangs,
   getPageByToken,
@@ -13,6 +15,7 @@ import {
   listLanguages,
   type CombinedEntry,
 } from "@/lib/repo";
+import { translationFailureText } from "@/lib/translation-failure";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -30,19 +33,19 @@ export async function GET(request: Request, { params }: Params) {
   const strings = getStrings(lang);
   const languages = getMeetingActiveLangs(meeting.id).map((code) => getLanguage(code, lang));
   const snapshotAt = Date.now();
-  const history = getRecentCombined(meeting.id);
   const sinceParam = new URL(request.url).searchParams.get("since");
   const since = Number(sinceParam);
   if (sinceParam !== null && Number.isSafeInteger(since) && since >= 0) {
     return Response.json(
       {
-        entries: history.filter((entry) => entry.updatedAt >= since).map(compact),
+        entries: getCombinedSince(meeting.id, since).map(compact),
         closed: meeting.status === "closed",
         snapshotAt,
       },
       { headers: { "cache-control": "private, no-store" } },
     );
   }
+  const history = getRecentCombined(meeting.id);
 
   const data = json({
     token,
@@ -79,8 +82,7 @@ export async function GET(request: Request, { params }: Params) {
   const entries = history.map((entry) => renderEntry(entry, languages, strings)).join("");
   const closed = meeting.status === "closed" ? ` · ${strings.meeting.closed}` : "";
 
-  return new Response(
-    `<!doctype html>
+  const body = `<!doctype html>
 <html lang="${html(lang)}" dir="${textDirection(lang)}">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -96,7 +98,10 @@ export async function GET(request: Request, { params }: Params) {
 </div></main>
 <button id="latest" type="button" hidden>↓ ${html(strings.status.newMessages)} <span>0</span></button>
 <script>const DATA=${data};${CLIENT}</script>
-</body></html>`,
+</body></html>`;
+  return compressedTextResponse(
+    request,
+    body,
     {
       headers: {
         "content-type": "text/html; charset=utf-8",

@@ -45,14 +45,10 @@ export const APPEARANCE_INIT_SCRIPT = `
 })();
 `.trim();
 
-const themeSchema = z.enum(THEMES);
-const fontSizeSchema = z.enum(FONT_SIZES);
-
 export function isTheme(value: string | null): value is Theme {
-  return themeSchema.safeParse(value).success;
+  return value === "light" || value === "dark";
 }
 
 export function isFontSize(value: string | null): value is FontSize {
-  return fontSizeSchema.safeParse(value).success;
+  return value === "sm" || value === "md" || value === "lg" || value === "xl" || value === "xxl";
 }
-import { z } from "zod";

@@ -1,20 +1,25 @@
 import assert from "node:assert/strict";
+import { rmSync } from "node:fs";
 import { before, test } from "node:test";
 
 import { singleTranscriptionProfile } from "@/lib/transcription-profile";
 
 // repo.ts → db.ts 가 실제 사용자 DB 대신 버려지는 파일을 보게 한다.
-process.env.DATABASE_PATH ??= ".tmp/test-transcribe-config.db";
+const testDatabasePath = ".tmp/test-transcribe-config.db";
+rmSync(testDatabasePath, { force: true });
+process.env.DATABASE_PATH = testDatabasePath;
 
 let buildSingleSessionParams: typeof import("@/lib/transcribe-config").buildSingleSessionParams;
 let buildCombinedSessionParams: typeof import("@/lib/transcribe-config").buildCombinedSessionParams;
 let splitTranscribeHintLangs: typeof import("@/lib/transcribe-config").splitTranscribeHintLangs;
+let verifyOpenAiTranscriptionHint: typeof import("@/lib/transcribe-config").verifyOpenAiTranscriptionHint;
 
 before(async () => {
   const mod = await import("@/lib/transcribe-config");
   buildSingleSessionParams = mod.buildSingleSessionParams;
   buildCombinedSessionParams = mod.buildCombinedSessionParams;
   splitTranscribeHintLangs = mod.splitTranscribeHintLangs;
+  verifyOpenAiTranscriptionHint = mod.verifyOpenAiTranscriptionHint;
 });
 
 test("단일 세션 프롬프트에 화자 이름이 들어간다", () => {
@@ -86,4 +91,32 @@ test("th 단일 세션은 gpt-transcribe 로 라우팅하고 delay 를 빼고, k
     model: "gpt-live-transcribe",
     transport: "websocket",
   });
+});
+
+test("새 언어 등록 검증 결과를 모델별 언어 힌트에 반영한다", async () => {
+  const originalFetch = globalThis.fetch;
+  const models: string[] = [];
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body));
+    const model = String(body.session.audio.input.transcription.model);
+    models.push(model);
+    return model === "gpt-live-transcribe"
+      ? Response.json({ value: "test-secret" })
+      : Response.json({ error: { message: "Unsupported language" } }, { status: 400 });
+  };
+
+  try {
+    await verifyOpenAiTranscriptionHint("uz", "test-key");
+    assert.deepEqual(models.sort(), ["gpt-live-transcribe", "gpt-transcribe"].sort());
+    assert.deepEqual(splitTranscribeHintLangs(["uz"], "gpt-live-transcribe"), {
+      supported: ["uz"],
+      unsupported: [],
+    });
+    assert.deepEqual(splitTranscribeHintLangs(["uz"], "gpt-transcribe"), {
+      supported: [],
+      unsupported: ["uz"],
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

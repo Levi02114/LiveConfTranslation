@@ -1,13 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { z } from "zod";
 
 import { AudioTurnDetector } from "@/lib/audio-turn-detector";
 import { newBrowserId } from "@/lib/browser-id";
 import { useServerVoiceInput } from "@/hooks/use-combined-voice-input";
+import { parseRealtimeSession, parseTranscriptionEvent } from "@/lib/client-json";
 import type { UiStrings } from "@/lib/i18n-builtin";
-import { parseJsonResponse } from "@/lib/json-response";
 import type { LanguageCode } from "@/lib/languages";
 import { NeuralTurnDetector, redemptionMsFor } from "@/lib/neural-turn-detector";
 import { singleTranscriptionProfile } from "@/lib/transcription-profile";
@@ -19,18 +18,6 @@ import {
 
 export type VoiceInputState = "idle" | "starting" | "active";
 
-const realtimeSessionSchema = z.object({
-  leaseId: z.string(),
-  clientSecret: z.string(),
-  realtimeUrl: z.string(),
-});
-const transcriptionEventSchema = z.object({
-  type: z.string().optional(),
-  item_id: z.string().optional(),
-  content_index: z.number().optional(),
-  delta: z.string().optional(),
-  transcript: z.string().optional(),
-});
 type CompletedTranscript = { contentIndex: number; body: string };
 const PARTIAL_INTERVAL_MS = 50;
 const AUDIO_ANALYSIS_INTERVAL_MS = 50;
@@ -297,17 +284,10 @@ export function useVoiceInput({
 
   const handleEvent = useCallback(
     (raw: string, sessionLease: string) => {
-      let value;
-      try {
-        value = JSON.parse(raw);
-      } catch {
-        return;
-      }
-      const parsed = transcriptionEventSchema.safeParse(value);
-      if (!parsed.success) return;
-      const event = parsed.data;
+      const event = parseTranscriptionEvent(raw);
+      if (!event) return;
 
-      const itemId = event.item_id;
+      const itemId = event.itemId;
       if (event.type === "input_audio_buffer.committed" && itemId) {
         committedItems.current.push(itemId);
         if (finalCommit.current?.ordinal === committedItems.current.length) {
@@ -330,7 +310,7 @@ export function useVoiceInput({
         partials.current.delete(itemId);
         renderPartial([...partials.current.values()].join(" "), true);
         completedItems.current.set(itemId, {
-          contentIndex: event.content_index ?? 0,
+          contentIndex: event.contentIndex ?? 0,
           body: event.transcript?.trim() ?? "",
         });
         flushTranscripts(sessionLease);
@@ -464,10 +444,9 @@ export function useVoiceInput({
         speakerName: speakerName || undefined,
         autoSubmit,
       }),
-    }).then(async (response) => ({
-      response,
-      session: await parseJsonResponse(response, realtimeSessionSchema),
-    }));
+    }).then(async (response) => {
+      return { response, session: parseRealtimeSession(await response.text()) };
+    });
     try {
       try {
         const audio: MediaTrackConstraints = {

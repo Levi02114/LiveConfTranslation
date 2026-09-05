@@ -19,6 +19,7 @@ import type {
 } from "@/lib/repo";
 
 import { AdminBusyOverlay } from "../../admin-busy-overlay";
+import { AppGuide } from "../../app-guide";
 import { MinutesDownloadButtons } from "./minutes-download-dialog";
 import { TranscriptionContextSettings } from "./session-settings";
 
@@ -202,6 +203,7 @@ export function DashboardView({
   const configByLanguage = new Map(languageConfigs.map((row) => [row.lang, row]));
   const hasOutput = languageConfigs.some((row) => row.outputEnabled);
   const hasInput = languageConfigs.some((row) => row.inputEnabled);
+  const firstInputLang = languageConfigs.find((row) => row.inputEnabled)?.lang;
 
   const copyBtn =
     "min-h-9 shrink-0 cursor-pointer whitespace-nowrap border border-line px-2 py-1 font-mono text-[11px] text-muted transition-colors hover:bg-fg hover:text-bg sm:min-h-0";
@@ -213,6 +215,7 @@ export function DashboardView({
       <AdminBusyOverlay
         label={closing ? strings.list.closingSession : navigating ? strings.list.loading : null}
       />
+      <AppGuide stage="dashboard" strings={strings} ui={ui} />
       <AppearanceControls
         strings={ui.appearance}
         language={{
@@ -223,7 +226,7 @@ export function DashboardView({
         }}
       />
 
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+      <div data-guide="records" className="mb-6 flex flex-wrap items-center gap-3">
         <Link
           href="/admin"
           prefetch={false}
@@ -249,7 +252,7 @@ export function DashboardView({
         />
       </div>
 
-      <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-baseline sm:justify-between sm:gap-5">
+      <div data-guide="session-overview" className="flex flex-col items-start gap-4 sm:flex-row sm:items-baseline sm:justify-between sm:gap-5">
         <div className="min-w-0">
           <div className="text-[26px] font-medium break-words">{meeting.title}</div>
           <div className="mt-1.5 font-mono text-[12px] text-muted">
@@ -294,7 +297,7 @@ export function DashboardView({
       {closeError ? <div className="mt-4 font-mono text-[12px]">{closeError}</div> : null}
 
       <section className="mt-5 border-y border-line py-4">
-        <div className="font-mono text-[11px] text-muted">
+        <div data-guide="participants" className="font-mono text-[11px] text-muted">
           {strings.dashboard.participantStatus}
         </div>
         <div aria-live="polite" className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -352,7 +355,7 @@ export function DashboardView({
       </section>
 
       <section className="mt-7">
-        <div className="mb-1 font-mono text-[11px] text-muted">{strings.dashboard.pages}</div>
+        <div data-guide="pages" className="mb-1 font-mono text-[11px] text-muted">{strings.dashboard.pages}</div>
         <div
           className={`hidden gap-x-5 gap-y-3 border-b border-line py-3 font-mono text-[11px] text-muted lg:grid ${
             "grid-cols-[110px_1fr_1fr]"
@@ -387,6 +390,7 @@ export function DashboardView({
                   strings={strings.dashboard}
                   label={strings.settings.input}
                   onQr={(url) => void showQr(`input-${language.code}`, url)}
+                  guide={language.code === firstInputLang}
                 />
               ) : (
                 <UrlCell
@@ -397,6 +401,7 @@ export function DashboardView({
                   strings={strings.dashboard}
                   label={strings.dashboard.capture}
                   onQr={(url) => void showQr(`capture-${language.code}`, url)}
+                  guide={language.code === firstInputLang}
                 />
               )}
               <UrlCell
@@ -507,6 +512,7 @@ function UrlCell({
   strings,
   label,
   onQr,
+  guide = false,
 }: {
   url: string;
   copied: { key: string; ok: boolean } | null;
@@ -515,9 +521,10 @@ function UrlCell({
   strings: AdminStrings["dashboard"];
   label?: string;
   onQr: (url: string) => void;
+  guide?: boolean;
 }) {
   return (
-    <div className="min-w-0">
+    <div data-guide={guide ? "page-actions" : undefined} className="min-w-0">
       {label ? <div className="mb-1.5 font-mono text-[11px] text-muted lg:hidden">{label}</div> : null}
       <div className="flex min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-2.5">
         {/*

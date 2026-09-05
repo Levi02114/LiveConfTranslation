@@ -28,6 +28,7 @@ const {
 
 const PORT = 3000;
 const LOOPBACK_ORIGIN = `http://127.0.0.1:${PORT}`;
+const ADMIN_LANG_COOKIE = "lct_admin_lang";
 const secureWebPreferences = {
   contextIsolation: true,
   nodeIntegration: false,
@@ -36,6 +37,8 @@ const secureWebPreferences = {
 
 const adminOrigin = LOOPBACK_ORIGIN;
 let mainWindow = null;
+let uiLocale = "ko";
+let observingUiLocale = false;
 let desktopSettings = null;
 let desktopSettingsPath = null;
 let lanAddresses = [];
@@ -147,8 +150,8 @@ function telegramNotificationsConfigured() {
 function telegramSetupState() {
   const settings = telegramSettings();
   return {
-    locale: app.getLocale(),
-    strings: stringsForLocale(app.getLocale()),
+    locale: uiLocale,
+    strings: stringsForLocale(uiLocale),
     bot: settings.botId && settings.botUsername
       ? { id: settings.botId, name: settings.botName || settings.botUsername, username: settings.botUsername }
       : null,
@@ -259,8 +262,8 @@ async function sendTelegramMessage(chatId, text) {
 }
 
 function telegramNotificationText(url, changed = false) {
-  const strings = stringsForLocale(app.getLocale());
-  const issued = new Intl.DateTimeFormat(app.getLocale(), { dateStyle: "medium", timeStyle: "medium" }).format(new Date());
+  const strings = stringsForLocale(uiLocale);
+  const issued = new Intl.DateTimeFormat(uiLocale, { dateStyle: "medium", timeStyle: "medium" }).format(new Date());
   return `${changed ? strings.changedNotification : strings.initialNotification}\n\n${url}\n\n${strings.notificationTime}: ${issued}`;
 }
 
@@ -302,8 +305,8 @@ function notifyTelegramUrl(url, changed) {
 
 function notifyTelegramTunnelStopped(url, recovering) {
   unavailableTunnelUrl = url;
-  const strings = stringsForLocale(app.getLocale());
-  const occurred = new Intl.DateTimeFormat(app.getLocale(), { dateStyle: "medium", timeStyle: "medium" }).format(new Date());
+  const strings = stringsForLocale(uiLocale);
+  const occurred = new Intl.DateTimeFormat(uiLocale, { dateStyle: "medium", timeStyle: "medium" }).format(new Date());
   const text = `${recovering ? strings.recoveringNotification : strings.stoppedNotification}\n\n${url}\n\n${strings.notificationTime}: ${occurred}`;
   for (const chat of telegramSettings().chats) {
     sentTelegramNotifications.delete(notificationKey(chat.id, url));
@@ -316,8 +319,8 @@ async function notifyTelegramAppStopped() {
   const url = tunnelUrl;
   const settings = telegramSettings();
   if (!url || settings.lastNotifiedUrl !== url || !telegramNotificationsConfigured()) return;
-  const strings = stringsForLocale(app.getLocale());
-  const occurred = new Intl.DateTimeFormat(app.getLocale(), { dateStyle: "medium", timeStyle: "medium" }).format(new Date());
+  const strings = stringsForLocale(uiLocale);
+  const occurred = new Intl.DateTimeFormat(uiLocale, { dateStyle: "medium", timeStyle: "medium" }).format(new Date());
   const text = `${strings.appStoppedNotification}\n\n${url}\n\n${strings.notificationTime}: ${occurred}`;
   await Promise.race([
     Promise.allSettled(settings.chats.map((chat) => sendTelegramMessage(chat.id, text))),
@@ -329,7 +332,7 @@ async function testTelegramChat(chatId) {
   const chat = telegramSettings().chats.find((item) => item.id === String(chatId));
   if (!chat) return telegramResult("genericError");
   try {
-    await sendTelegramMessage(chat.id, stringsForLocale(app.getLocale()).testNotification);
+    await sendTelegramMessage(chat.id, stringsForLocale(uiLocale).testNotification);
     return telegramResult();
   } catch {
     return telegramResult("genericError");
@@ -415,7 +418,7 @@ function cloudflaredConfigPath() {
 
 function updateTunnelMenu() {
   const menu = Menu.getApplicationMenu();
-  const strings = stringsForLocale(app.getLocale());
+  const strings = stringsForLocale(uiLocale);
   const connected = Boolean(tunnelProcess && tunnelUrl);
   const start = menu?.getMenuItemById("tunnel-start");
   const status = menu?.getMenuItemById("tunnel-status");
@@ -570,7 +573,7 @@ async function startQuickTunnel({ interactive = true, recovering = false } = {})
   updateTunnelMenu();
   let recentLog = "";
   let candidateUrl = null;
-  const strings = stringsForLocale(app.getLocale());
+  const strings = stringsForLocale(uiLocale);
 
   try {
     const binary = cloudflaredPath();
@@ -714,7 +717,7 @@ function openTelegramSetup() {
     parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
     modal: Boolean(mainWindow && !mainWindow.isDestroyed()),
     show: false,
-    title: stringsForLocale(app.getLocale()).windowTitle,
+    title: stringsForLocale(uiLocale).windowTitle,
     webPreferences: {
       ...secureWebPreferences,
       preload: path.join(__dirname, "telegram-preload.cjs"),
@@ -784,8 +787,8 @@ function registerTelegramIpc() {
 }
 
 function installApplicationMenu() {
-  const localText = localAiStrings(app);
-  const telegramText = stringsForLocale(app.getLocale());
+  const localText = localAiStrings(uiLocale);
+  const telegramText = stringsForLocale(uiLocale);
   const addressItems = lanAddresses.length
     ? lanAddresses.map((item) => {
         const origin = lanOrigin(item.address);
@@ -823,6 +826,18 @@ function installApplicationMenu() {
       {
         label: "설정",
         submenu: [
+          {
+            label: telegramText.appGuide,
+            click: () => {
+              if (!mainWindow || mainWindow.isDestroyed()) return;
+              void mainWindow.webContents.executeJavaScript(
+                'sessionStorage.setItem("live-conf-translation:app-guide", "admin"); location.assign("/admin")',
+              );
+              mainWindow.show();
+              mainWindow.focus();
+            },
+          },
+          { type: "separator" },
           { label: "기본 공유 주소", submenu: addressItems },
           { label: localText.caDownload, enabled: Boolean(desktopSettings?.localHttps), click: () => openInBrowser(caDownloadUrl()) },
           { type: "separator" },
@@ -880,6 +895,24 @@ function applyNavigationPolicy(contents) {
   });
 }
 
+function observeUiLanguage(window) {
+  if (observingUiLocale) return;
+  observingUiLocale = true;
+  const cookies = window.webContents.session.cookies;
+  const applyLocale = (value) => {
+    const next = value || "ko";
+    if (uiLocale === next) return;
+    uiLocale = next;
+    installApplicationMenu();
+  };
+  cookies.on("changed", (_event, cookie, _cause, removed) => {
+    if (cookie.name === ADMIN_LANG_COOKIE) applyLocale(removed ? "ko" : cookie.value);
+  });
+  void cookies.get({ url: adminOrigin, name: ADMIN_LANG_COOKIE })
+    .then(([cookie]) => applyLocale(cookie?.value))
+    .catch(() => {});
+}
+
 function createWindow(loadAdmin = true) {
   const window = new BrowserWindow({
     width: 1280,
@@ -890,6 +923,7 @@ function createWindow(loadAdmin = true) {
     title: "Live Conference Translation",
     webPreferences: secureWebPreferences,
   });
+  observeUiLanguage(window);
   if (loadAdmin) window.once("ready-to-show", () => window.show());
   window.webContents.on("did-finish-load", () => {
     if (isInternalAdminUrl(window.webContents.getURL())) syncPublicOrigin();
@@ -953,7 +987,7 @@ async function start() {
   if (telegramSettings().autoTunnel) void startQuickTunnel({ interactive: false });
 
   if (localHttpsError) {
-    const text = localAiStrings(app);
+    const text = localAiStrings(uiLocale);
     await dialog.showMessageBox(mainWindow, {
       type: "warning",
       title: text.httpsFailed,

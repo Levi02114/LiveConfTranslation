@@ -2,10 +2,11 @@
 
 import { memo, useState } from "react";
 
-import { translationFailureText, type UiStrings } from "@/lib/i18n-builtin";
+import type { UiStrings } from "@/lib/i18n-builtin";
 import { type Language, textDirection } from "@/lib/languages";
 import { formatClock } from "@/lib/log-format";
 import type { CombinedEntry } from "@/lib/repo";
+import { translationFailureText } from "@/lib/translation-failure";
 
 /** 원문 하나와 그 번역들을 통합 조회와 같은 가로 묶음으로 표시한다. */
 export const TranslationEntry = memo(function TranslationEntry({

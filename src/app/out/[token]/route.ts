@@ -1,8 +1,9 @@
 import { getStrings } from "@/lib/i18n";
-import { translationFailureText } from "@/lib/i18n-builtin";
 import { getLanguage, textDirection } from "@/lib/languages";
 import { formatClock } from "@/lib/log-format";
+import { compressedTextResponse } from "@/lib/http-response";
 import { getMeeting, getPageByToken, getRecentOutput, isPageEnabled } from "@/lib/repo";
+import { translationFailureText } from "@/lib/translation-failure";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -71,8 +72,7 @@ export async function GET(request: Request, { params }: Params) {
     .join("");
   const closed = meeting.status === "closed" ? ` · ${strings.meeting.closed}` : "";
 
-  return new Response(
-    `<!doctype html>
+  const body = `<!doctype html>
 <html lang="${html(page.lang)}" dir="${textDirection(page.lang)}">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -86,7 +86,10 @@ export async function GET(request: Request, { params }: Params) {
 <main id="scroll"><section id="lines" aria-live="polite">${lines}</section><p id="waiting"${history.length ? " hidden" : ""}>${html(strings.status.waiting)}</p></main>
 <button id="latest" type="button" hidden>↓ ${html(strings.status.newMessages)} <span>0</span></button>
 <script>const DATA=${data};${CLIENT}</script>
-</body></html>`,
+</body></html>`;
+  return compressedTextResponse(
+    request,
+    body,
     {
       headers: {
         "content-type": "text/html; charset=utf-8",

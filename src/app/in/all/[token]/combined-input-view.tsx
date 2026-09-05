@@ -1,23 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { z } from "zod";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppearanceControls } from "@/components/appearance-controls";
 import { TranslationEntry } from "@/components/translation-entry";
 import { VoiceLevelMeter } from "@/components/voice-level-meter";
 import { useServerVoiceInput } from "@/hooks/use-combined-voice-input";
 import { useRealtime } from "@/hooks/use-realtime";
+import { postPageMessage, useSubmitQueue } from "@/hooks/use-submit-queue";
 import { upsertSource, upsertTranslation } from "@/lib/combined-entry";
 import { newBrowserId } from "@/lib/browser-id";
+import { parseMessageResponse } from "@/lib/client-json";
 import type { UiStrings } from "@/lib/i18n-builtin";
-import { parseJsonResponse } from "@/lib/json-response";
 import { type Language, type LanguageCode, textDirection } from "@/lib/languages";
 import type { Peer, ServerMessage } from "@/lib/realtime/protocol";
 import type { CombinedEntry } from "@/lib/repo";
 import { appendTranscriptDraft } from "@/lib/transcript-draft";
 
-const DRAFT_INTERVAL_MS = 180;
+const DRAFT_INTERVAL_MS = 300;
 
 export function CombinedInputView({
   token,
@@ -57,7 +57,6 @@ export function CombinedInputView({
   const [voiceMode, setVoiceMode] = useState(false);
   const [rewrite, setRewrite] = useState(false);
   const [inputLang, setInputLang] = useState<LanguageCode | "">("");
-  const [sending, setSending] = useState(false);
   const [pendingLanguageBody, setPendingLanguageBody] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
@@ -68,6 +67,7 @@ export function CombinedInputView({
   const [speakerClaimed, setSpeakerClaimed] = useState(!speakerLabels);
   const [speakerError, setSpeakerError] = useState<string | null>(null);
   const [participantId] = useState(newBrowserId);
+  const { enqueue, sending } = useSubmitQueue();
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -170,7 +170,10 @@ export function CombinedInputView({
     if (speakerLabels && state === "open" && name) send({ t: "name", name });
   }, [send, speakerLabels, speakerName, state]);
 
-  const flowSize = entries.reduce((count, entry) => count + 1 + entry.translations.length, 0);
+  const flowSize = useMemo(
+    () => entries.reduce((count, entry) => count + 1 + entry.translations.length, 0),
+    [entries],
+  );
   useEffect(() => {
     const container = scrollRef.current;
     if (container) container.scrollTop = container.scrollHeight;
@@ -214,48 +217,50 @@ export function CombinedInputView({
       send({ t: "draft", text: textareaRef.current?.value ?? "" });
     }, DRAFT_INTERVAL_MS);
   };
-  const submit = async (explicitLang: LanguageCode | "" = inputLang) => {
+  const submit = (explicitLang: LanguageCode | "" = inputLang) => {
     const body = (pendingLanguageBody ?? text).trim();
-    if (!body || sending || closed || !speakerReady) return;
+    if (!body || closed || !speakerReady || (!explicitLang && sending)) return;
+    const choosingLanguage = Boolean(pendingLanguageBody);
     textareaRef.current?.focus({ preventScroll: true });
-    setSending(true);
+    if (!choosingLanguage) {
+      setText("");
+      send({ t: "draft", text: "" });
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
+    }
     setError(null);
     setFallbackNotice(null);
-    try {
-      const response = await fetch(`/api/pages/${encodeURIComponent(token)}/messages`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+    const restore = () => {
+      setPendingLanguageBody(null);
+      setText((current) => current.trim() ? `${body}\n${current}` : body);
+    };
+    const ingestKey = `typed:${participantId}:${newBrowserId()}`;
+
+    enqueue(async () => {
+      try {
+        const response = await postPageMessage(token, {
           body,
+          ingestKey,
           lang: explicitLang || undefined,
           speakerName: speakerLabels ? speakerName.trim() : undefined,
-        }),
-      });
-      const payload = await parseJsonResponse(
-        response,
-        z.object({
-          usedFallback: z.boolean().optional(),
-          error: z.string().optional(),
-          candidates: z.array(z.string()).optional(),
-          message: z.object({ lang: z.string().optional() }).optional(),
-        }),
-      );
-      if (response.status === 409) setClosed(true);
-      else if (response.status === 422 && payload?.error === "language-ambiguous") {
-        setPendingLanguageBody(body);
+        });
+        const payload = parseMessageResponse(await response.text());
+        if (response.status === 409) {
+          setClosed(true);
+          restore();
+        } else if (response.status === 422 && payload?.error === "language-ambiguous") {
+          setPendingLanguageBody(body);
+        } else if (!response.ok) {
+          setError(strings.error.sendFailed);
+          restore();
+        } else {
+          setPendingLanguageBody(null);
+          if (payload?.usedFallback) showFallback(payload.message?.lang ?? fallbackLang);
+        }
+      } catch {
+        setError(strings.error.sendFailed);
+        restore();
       }
-      else if (!response.ok) setError(strings.error.sendFailed);
-      else {
-        setText("");
-        setPendingLanguageBody(null);
-        send({ t: "draft", text: "" });
-        if (payload?.usedFallback) showFallback(payload.message?.lang ?? fallbackLang);
-      }
-    } catch {
-      setError(strings.error.sendFailed);
-    } finally {
-      setSending(false);
-    }
+    });
   };
   const saveSpeakerName = () => {
     const name = speakerDraft.trim();
@@ -314,6 +319,21 @@ export function CombinedInputView({
       // 저장소를 막은 브라우저에서는 현재 탭의 선택만 유지한다.
     }
   };
+
+  const entryNodes = useMemo(
+    () => entries.map((entry) => (
+      <TranslationEntry
+        key={entry.messageId}
+        entry={entry}
+        languages={languages}
+        strings={strings}
+        showSourceLanguage
+        editable={!closed && entry.pageId === pageId}
+        onEdit={edit}
+      />
+    )),
+    [closed, edit, entries, languages, pageId, strings],
+  );
 
   return (
     <div lang={uiLang} dir={textDirection(uiLang)} className="flex h-dvh flex-col overflow-hidden">
@@ -382,17 +402,7 @@ export function CombinedInputView({
           {closed ? <div className="mt-5 border border-line px-4 py-3 font-mono text-[13px] text-muted">{strings.meeting.closed}</div> : null}
           <div ref={contentRef} className="mt-auto pt-6">
             {entries.length === 0 ? <p className="font-mono text-[12px] text-muted">{strings.status.noContent}</p> : null}
-            {entries.map((entry) => (
-              <TranslationEntry
-                key={entry.messageId}
-                entry={entry}
-                languages={languages}
-                strings={strings}
-                showSourceLanguage
-                editable={!closed && entry.pageId === pageId}
-                onEdit={edit}
-              />
-            ))}
+            {entryNodes}
             {typing.map((peer) => (
               <div key={peer.clientId} className="grid grid-cols-1 gap-1 py-2 opacity-[0.42] sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-[18px]">
                 <span className="whitespace-nowrap font-mono text-[12px] text-muted sm:pt-[0.35em]">{peer.name}</span>
@@ -512,10 +522,10 @@ export function CombinedInputView({
                   else if (voice.state === "idle") void voice.start();
                   else if (voice.state === "active") voice.stop();
                 }}
-                disabled={closed || !speakerReady || (voiceMode ? voice.state === "starting" : voice.state !== "idle" || sending || !text.trim())}
+                disabled={closed || !speakerReady || (voiceMode ? voice.state === "starting" : voice.state !== "idle" || (!inputLang && sending) || !text.trim())}
                 className="min-h-11 min-w-0 flex-1 cursor-pointer border border-fg px-4 py-2.5 font-mono text-[14px] transition-colors hover:bg-fg hover:text-bg disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fg sm:flex-none sm:px-6"
               >
-                {voiceMode ? voiceAction : sending ? strings.input.sending : strings.input.send}
+                {voiceMode ? voiceAction : sending && !text.trim() ? strings.input.sending : strings.input.send}
               </button>
             </div>
           </div>

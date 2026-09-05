@@ -75,7 +75,10 @@ test("원문 입력 채널만 수정하며 이전 번역과 revision을 폐기�
       engine: "google",
       status: "ok",
     }));
-    assert.equal(repo.getRecentCombined(meeting.id)[0]?.sourceBody, "수정 후");
+    const combined = repo.getRecentCombined(meeting.id)[0];
+    assert.equal(combined?.sourceBody, "수정 후");
+    assert.equal(repo.getCombinedSince(meeting.id, combined!.updatedAt)[0]?.sourceBody, "수정 후");
+    assert.deepEqual(repo.getCombinedSince(meeting.id, combined!.updatedAt + 1), []);
 
     repo.closeMeeting(meeting.id);
     assert.deepEqual(

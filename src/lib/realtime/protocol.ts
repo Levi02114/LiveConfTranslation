@@ -8,49 +8,41 @@ import { z } from "zod";
  */
 
 /** 같은 입력 페이지에 들어와 있는 다른 속기사 */
-const peerSchema = z.object({
-  clientId: z.string(),
-  name: z.string(),
-  typing: z.boolean(),
-  draft: z.string(),
-});
-export type Peer = z.infer<typeof peerSchema>;
+export type Peer = { clientId: string; name: string; typing: boolean; draft: string };
 
-export const serverMessageSchema = z.union([
-  z.object({ t: z.literal("hello"), clientId: z.string(), name: z.string() }),
-  z.object({ t: z.literal("name-result"), ok: z.literal(true), name: z.string() }),
-  z.object({ t: z.literal("name-result"), ok: z.literal(false), reason: z.literal("duplicate") }),
-  z.object({
-    t: z.literal("message"),
-    messageId: z.number(),
-    pageId: z.string().nullable(),
-    lang: z.string(),
-    body: z.string(),
-    speakerName: z.string().nullable(),
-    revision: z.number().int().nonnegative(),
-    editedAt: z.number().nullable(),
-    createdAt: z.number(),
-  }),
-  z.object({
-    t: z.literal("translation"),
-    messageId: z.number(),
-    sourceLang: z.string(),
-    lang: z.string(),
-    body: z.string(),
-    speakerName: z.string().nullable(),
-    engine: z.string(),
-    status: z.enum(["ok", "error"]),
-    error: z.string().optional(),
-    revision: z.number().int().nonnegative(),
-    editedAt: z.number().nullable(),
-    sourceCreatedAt: z.number(),
-    createdAt: z.number(),
-  }),
-  z.object({ t: z.literal("presence"), peers: z.array(peerSchema) }),
-  z.object({ t: z.literal("voice-stop") }),
-  z.object({ t: z.literal("meeting-closed"), closedAt: z.number() }),
-]);
-export type ServerMessage = z.infer<typeof serverMessageSchema>;
+export type ServerMessage =
+  | { t: "hello"; clientId: string; name: string }
+  | { t: "name-result"; ok: true; name: string }
+  | { t: "name-result"; ok: false; reason: "duplicate" }
+  | {
+      t: "message";
+      messageId: number;
+      pageId: string | null;
+      lang: string;
+      body: string;
+      speakerName: string | null;
+      revision: number;
+      editedAt: number | null;
+      createdAt: number;
+    }
+  | {
+      t: "translation";
+      messageId: number;
+      sourceLang: string;
+      lang: string;
+      body: string;
+      speakerName: string | null;
+      engine: string;
+      status: "ok" | "error";
+      error?: string;
+      revision: number;
+      editedAt: number | null;
+      sourceCreatedAt: number;
+      createdAt: number;
+    }
+  | { t: "presence"; peers: Peer[] }
+  | { t: "voice-stop" }
+  | { t: "meeting-closed"; closedAt: number };
 
 const clientMessageSchema = z.union([
   z.object({ t: z.literal("draft"), text: z.string() }),
@@ -67,15 +59,6 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       return { t: "draft", text: parsed.data.text.slice(0, 5000) };
     }
     return { t: "name", name: parsed.data.name.slice(0, 40) };
-  } catch {
-    return null;
-  }
-}
-
-export function parseServerMessage(raw: string): ServerMessage | null {
-  try {
-    const parsed = serverMessageSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }
