@@ -44,10 +44,15 @@ declare global {
   var __liveConfDesktopBusy: boolean | undefined;
 }
 
-/** x-forwarded-proto is sanitized by the custom server, never trusted raw. */
+/** Host and proxy metadata have already passed the custom server's validateRequest. */
 export function desktopTransportAllowed(url: string, headers: Headers): boolean {
-  const host = new URL(url).hostname;
-  return headers.get("x-forwarded-proto") === "https" || new URL(url).protocol === "https:" ||
-    (["localhost", "127.0.0.1", "[::1]"].includes(host) &&
-      ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(headers.get("x-lct-ip") ?? ""));
+  try {
+    const requestUrl = new URL(url);
+    // Next constructs request.url from its bind hostname (0.0.0.0 in Electron).
+    // Use the validated original Host; raw WebSocket callers can use their original URL.
+    const host = headers.has("host") ? new URL(`http://${headers.get("host")}`).hostname : requestUrl.hostname;
+    return headers.get("x-forwarded-proto") === "https" || requestUrl.protocol === "https:" ||
+      (["localhost", "127.0.0.1", "[::1]"].includes(host) &&
+        ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(headers.get("x-lct-ip") ?? ""));
+  } catch { return false; }
 }

@@ -74,7 +74,10 @@ Windows 설치본은 Node.js나 개발 도구를 따로 설치하지 않아도 �
 [최신 릴리스 페이지](https://github.com/Levi02114/LiveConfTranslation/releases/latest)에서 다음 중
 하나를 내려받습니다.
 
-현재 배포 버전: [v0.9.25](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.25)
+현재 배포 버전: [v0.9.26](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.26)
+
+v0.9.25에서 Electron 앱 설정에 HTTPS/localhost 안내가 뜨며 터널 설정이 비활성화되면
+v0.9.26 이상으로 업데이트하세요. 서버의 바인딩 주소와 실제 로컬 접속 주소를 구분하도록 수정했습니다.
 
 - `... Setup ... .exe`: Windows에 설치하는 버전
 - `... .exe`: 설치 없이 실행하는 포터블 버전(온라인 엔진 전용)

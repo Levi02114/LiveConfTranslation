@@ -51,6 +51,20 @@ test("desktop writes reject unsafe transport, arbitrary commands and unconfirmed
   assert.equal(desktopActionSchema.safeParse({ action: "stop", confirmed: true }).success, true);
 });
 
+test("Electron loopback Host remains writable when Next rewrites request.url to its bind address", () => {
+  const internalUrl = "http://0.0.0.0:3000/api/admin/desktop";
+  for (const host of ["localhost:3000", "127.0.0.1:3000", "[::1]:3000"]) {
+    for (const ip of ["127.0.0.1", "::1", "::ffff:127.0.0.1"]) {
+      assert.equal(desktopTransportAllowed(internalUrl, new Headers({ host, "x-lct-ip": ip, "x-forwarded-proto": "http" })), true);
+    }
+    assert.equal(desktopTransportAllowed(internalUrl, new Headers({ host, "x-lct-ip": "192.168.1.2" })), false);
+    assert.equal(desktopTransportAllowed(internalUrl, new Headers({ host })), false);
+  }
+  assert.equal(desktopTransportAllowed("http://localhost:3000", new Headers({ host: "192.168.1.2:3000", "x-lct-ip": "127.0.0.1" })), false);
+  assert.equal(desktopTransportAllowed(internalUrl, new Headers({ host: "public.example", "x-lct-ip": "8.8.8.8", "x-forwarded-proto": "https" })), true);
+  assert.equal(desktopTransportAllowed(internalUrl, new Headers({ host: "[invalid", "x-lct-ip": "127.0.0.1" })), false);
+});
+
 test("voice settings persist without sessions; changes notify and phrases support manual overlays", async () => {
   const directory = mkdtempSync(join(tmpdir(), "lct-voice-settings-"));
   const previous = process.env.DATABASE_PATH;
