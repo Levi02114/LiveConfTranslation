@@ -515,6 +515,7 @@ export const FALLBACK_UI: UiStrings = ko;
  */
 const tunnelStrings = {
   ko: {
+    current: "현재 공유 주소", change: "연결 방법 설정", local: "같은 네트워크에서 연결 (LAN·VPN)", open: "주소 열기",
     mode: "터널 연결 방식", quick: "임시 주소", named: "고정 도메인 (앱에서 실행)", external: "외부에서 관리하는 터널",
     origin: "공개 HTTPS 주소", token: "Cloudflare 터널 토큰", tokenHelp: "터널 토큰만 입력하세요. 실행 명령이나 API 키가 아닙니다. 암호화 저장되며 다시 표시하지 않습니다. 같은 주소의 저장된 토큰을 쓰려면 비워 두세요.",
     setup: "도메인 구매·DNS 등록·터널 생성 안내", check: "연결 검사", apply: "검사한 주소 적용", cancel: "검사 취소",
@@ -527,6 +528,7 @@ const tunnelStrings = {
     tunnelStopFirst: "현재 고정 터널을 중지한 뒤 같은 주소의 토큰을 변경하세요.",
   },
   en: {
+    current: "Current sharing address", change: "Set up a connection", local: "Connect on the same network (LAN / VPN)", open: "Open address",
     mode: "Tunnel connection mode", quick: "Temporary address", named: "Fixed domain (run by this app)", external: "Externally managed tunnel",
     origin: "Public HTTPS address", token: "Cloudflare tunnel token", tokenHelp: "Enter only the tunnel token, not a command or API key. It is encrypted and never shown again. Leave blank to reuse the saved token for the same address.",
     setup: "Domain, DNS and tunnel setup guide", check: "Check connection", apply: "Apply checked address", cancel: "Cancel check",
@@ -539,6 +541,7 @@ const tunnelStrings = {
     tunnelStopFirst: "Stop the current fixed tunnel before changing the token for the same address.",
   },
   vi: {
+    current: "Địa chỉ chia sẻ hiện tại", change: "Thiết lập kết nối", local: "Kết nối cùng mạng (LAN / VPN)", open: "Mở địa chỉ",
     mode: "Kiểu kết nối đường hầm", quick: "Địa chỉ tạm thời", named: "Tên miền cố định (ứng dụng chạy)", external: "Đường hầm được quản lý bên ngoài",
     origin: "Địa chỉ HTTPS công khai", token: "Token đường hầm Cloudflare", tokenHelp: "Chỉ nhập token đường hầm, không phải lệnh hay khóa API. Token được mã hóa và không hiển thị lại. Để trống để dùng token đã lưu cho cùng địa chỉ.",
     setup: "Hướng dẫn tên miền, DNS và đường hầm", check: "Kiểm tra kết nối", apply: "Áp dụng địa chỉ đã kiểm tra", cancel: "Hủy kiểm tra",
@@ -551,6 +554,7 @@ const tunnelStrings = {
     tunnelStopFirst: "Dừng đường hầm cố định hiện tại trước khi đổi token cho cùng địa chỉ.",
   },
   th: {
+    current: "ที่อยู่แชร์ปัจจุบัน", change: "ตั้งค่าการเชื่อมต่อ", local: "เชื่อมต่อในเครือข่ายเดียวกัน (LAN / VPN)", open: "เปิดที่อยู่",
     mode: "รูปแบบการเชื่อมต่อทันเนล", quick: "ที่อยู่ชั่วคราว", named: "โดเมนถาวร (แอปเป็นผู้รัน)", external: "ทันเนลที่จัดการจากภายนอก",
     origin: "ที่อยู่ HTTPS สาธารณะ", token: "โทเค็นทันเนล Cloudflare", tokenHelp: "ใส่เฉพาะโทเค็นทันเนล ไม่ใช่คำสั่งหรือคีย์ API ระบบจะเข้ารหัสและไม่แสดงอีก เว้นว่างเพื่อใช้โทเค็นที่บันทึกไว้สำหรับที่อยู่เดิม",
     setup: "คู่มือตั้งค่าโดเมน DNS และทันเนล", check: "ตรวจสอบการเชื่อมต่อ", apply: "ใช้ที่อยู่ที่ตรวจสอบแล้ว", cancel: "ยกเลิกการตรวจสอบ",
@@ -563,6 +567,7 @@ const tunnelStrings = {
     tunnelStopFirst: "หยุดทันเนลถาวรปัจจุบันก่อนเปลี่ยนโทเค็นสำหรับที่อยู่เดิม",
   },
   si: {
+    current: "වත්මන් බෙදාගැනීමේ ලිපිනය", change: "සම්බන්ධතාව සකසන්න", local: "එකම ජාලයෙන් සම්බන්ධ වන්න (LAN / VPN)", open: "ලිපිනය විවෘත කරන්න",
     mode: "ටනල් සම්බන්ධතා ආකාරය", quick: "තාවකාලික ලිපිනය", named: "ස්ථිර වසම (යෙදුමෙන් ක්‍රියාත්මක වේ)", external: "බාහිරව කළමනාකරණය කරන ටනලය",
     origin: "පොදු HTTPS ලිපිනය", token: "Cloudflare ටනල් ටෝකනය", tokenHelp: "විධානයක් හෝ API යතුරක් නොව ටනල් ටෝකනය පමණක් ඇතුළත් කරන්න. එය සංකේතනය කර ගබඩා කරන අතර නැවත පෙන්වන්නේ නැත. එම ලිපිනය සඳහා සුරැකි ටෝකනය භාවිතා කිරීමට හිස්ව තබන්න.",
     setup: "වසම, DNS සහ ටනලය සැකසීමේ මාර්ගෝපදේශය", check: "සම්බන්ධතාව පරීක්ෂා කරන්න", apply: "පරීක්ෂා කළ ලිපිනය යොදන්න", cancel: "පරීක්ෂාව අවලංගු කරන්න",
@@ -575,6 +580,7 @@ const tunnelStrings = {
     tunnelStopFirst: "එම ලිපිනයේ ටෝකනය වෙනස් කිරීමට පෙර වත්මන් ස්ථිර ටනලය නවත්වන්න.",
   },
   "zh-CN": {
+    current: "当前共享地址", change: "设置连接方式", local: "同一网络连接（LAN / VPN）", open: "打开地址",
     mode: "隧道连接方式", quick: "临时地址", named: "固定域名（由应用运行）", external: "外部管理的隧道",
     origin: "公开 HTTPS 地址", token: "Cloudflare 隧道令牌", tokenHelp: "只输入隧道令牌，不要输入命令或 API 密钥。令牌将加密保存且不再显示。留空可复用同一地址已保存的令牌。",
     setup: "域名、DNS 与隧道设置指南", check: "检查连接", apply: "应用已检查的地址", cancel: "取消检查",
@@ -587,6 +593,7 @@ const tunnelStrings = {
     tunnelStopFirst: "更换同一地址的令牌前，请先停止当前固定隧道。",
   },
   fil: {
+    current: "Kasalukuyang address para sa pagbabahagi", change: "I-set up ang koneksyon", local: "Kumonekta sa parehong network (LAN / VPN)", open: "Buksan ang address",
     mode: "Paraan ng koneksyon ng tunnel", quick: "Pansamantalang address", named: "Permanenteng domain (pinapatakbo ng app)", external: "Tunnel na pinamamahalaan sa labas",
     origin: "Pampublikong HTTPS address", token: "Cloudflare tunnel token", tokenHelp: "Tunnel token lang ang ilagay, hindi command o API key. Naka-encrypt itong ise-save at hindi muling ipapakita. Iwanang blangko upang gamitin ang naka-save na token para sa parehong address.",
     setup: "Gabay sa domain, DNS at tunnel", check: "Suriin ang koneksyon", apply: "Gamitin ang nasuring address", cancel: "Kanselahin ang pagsusuri",

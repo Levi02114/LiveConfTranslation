@@ -114,7 +114,8 @@ function SettingsBody({ section, desktop, writable, loadFailed, onDesktop, onClo
   const [token, setToken] = useState("");
   const [link, setLink] = useState("");
   const [meetingId, setMeetingId] = useState("");
-  const [tunnelMode, setTunnelMode] = useState<"named" | "external">(desktop?.connection?.mode === "external" ? "external" : "named");
+  const [draftTunnelMode, setTunnelMode] = useState<"base" | "named" | "external" | null>(null);
+  const tunnelMode = draftTunnelMode ?? (desktop?.connection?.mode === "named" ? "named" : "base");
   const [tunnelOrigin, setTunnelOrigin] = useState(desktop?.connection?.configuredOrigin ?? "");
   const [tunnelToken, setTunnelToken] = useState("");
   const n = strings.tunnel;
@@ -165,12 +166,29 @@ function SettingsBody({ section, desktop, writable, loadFailed, onDesktop, onClo
   return <section className="grid gap-4">
     {!writable ? <p>{s.insecure}</p> : null}
     {section === "connection" ? <>
+      <div className="grid min-w-0 gap-3 border border-line bg-panel p-4">
+        <h2>{n.current}</h2>
+        {desktop.connection ? <p>{n.mode}: {n[desktop.connection.mode]}</p> : null}
+        <p className="break-all">{desktop.origin}</p>
+        <p>{desktop.tunnel === "connected" ? t.tunnelStatusConnected : desktop.tunnel === "connecting" ? t.tunnelStatusConnecting : desktop.tunnel === "recovering" ? t.tunnelStatusRecovering : t.tunnelStatusOff}</p>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={async () => setNotice(await copyText(desktop.origin) ? t.copied : t.genericError)}>{strings.dashboard.copy}</button>
+          <a href={desktop.origin} target="_blank" rel="noreferrer">{n.open}</a>
+          <button disabled={!writable || busy || desktop.externalTunnel || desktop.tunnel !== "off"} onClick={() => void run({ action: "start" })}>{t.tunnelStart}</button>
+          <button disabled={!writable || busy || desktop.externalTunnel || desktop.tunnel === "off"} onClick={() => void run({ action: "stop", confirmed: true })}>{t.tunnelStop}</button>
+        </div>
+        {desktop.connection?.mode === "quick" ? <p>{t.quickTunnelNotice}</p> : null}
+        {desktop.externalTunnel ? <p>{s.externalTunnel}</p> : null}
+        <p role="status">{busy ? ui.capture.starting : notice}</p>
+      </div>
       {desktop.connection ? <fieldset disabled={!writable || busy || desktop.connection.busy} className="grid min-w-0 gap-3 border border-line p-3">
-        <legend>{n.mode}: {n[desktop.connection.mode]}</legend>
-        <a href="https://developers.cloudflare.com/tunnel/get-started/" target="_blank" rel="noreferrer">{n.setup}</a>
-        <label>{n.mode}<select value={tunnelMode} onChange={(event) => setTunnelMode(event.target.value === "external" ? "external" : "named")}>
+        <legend>{n.change}</legend>
+        <label>{n.mode}<select value={tunnelMode} onChange={(event) => setTunnelMode(event.target.value === "external" ? "external" : event.target.value === "named" ? "named" : "base")}>
+          <option value="base">{desktop.connection.baseMode === "external" ? `${n.restore} (${n.external})` : n.quick}</option>
           <option value="named">{n.named}</option><option value="external">{n.external}</option>
         </select></label>
+        {tunnelMode !== "base" ? <>
+        <a href="https://developers.cloudflare.com/tunnel/get-started/" target="_blank" rel="noreferrer">{n.setup}</a>
         <label>{n.origin}<input type="url" autoComplete="off" maxLength={300} value={tunnelOrigin} onChange={(event) => setTunnelOrigin(event.target.value)} /></label>
         {tunnelMode === "named" ? <>
           <label>{n.token}<input type="password" autoComplete="new-password" maxLength={4096} value={tunnelToken} onChange={(event) => setTunnelToken(event.target.value)} /></label>
@@ -179,8 +197,9 @@ function SettingsBody({ section, desktop, writable, loadFailed, onDesktop, onClo
         <div className="flex flex-wrap gap-2">
           <button disabled={!tunnelOrigin.trim() || (tunnelMode === "named" && !tunnelToken.trim() && !desktop.connection.hasToken)}
             onClick={() => void run({ action: "tunnel-check", mode: tunnelMode, origin: tunnelOrigin, token: tunnelToken })}>{n.check}</button>
-          <button onClick={() => void run({ action: "tunnel-base", confirmed: true })}>{n.restore} ({n[desktop.connection.baseMode]})</button>
         </div>
+        <p>{n.retain}</p>
+        </> : desktop.connection.mode !== "quick" ? <button onClick={() => void run({ action: "tunnel-base", confirmed: true })}>{n.restore} ({n[desktop.connection.baseMode]})</button> : null}
         {desktop.connection.pending ? <div className="grid gap-2 border-t border-line pt-3">
           <p>{n.verified}</p><p className="break-all">{desktop.connection.pending.origin}</p>
           <div className="flex flex-wrap gap-2">
@@ -188,24 +207,17 @@ function SettingsBody({ section, desktop, writable, loadFailed, onDesktop, onClo
             <button onClick={() => void run({ action: "tunnel-cancel" })}>{n.cancel}</button>
           </div>
         </div> : null}
-        <p>{n.retain}</p>
       </fieldset> : null}
+      <details className="border border-line p-3">
+      <summary className="cursor-pointer">{n.local}</summary>
+      <div className="mt-3 grid gap-3">
       <label>{s.share}<select disabled={!writable || busy} value={desktop.addresses.some((item) => item.origin === desktop.origin) ? desktop.origin : ""}
         onChange={(event) => void run({ action: "share", origin: event.target.value })}>
         <option value="" disabled>{desktop.origin}</option>
         {desktop.addresses.map((address) => <option key={address.origin} value={address.origin}>{address.label}</option>)}
       </select></label>
-      <p className="break-all">{desktop.origin}</p>
-      <p>{desktop.tunnel === "connected" ? t.tunnelStatusConnected : desktop.tunnel === "connecting" ? t.tunnelStatusConnecting : desktop.tunnel === "recovering" ? t.tunnelStatusRecovering : t.tunnelStatusOff}</p>
-      <div className="flex flex-wrap gap-2">
-        <button disabled={!writable || busy || desktop.externalTunnel || desktop.tunnel !== "off"} onClick={() => void run({ action: "start" })}>{t.tunnelStart}</button>
-        <button onClick={async () => setNotice(await copyText(desktop.origin) ? t.copied : t.genericError)}>{strings.dashboard.copy}</button>
-        <a href={desktop.origin} target="_blank" rel="noreferrer">{t.tunnelOpen}</a>
-        <button disabled={!writable || busy || desktop.externalTunnel || desktop.tunnel === "off"} onClick={() => void run({ action: "stop", confirmed: true })}>{t.tunnelStop}</button>
-      </div>
       {desktop.ca ? <a href="/local-ca.cer" download>{s.ca}</a> : null}
-      {desktop.connection?.mode !== "named" ? <p>{t.quickTunnelNotice}</p> : null}
-      {desktop.externalTunnel ? <p>{s.externalTunnel}</p> : null}
+      </div></details>
     </> : <>
       <p>{t.botFatherHelp}</p><a href="https://t.me/BotFather" target="_blank" rel="noreferrer">{t.openBotFather}</a>
       <label>{t.tokenLabel}<input type="password" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} disabled={!writable || busy} /></label>
@@ -228,6 +240,6 @@ function SettingsBody({ section, desktop, writable, loadFailed, onDesktop, onClo
       </div>)}
     </>}
     <label><input type="checkbox" checked={desktop.connection?.auto ?? telegram.autoTunnel} disabled={!writable || busy || desktop.connection?.busy || desktop.externalTunnel} onChange={(event) => void run({ action: "auto", enabled: event.target.checked })} /> {t.autoLabel}</label>
-    <p>{desktop.connection?.mode === "named" ? n.autoHelp : t.autoHelp}</p><p role="status">{busy ? ui.capture.starting : notice}</p>
+    <p>{desktop.connection?.mode === "named" ? n.autoHelp : t.autoHelp}</p>{section !== "connection" ? <p role="status">{busy ? ui.capture.starting : notice}</p> : null}
   </section>;
 }

@@ -14,6 +14,56 @@ const {
   pickLanAddress,
 } = require("./network.cjs");
 
+test("Electron allows the candidate Host during health checks without publishing it, and clears failures", async () => {
+  const candidate = "https://probe-only.trycloudflare.com";
+  let healthy = true;
+  let missingBinary = false;
+  let checked = 0;
+  let child;
+  const context = vm.createContext({ require: (name) => {
+    if (name === "electron") return { app: { requestSingleInstanceLock: () => false, quit() {} } };
+    if (name === "node:child_process") return { spawn: () => {
+      child = new EventEmitter();
+      child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+      child.kill = () => { child.emit("exit", 1); };
+      queueMicrotask(() => missingBinary ? child.emit("error", Object.assign(new Error("missing"), { code: "ENOENT" })) : child.stdout.emit("data", candidate));
+      return child;
+    } };
+    return require(name);
+  }, process: { argv: [] }, __dirname, URL, console, setTimeout, clearTimeout, clearInterval, AbortSignal,
+  fetch: async (url) => {
+    checked++;
+    assert.equal(url, `${candidate}/api/health`);
+    assert.ok(context.desktopAllowedOrigins().includes(candidate));
+    assert.equal(context.desktopControlState().origin, "http://127.0.0.1:3000");
+    return { ok: healthy, text: async () => JSON.stringify({ service: "live-conf-translation", openMeetings: 0 }) };
+  } });
+  vm.runInContext(readFileSync(path.join(__dirname, "main.cjs"), "utf8"), context);
+  vm.runInContext(`
+    desktopSettings = { telegram: { chats: [] } };
+    cloudflaredPath = () => 'fake-cloudflared'; cloudflaredConfigPath = () => 'unused';
+    selectedLanOrigin = () => 'http://127.0.0.1:3000';
+    writeDesktopSettings = () => {}; syncPublicOrigin = () => {}; installApplicationMenu = () => {};
+    startTunnelHealthMonitor = () => {}; notifyTelegramUrl = () => {}; delay = async () => {};
+  `, context);
+  await context.startQuickTunnel({ interactive: false });
+  assert.equal(checked, 1);
+  assert.equal(context.desktopControlState().origin, candidate);
+  vm.runInContext("tunnelStopReason = 'failed'", context);
+  child.kill();
+  assert.ok(!context.desktopAllowedOrigins().includes(candidate));
+  healthy = false;
+  const result = await context.runDesktopControl({ action: "start" });
+  assert.equal(result.error, "tunnelHealthFailed");
+  assert.equal(context.desktopControlState().origin, "http://127.0.0.1:3000");
+  assert.ok(!context.desktopAllowedOrigins().includes(candidate));
+  missingBinary = true;
+  assert.equal((await context.runDesktopControl({ action: "start" })).error, "tunnelBinaryMissing");
+  missingBinary = false; healthy = true;
+  assert.equal((await context.runDesktopControl({ action: "start" })).error, undefined);
+  assert.equal(context.desktopControlState().origin, candidate);
+});
+
 test("LAN 주소를 우선하고 없으면 loopback 으로 돌아간다", () => {
   assert.equal(
     pickLanAddress({

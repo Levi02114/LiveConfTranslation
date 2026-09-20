@@ -51,6 +51,8 @@ let desktopStopPending = false;
 let tunnelInteractive = false;
 let tunnelStopReason = null;
 let tunnelUrl = null;
+let pendingTunnelUrl = null;
+let tunnelStartError = null;
 let tunnelState = "off";
 let tunnelHealthTimer = null;
 let tunnelRestartTimer = null;
@@ -228,6 +230,10 @@ function telegramResult(error = null) {
   return error ? { ok: false, error } : { ok: true, state: telegramSetupState() };
 }
 
+function desktopAllowedOrigins() {
+  return [shareOrigin, tunnelUrl, pendingTunnelUrl].filter(Boolean);
+}
+
 function desktopControlState() {
   const telegram = telegramSetupState();
   return { origin: tunnelUrl || shareOrigin,
@@ -246,7 +252,7 @@ async function runDesktopControl(command) {
       selectShareOrigin(command.origin); break;
     case "start":
       await startQuickTunnel({ interactive: false });
-      if (!tunnelUrl) return { error: "genericError" };
+      if (!tunnelUrl) return { error: tunnelStartError || "tunnelExited" };
       break;
     case "stop":
       if (command.confirmed !== true) return { error: "genericError" };
@@ -521,6 +527,7 @@ function clearTunnelTimers() {
 }
 
 function stopQuickTunnel(reason = "manual") {
+  pendingTunnelUrl = null;
   if (reason === "manual") {
     telegramSettings().autoTunnel = false;
     writeDesktopSettings();
@@ -637,11 +644,15 @@ async function startQuickTunnel({ interactive = true, recovering = false } = {})
   updateTunnelMenu();
   let recentLog = "";
   let candidateUrl = null;
+  tunnelStartError = "tunnelExited";
   const strings = telegramStrings();
 
   try {
     const binary = cloudflaredPath();
-    if (app.isPackaged && !existsSync(binary)) throw new Error(strings.tunnelBinaryMissing);
+    if (app.isPackaged && !existsSync(binary)) {
+      tunnelStartError = "tunnelBinaryMissing";
+      throw new Error(strings.tunnelBinaryMissing);
+    }
 
     candidateUrl = await new Promise((resolve, reject) => {
       const child = spawn(
@@ -663,6 +674,7 @@ async function startQuickTunnel({ interactive = true, recovering = false } = {})
       const timeout = setTimeout(() => {
         if (settled) return;
         settled = true;
+        tunnelStartError = "tunnelUrlTimeout";
         child.kill();
         reject(new Error(strings.tunnelUrlTimeout));
       }, 30_000);
@@ -679,12 +691,17 @@ async function startQuickTunnel({ interactive = true, recovering = false } = {})
       child.stdout.on("data", read);
       child.stderr.on("data", read);
       child.on("error", (error) => {
+        if (error.code === "ENOENT") tunnelStartError = "tunnelBinaryMissing";
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
+        if (tunnelProcess === child) tunnelProcess = null;
+        pendingTunnelUrl = null;
         reject(error);
       });
       child.on("exit", (code) => {
+        if (tunnelProcess !== child) return;
+        pendingTunnelUrl = null;
         const endedTunnelUrl = tunnelUrl || candidateUrl;
         const activeTunnelUrl = tunnelUrl;
         const reason = tunnelStopReason;
@@ -715,8 +732,13 @@ async function startQuickTunnel({ interactive = true, recovering = false } = {})
       });
     });
 
-    if (!await waitForPublicServer(candidateUrl)) throw new Error(strings.tunnelHealthFailed);
+    // Permit only this candidate Host while probing; do not publish it before verification.
+    pendingTunnelUrl = candidateUrl;
+    tunnelStartError = "tunnelHealthFailed";
+    if (!await waitForPublicServer(candidateUrl) || !tunnelProcess || pendingTunnelUrl !== candidateUrl) throw new Error(strings.tunnelHealthFailed);
     tunnelUrl = candidateUrl;
+    pendingTunnelUrl = null;
+    tunnelStartError = null;
     unavailableTunnelUrl = null;
     shareOrigin = candidateUrl;
     tunnelState = "connected";
@@ -754,6 +776,7 @@ async function startQuickTunnel({ interactive = true, recovering = false } = {})
       dialog.showErrorBox(strings.tunnelStart, `${message}${recentLog ? `\n\n${recentLog}` : ""}`);
     } else scheduleTunnelRecovery();
   } finally {
+    pendingTunnelUrl = null;
     tunnelStarting = false;
     updateTunnelMenu();
     if (tunnelState === "recovering") scheduleTunnelRecovery();
@@ -851,7 +874,7 @@ async function start() {
   const appRoot = app.getAppPath();
   process.env.CLOUDFLARED_PATH = cloudflaredPath();
   globalThis.__liveConfTranslationAppRoot = appRoot;
-  globalThis.__liveConfAllowedOrigins = () => [shareOrigin, tunnelUrl].filter(Boolean);
+  globalThis.__liveConfAllowedOrigins = desktopAllowedOrigins;
   process.env.TRUSTED_PROXY_IPS = "127.0.0.1,::1";
   process.env.NODE_ENV = "production";
   process.env.HOSTNAME = "0.0.0.0";
