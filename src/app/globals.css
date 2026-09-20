@@ -102,3 +102,18 @@ body {
   font-size: var(--app-text);
   line-height: 1.5;
 }
+
+/* Admin-only settings; participant bundles and controls stay unchanged. */
+.admin-page { padding-top: calc(var(--admin-controls-height, 4rem) + 1rem); }
+.app-settings-launcher { font-size: 0.75rem; max-width: 100%; border: 1px solid var(--line); padding: 0.3rem 0.5rem; color: var(--fg); cursor: pointer; }
+.app-settings-panel { font-size: 0.875rem; line-height: 1.6; overflow-wrap: anywhere; }
+.app-settings-panel label:not(:has(input[type="checkbox"], input[type="radio"])) { display: grid; gap: 0.4rem; min-width: 0; }
+.app-settings-panel select,
+.app-settings-panel input:not([type="checkbox"], [type="radio"], [type="file"]) { width: 100%; min-width: 0; max-width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line); padding: 0.4rem; }
+.app-settings-panel button, .app-settings-panel a { cursor: pointer; border: 1px solid var(--line); padding: 0.35rem 0.6rem; }
+.app-settings-panel button:disabled { cursor: default; opacity: 0.5; }
+.app-settings-panel button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.app-settings-panel .settings-inline { border-bottom: 1px solid var(--line); }
+.app-settings-panel .settings-inline > div { padding: 1rem 0; }
+.app-settings-panel .settings-inline > div > div:first-child > button { display: none; }
+.app-settings-panel .settings-inline .flex { flex-wrap: wrap; }

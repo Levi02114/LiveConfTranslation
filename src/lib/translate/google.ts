@@ -10,6 +10,7 @@ import { engineKey } from "@/lib/secrets";
 import {
   type BatchTranslateInput,
   TranslationError,
+  translationHttpError,
   type TranslateInput,
   type TranslationEngine,
 } from "./types";
@@ -30,12 +31,13 @@ const googleResponseSchema = z.object({
  * Google 은 `format: "text"` 로 보내도 응답에 HTML 엔티티를 섞어 준다
  * (`'` → `&#39;`). 회의 로그에 `&#39;` 가 그대로 남으면 안 되므로 되돌린다.
  */
-function decodeHtmlEntities(text: string): string {
+export function decodeHtmlEntities(text: string): string {
   return text
-    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) =>
-      String.fromCodePoint(Number.parseInt(hex, 16)),
-    )
+    .replace(/&#(x[0-9a-f]+|\d+);/gi, (entity, code: string) => {
+      const point = /^x/i.test(code) ? Number.parseInt(code.slice(1), 16) : Number(code);
+      return Number.isInteger(point) && point >= 0 && point <= 0x10ffff && !(point >= 0xd800 && point <= 0xdfff)
+        ? String.fromCodePoint(point) : entity;
+    })
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&lt;/g, "<")
@@ -73,11 +75,8 @@ async function callGoogle(
   }
 
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new TranslationError(
-      `Google 번역이 ${response.status} 를 반환했습니다${detail ? `: ${detail.slice(0, 200)}` : ""}`,
-      "google",
-    );
+    void response.body?.cancel();
+    throw translationHttpError(response, "google");
   }
 
   const payload = await parseJsonResponse(response, googleResponseSchema);

@@ -4,7 +4,7 @@ import { resolveEntries, sourceEntries } from "@/lib/i18n";
 import type { LanguageCode } from "@/lib/languages";
 import { refreshLanguagePromptCue } from "@/lib/prompt-cue";
 import { getUiStrings, upsertUiStrings } from "@/lib/repo";
-import { translateBatch } from "@/lib/translate";
+import { isTransientTranslationError, translateBatch } from "@/lib/translate";
 import { STYLE_CUE_SOURCE } from "@/lib/translate/prompt";
 import type { EngineId } from "@/lib/translate/types";
 
@@ -114,12 +114,16 @@ export async function translateUiStrings(
       translated += rows.length;
       failed += chunk.length - rows.length;
     } catch (error) {
-      // 뭉치 하나가 실패해도 나머지는 계속 간다. 빠진 키는 한국어로 나온다.
+      // 일시적 실패는 다음 뭉치를 계속 시도하고, 결제·인증 등 영구 실패는 중단한다.
       failed += chunk.length;
       console.warn(
         `[ui-translate] ${lang} 문구 ${chunk.length}개를 번역하지 못했습니다:`,
         error instanceof Error ? error.message : error,
       );
+      if (!isTransientTranslationError(error)) {
+        failed += entries.length - index - chunk.length;
+        break;
+      }
     }
   }
 

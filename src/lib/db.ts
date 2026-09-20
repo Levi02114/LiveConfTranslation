@@ -14,6 +14,7 @@ import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 
 import { databasePath } from "@/lib/env";
+import { migrateSecurity, migrateAppManagementTitle } from "@/lib/repo";
 import { newId, newPageToken } from "@/lib/ids";
 import { BUILTIN_LANGUAGES } from "@/lib/languages";
 import { parseSqlRows } from "@/lib/sqlite-schema";
@@ -255,7 +256,8 @@ function open(): DatabaseSync {
   ensureColumn(db, "messages", "ingest_key", "TEXT");
   ensureColumn(db, "messages", "revision", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "messages", "edited_at", "INTEGER");
-  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_ingest_key ON messages (ingest_key)");
+  migrateSecurity(db);
+  migrateAppManagementTitle(db);
   seedLanguages(db);
   backfillRealtimeCapturePages(db);
 

@@ -1,6 +1,7 @@
 /* oxlint-disable anti-slop/no-runtime-typeof -- This file is the I/O boundary parser that establishes each public network contract. */
 
-import type { Peer, ServerMessage } from "@/lib/realtime/protocol";
+import type { Peer, ServerMessage, SessionConnections } from "@/lib/realtime/protocol";
+import type { VoiceSettings } from "./voice-settings";
 
 type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 type JsonObject = { [key: string]: JsonValue };
@@ -18,6 +19,7 @@ export type TranscriptionEventPayload = {
   transcript?: string;
 };
 export type VoiceEventPayload =
+  | { t: "voice-settings"; settings: VoiceSettings }
   | { t: "ready"; leaseId: string }
   | { t: "partial"; text: string }
   | {
@@ -119,6 +121,24 @@ export function parseTranscriptionEvent(text: string): TranscriptionEventPayload
 export function parseVoiceEvent(text: string): VoiceEventPayload | null {
   const row = objectFromJson(text);
   if (!row) return null;
+  if (row.t === "voice-settings") {
+    const settings = row.settings;
+    if (!settings || typeof settings !== "object" || Array.isArray(settings) ||
+      (settings.mode !== "auto" && settings.mode !== "manual") || typeof settings.silenceMs !== "number" ||
+      !Number.isInteger(settings.silenceMs) || settings.silenceMs < 300 || settings.silenceMs > 5000 || settings.silenceMs % 100 !== 0) return null;
+    const parsed: VoiceSettings = { mode: settings.mode, silenceMs: settings.silenceMs };
+    if (settings.languages !== undefined) {
+      if (!settings.languages || typeof settings.languages !== "object" || Array.isArray(settings.languages)) return null;
+      parsed.languages = {};
+      for (const [lang, value] of Object.entries(settings.languages)) {
+        if (!/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/i.test(lang) || !value || typeof value !== "object" || Array.isArray(value) ||
+          (value.mode !== "auto" && value.mode !== "manual") || typeof value.silenceMs !== "number" ||
+          !Number.isInteger(value.silenceMs) || value.silenceMs < 300 || value.silenceMs > 5000 || value.silenceMs % 100 !== 0) return null;
+        parsed.languages[lang] = { mode: value.mode, silenceMs: value.silenceMs };
+      }
+    }
+    return { t: "voice-settings", settings: parsed };
+  }
   if (row.t === "ready" && typeof row.leaseId === "string") {
     return { t: row.t, leaseId: row.leaseId };
   }
@@ -179,6 +199,32 @@ export function parseMessageResponse(text: string): MessageResponsePayload | nul
 export function parseServerMessage(text: string): ServerMessage | null {
   const row = objectFromJson(text);
   if (!row) return null;
+  if (row.t === "app-settings-changed") return { t: "app-settings-changed" };
+  if (row.t === "connection-stats") {
+    if (typeof row.snapshot !== "boolean" || !numberValue(row.at) || !Array.isArray(row.sessions) || !Array.isArray(row.removed)) return null;
+    const count = (value: JsonValue | undefined): value is number => numberValue(value) && Number.isSafeInteger(value) && value >= 0;
+    const sessions: SessionConnections[] = [];
+    for (const item of row.sessions) {
+      if (!isObject(item) || typeof item.meetingId !== "string" || (item.status !== "open" && item.status !== "closed") ||
+        !count(item.total) || !count(item.combinedInput) || !count(item.combined) || !count(item.capture) || !Array.isArray(item.languages)) return null;
+      const languages: SessionConnections["languages"] = [];
+      for (const language of item.languages) {
+        if (!isObject(language) || typeof language.lang !== "string" || !count(language.input) || !count(language.output)) return null;
+        languages.push({ lang: language.lang, input: language.input, output: language.output });
+      }
+      sessions.push({ meetingId: item.meetingId, status: item.status, total: item.total, combinedInput: item.combinedInput, combined: item.combined, capture: item.capture, languages });
+    }
+    const removed = row.removed.filter((value): value is string => typeof value === "string");
+    return removed.length === row.removed.length ? { t: row.t, snapshot: row.snapshot, at: row.at, sessions, removed } : null;
+  }
+  if (row.t === "security-changed") return { t: row.t };
+  if (row.t === "translation-jobs" && isObject(row.counts) && numberValue(row.counts.pending) && numberValue(row.counts.running) && numberValue(row.counts.failed)) {
+    const providers: Record<string, { active: number; blockedUntil: number }> = {};
+    if (isObject(row.providers)) for (const [name, value] of Object.entries(row.providers)) {
+      if (isObject(value) && numberValue(value.active) && numberValue(value.blockedUntil)) providers[name] = { active: value.active, blockedUntil: value.blockedUntil };
+    }
+    return { t: row.t, counts: { pending: row.counts.pending, running: row.counts.running, failed: row.counts.failed }, providers };
+  }
   if (row.t === "hello" && typeof row.clientId === "string" && typeof row.name === "string") {
     return { t: row.t, clientId: row.clientId, name: row.name };
   }

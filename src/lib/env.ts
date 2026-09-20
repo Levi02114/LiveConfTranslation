@@ -25,6 +25,36 @@ function required(name: string): string {
   return value;
 }
 
+export function serverEnvironment() {
+  return { dev: process.env.NODE_ENV !== "production", port: Number(process.env.PORT ?? 3000), hostname: process.env.HOSTNAME ?? "0.0.0.0" };
+}
+
+/** Standalone-server operations. An externally managed tunnel is never killed by this app. */
+export function serverControlEnvironment() {
+  const value = process.env.SERVER_PUBLIC_ORIGIN?.trim();
+  const url = value ? new URL(value) : null;
+  if (url && (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash)) throw new Error("SERVER_PUBLIC_ORIGIN must be an HTTPS origin");
+  return { publicOrigin: url?.origin ?? null, cloudflared: process.env.CLOUDFLARED_PATH || "cloudflared" };
+}
+
+declare global { var __liveConfAllowedOrigins: (() => string[]) | undefined; }
+export function configuredOrigins(): string[] {
+  return [...(process.env.ALLOWED_ORIGINS ?? "").split(","), ...(globalThis.__liveConfAllowedOrigins?.() ?? [])].map((s) => s.trim()).filter(Boolean);
+}
+declare global { var __liveConfLocalTunnelProxy: boolean | undefined; }
+export function trustedProxyIps(): string[] {
+  return [...(process.env.TRUSTED_PROXY_IPS ?? "").split(","), ...(globalThis.__liveConfLocalTunnelProxy ? ["127.0.0.1", "::1"] : [])].map((s) => s.trim()).filter(Boolean);
+}
+
+declare global { var __liveConfServerStarted: boolean | undefined; }
+export async function registerTranslationWorker(): Promise<void> {
+  // Next must see this literal runtime condition to exclude Node imports from Edge.
+  if (process.env.NEXT_RUNTIME === "nodejs" && globalThis.__liveConfServerStarted) {
+    const { startTranslationWorker } = await import("@/lib/translation-worker");
+    startTranslationWorker();
+  }
+}
+
 /** 관리자 로그인 비밀번호 */
 export function adminPassword(): string {
   return required("ADMIN_PASSWORD");

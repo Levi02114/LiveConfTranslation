@@ -29,7 +29,7 @@ function safeEquals(a: string, b: string): boolean {
   return timingSafeEqual(bufferA, bufferB);
 }
 
-export function verifyPassword(candidate: string): boolean {
+export function verifyPassword(candidate: string): Promise<boolean> {
   return verifyAdminPassword(candidate);
 }
 
@@ -64,7 +64,11 @@ export function isAdminFromCookieHeader(header: string | undefined): boolean {
     const separator = part.indexOf("=");
     if (separator < 0) continue;
     if (part.slice(0, separator).trim() !== SESSION_COOKIE) continue;
-    return verifySessionValue(decodeURIComponent(part.slice(separator + 1).trim()));
+    try {
+      return verifySessionValue(decodeURIComponent(part.slice(separator + 1).trim()));
+    } catch {
+      return false;
+    }
   }
 
   return false;

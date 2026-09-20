@@ -12,7 +12,7 @@
 import type { LanguageCode } from "@/lib/languages";
 import type { MeetingLanguageConfig } from "@/lib/repo";
 
-import type { Peer, ServerMessage } from "./protocol";
+import type { ConnectionCounts, Peer, ServerMessage } from "./protocol";
 
 /** 연결 한 개. WebSocket 구현에 묶이지 않도록 `send` 만 요구한다. */
 export type Connection = {
@@ -32,8 +32,64 @@ export type Connection = {
 
 type HubState = { rooms: Map<string, Set<Connection>> };
 
+type StatsSubscriber = { changed: (ids: string[]) => void; close: () => void };
+type StatsState = { subscribers: Set<StatsSubscriber>; changed: Set<string>; timer?: ReturnType<typeof setTimeout> };
+
 declare global {
   var __meetingHub: HubState | undefined;
+  var __connectionStats: StatsState | undefined;
+}
+
+function statsState(): StatsState {
+  return (globalThis.__connectionStats ??= { subscribers: new Set(), changed: new Set() });
+}
+
+/** Batch connection bursts before notifying observers; viewers receive no statistics. */
+export function notifyConnectionsChanged(meetingId: string): void {
+  const stats = statsState();
+  if (!stats.subscribers.size) return;
+  stats.changed.add(meetingId);
+  if (stats.timer) return;
+  stats.timer = setTimeout(() => {
+    stats.timer = undefined;
+    const ids = [...stats.changed];
+    stats.changed.clear();
+    for (const subscriber of stats.subscribers) {
+      try { subscriber.changed(ids); } catch { subscriber.close(); }
+    }
+  }, 500);
+  stats.timer.unref?.();
+}
+
+export function subscribeConnections(subscriber: StatsSubscriber): () => void {
+  const stats = statsState();
+  stats.subscribers.add(subscriber);
+  return () => {
+    stats.subscribers.delete(subscriber);
+    if (!stats.subscribers.size) {
+      clearTimeout(stats.timer);
+      stats.timer = undefined;
+      stats.changed.clear();
+    }
+  };
+}
+
+export function connectionCounts(meetingId: string, langs: readonly string[] = []): ConnectionCounts {
+  const languages = new Map(langs.map((lang) => [lang, { lang, input: 0, output: 0 }]));
+  const counts: ConnectionCounts = { total: 0, languages: [], combinedInput: 0, combined: 0, capture: 0 };
+  for (const connection of state().rooms.get(meetingId) ?? []) {
+    if (connection.kind === "dashboard") continue;
+    counts.total++;
+    if (connection.kind === "input" || connection.kind === "output") {
+      if (!connection.lang) continue;
+      const row = languages.get(connection.lang) ?? { lang: connection.lang, input: 0, output: 0 };
+      row[connection.kind]++;
+      languages.set(connection.lang, row);
+    } else if (connection.kind === "combined-input") counts.combinedInput++;
+    else counts[connection.kind]++;
+  }
+  counts.languages = [...languages.values()];
+  return counts;
 }
 
 function state(): HubState {
@@ -56,6 +112,8 @@ function room(meetingId: string): Set<Connection> {
  * 배포 규칙을 한 곳에 모아 둔다. 페이지 종류가 늘어도 여기만 보면 된다.
  */
 function shouldDeliver(connection: Connection, message: ServerMessage): boolean {
+  if (message.t === "connection-stats" || message.t === "app-settings-changed") return false;
+  if (message.t === "translation-jobs" || message.t === "security-changed") return connection.kind === "dashboard";
   // 관리자 명령은 대상 연결에 직접 보내며 회의 전체로 배포하지 않는다.
   if (message.t === "voice-stop") return false;
   if (message.t === "meeting-closed" || message.t === "hello") return true;
@@ -90,15 +148,19 @@ function shouldDeliver(connection: Connection, message: ServerMessage): boolean 
 }
 
 export function join(connection: Connection): void {
-  room(connection.meetingId).add(connection);
+  const connections = room(connection.meetingId);
+  if (connections.has(connection)) return;
+  connections.add(connection);
+  if (connection.kind !== "dashboard") notifyConnectionsChanged(connection.meetingId);
 }
 
 export function leave(connection: Connection): void {
   const connections = state().rooms.get(connection.meetingId);
   if (!connections) return;
 
-  connections.delete(connection);
+  if (!connections.delete(connection)) return;
   if (connections.size === 0) state().rooms.delete(connection.meetingId);
+  if (connection.kind !== "dashboard") notifyConnectionsChanged(connection.meetingId);
 }
 
 /** 같은 세션의 다른 입력자가 쓰지 않는 닉네임이면 이 연결에 예약한다. */
@@ -236,6 +298,7 @@ export function disconnectDisabledPages(
 
 /** 비밀번호 변경 전 관리자 대시보드 연결을 모두 끊어 이전 세션의 재사용을 막는다. */
 export function disconnectAdminConnections(): void {
+  for (const subscriber of statsState().subscribers) subscriber.close();
   for (const connections of state().rooms.values()) {
     for (const connection of connections) {
       if (connection.kind === "dashboard") connection.close?.();

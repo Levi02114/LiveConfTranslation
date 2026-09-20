@@ -67,6 +67,7 @@ export async function transcribeGooglePcm(input: {
   pcm: Buffer;
   lang: LanguageCode;
   keywords?: readonly string[];
+  signal?: AbortSignal;
 }): Promise<{ body: string; lang: LanguageCode }> {
   const credentials = googleSpeechCredentials();
   if (!credentials) throw new Error("Google Speech 서비스 계정이 등록되지 않았습니다");
@@ -76,7 +77,8 @@ export async function transcribeGooglePcm(input: {
     .filter(Boolean)
     .slice(0, 100)
     .map((value) => ({ value }));
-  const [response] = await clientFor(credentials).recognize({
+  input.signal?.throwIfAborted();
+  const call = clientFor(credentials).recognize({
     recognizer: `projects/${credentials.project_id}/locations/${LOCATION}/recognizers/_`,
     config: {
       explicitDecodingConfig: {
@@ -92,7 +94,17 @@ export async function transcribeGooglePcm(input: {
         : undefined,
     },
     content: input.pcm,
-  });
+  }, { timeout: 30_000, retry: null });
+  // SAFETY: SpeechClient returns the google-gax cancellable promise at runtime; its public declaration omits cancel.
+  const cancel = () => (call as typeof call & { cancel?: () => void }).cancel?.();
+  input.signal?.addEventListener("abort", cancel, { once: true });
+  let response;
+  try {
+    [response] = await call;
+    input.signal?.throwIfAborted();
+  } finally {
+    input.signal?.removeEventListener("abort", cancel);
+  }
 
   return {
     body: (response.results ?? [])

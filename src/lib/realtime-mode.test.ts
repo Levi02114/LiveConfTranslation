@@ -72,7 +72,8 @@ test("세션은 언어별 입력 페이지를 만들고 음성 전사를 멱등 
       meetingId: meeting.id,
       pageId: input?.id ?? null,
       lang: "ko",
-      body: "중복",
+      body: "안녕하세요",
+      speakerName: "김속기",
       ingestKey: "capture-event-1",
     });
 

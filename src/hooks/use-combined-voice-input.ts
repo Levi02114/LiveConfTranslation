@@ -7,7 +7,8 @@ import { newBrowserId } from "@/lib/browser-id";
 import { parseVoiceEvent, type VoiceEventPayload } from "@/lib/client-json";
 import type { UiStrings } from "@/lib/i18n-builtin";
 import type { LanguageCode } from "@/lib/languages";
-import { NeuralTurnDetector, redemptionMsFor } from "@/lib/neural-turn-detector";
+import { NeuralTurnDetector } from "@/lib/neural-turn-detector";
+import { DEFAULT_VOICE_SETTINGS, silenceMsFor, voiceSettingsSchema, type VoiceSettings } from "@/lib/voice-settings";
 import {
   METER_INTERVAL_MS,
   VoiceMeterTracker,
@@ -17,6 +18,8 @@ import {
 type VoiceState = "idle" | "starting" | "active";
 
 type ServerVoiceInputOptions = {
+  test?: { dry: boolean; provider: "openai" | "google" | "local"; settings: VoiceSettings;
+    onSegment: (result: { body: string; elapsedMs: number; silenceMs: number }) => void | Promise<void> };
   token: string;
   participantId?: string;
   strings: UiStrings["capture"];
@@ -46,7 +49,16 @@ export function useServerVoiceInput({
   autoSubmit = true,
   rewrite = false,
   onTranscript,
+  test,
 }: ServerVoiceInputOptions) {
+  const testRef = useRef(test);
+  const settingsRef = useRef<VoiceSettings>(DEFAULT_VOICE_SETTINGS);
+  const generation = useRef(0);
+  const commits = useRef<Array<{ at: number; silenceMs: number }>>([]);
+  const [phase, setPhase] = useState<"idle" | "speech" | "silence" | "committed">("idle");
+  useEffect(() => {
+    testRef.current = test ? { ...test, settings: voiceSettingsSchema.safeParse(test.settings).success ? test.settings : testRef.current?.settings ?? DEFAULT_VOICE_SETTINGS } : undefined;
+  }, [test]);
   const [state, setState] = useState<VoiceState>("idle");
   const [partial, setPartial] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +104,9 @@ export function useServerVoiceInput({
   }, []);
 
   const disconnect = useCallback(() => {
+    generation.current++;
+    commits.current = [];
+    setPhase("idle");
     if (heartbeat.current) clearInterval(heartbeat.current);
     if (stopTimer.current) clearTimeout(stopTimer.current);
     heartbeat.current = null;
@@ -100,7 +115,15 @@ export function useServerVoiceInput({
     speechSinceCommit.current = false;
     pendingTranscripts.current = 0;
     expectedClose.current = true;
-    socket.current?.close();
+    const previousSocket = socket.current;
+    if (previousSocket) {
+      // A delayed close from a stopped run must not disconnect the next run.
+      previousSocket.onclose = null;
+      previousSocket.onopen = null;
+      previousSocket.onerror = null;
+      previousSocket.onmessage = null;
+      previousSocket.close();
+    }
     socket.current = null;
     stream.current?.getTracks().forEach((track) => track.stop());
     stream.current = null;
@@ -143,7 +166,13 @@ export function useServerVoiceInput({
   }, [enabled, refreshDevices, requestPermissionOnMount]);
 
   const submitTranscript = useCallback(
-    async (event: Extract<VoiceEventPayload, { t: "transcript" }>) => {
+    async (event: Extract<VoiceEventPayload, { t: "transcript" }>, receivedAt = performance.now()) => {
+      if (testRef.current) {
+        const commit = commits.current.shift();
+        await testRef.current.onSegment({ body: event.body, elapsedMs: commit ? receivedAt - commit.at : 0,
+          silenceMs: commit?.silenceMs ?? 0 });
+        return;
+      }
       if (!event.body.trim()) return;
       if (!autoSubmit) {
         onTranscript?.(event.body);
@@ -167,7 +196,8 @@ export function useServerVoiceInput({
     [autoSubmit, onFallback, onTranscript, rewrite, speakerName, strings.lost, token],
   );
 
-  const stop = useCallback(() => {
+  const stop = useCallback((flush = true) => {
+    if (!flush) { disconnect(); return; }
     if (state !== "active" || stopping.current) return;
     stopping.current = true;
     stream.current?.getTracks().forEach((track) => track.stop());
@@ -197,6 +227,7 @@ export function useServerVoiceInput({
       return;
     }
     setState("starting");
+    const run = ++generation.current;
     setError(null);
     expectedClose.current = false;
 
@@ -209,6 +240,7 @@ export function useServerVoiceInput({
       };
       if (deviceId) audio.deviceId = { exact: deviceId };
       const media = await navigator.mediaDevices.getUserMedia({ audio });
+      if (generation.current !== run) { media.getTracks().forEach((track) => track.stop()); return; }
       stream.current = media;
       void refreshDevices();
 
@@ -222,7 +254,9 @@ export function useServerVoiceInput({
       }
       context.current = audioContext;
       await audioContext.audioWorklet.addModule("/pcm-capture-worklet.js");
+      if (generation.current !== run) return;
       if (audioContext.state !== "running") await audioContext.resume();
+      if (generation.current !== run) return;
       const source = audioContext.createMediaStreamSource(media);
       const processor = new AudioWorkletNode(audioContext, "pcm-capture");
       const silent = audioContext.createGain();
@@ -230,25 +264,39 @@ export function useServerVoiceInput({
       source.connect(processor).connect(silent).connect(audioContext.destination);
 
       const scheme = window.location.protocol === "https:" ? "wss" : "ws";
-      const ws = new WebSocket(
-        `${scheme}://${window.location.host}/ws/transcribe?token=${encodeURIComponent(token)}&clientId=${encodeURIComponent(clientId.current)}`,
-      );
+      const dry = testRef.current?.dry === true;
+      const query = testRef.current
+        ? `test=1&source=${encodeURIComponent(langs[0])}&provider=${testRef.current.provider}`
+        : `token=${encodeURIComponent(token)}`;
+      const ws = dry ? null : new WebSocket(`${scheme}://${window.location.host}/ws/transcribe?${query}&clientId=${encodeURIComponent(clientId.current)}`);
       socket.current = ws;
-      ws.binaryType = "arraybuffer";
-      const detector = new AudioTurnDetector();
-      let ready = false;
+      if (ws) ws.binaryType = "arraybuffer";
+      let turnSilenceMs = silenceMsFor(testRef.current?.settings ?? settingsRef.current, langs);
+      const nextSilenceMs = () => (turnSilenceMs = silenceMsFor(testRef.current?.settings ?? settingsRef.current, langs));
+      const detector = new AudioTurnDetector(nextSilenceMs);
+      let ready = dry;
+      if (dry) setState("active");
+      let lastTurnAt = performance.now();
 
       const commitTurn = () => {
-        if (ws.readyState !== WebSocket.OPEN) return;
-        ws.send(JSON.stringify({ t: "commit" }));
-        pendingTranscripts.current += 1;
+        if (!ready || stopping.current || generation.current !== run) return;
+        if (dry) void testRef.current?.onSegment({ body: "", elapsedMs: 0, silenceMs: turnSilenceMs });
+        else {
+          if (ws?.readyState !== WebSocket.OPEN) return;
+          if (testRef.current) commits.current.push({ at: performance.now(), silenceMs: turnSilenceMs });
+          ws.send(JSON.stringify({ t: "commit" }));
+          pendingTranscripts.current += 1;
+        }
+        setPhase("committed");
         speechSinceCommit.current = false;
+        lastTurnAt = performance.now();
       };
 
       // 신경망 VAD 를 백그라운드에서 단다. 로드되는 동안은 worklet RMS 경로가
       // 커밋을 맡고, 로드가 끝나면 신경망이 이어받는다.
       void NeuralTurnDetector.create(media, commitTurn, {
-        redemptionMs: redemptionMsFor(langs),
+        redemptionMs: turnSilenceMs,
+        nextSilenceMs,
         audioContext,
       }).then((vad) => {
         // 로드가 끝나기 전에 세션이 닫혔으면 붙이지 않고 바로 버린다.
@@ -261,19 +309,29 @@ export function useServerVoiceInput({
         message: MessageEvent<{ pcm: ArrayBuffer; rms: number; peak: number }>,
       ) => {
         const { pcm, rms, peak } = message.data;
-        if (!ready || ws.readyState !== WebSocket.OPEN) {
+        if (!ready || (!dry && ws?.readyState !== WebSocket.OPEN)) {
           detector.calibrate(rms);
           return;
         }
-        ws.send(pcm);
+        if (performance.now() - lastTurnAt > 20000 && !(neuralVad.current?.hasSpeech() ?? detector.hasSpeech())) {
+          ws?.send(JSON.stringify({ t: "clear" }));
+          lastTurnAt = performance.now();
+          speechSinceCommit.current = false;
+        }
+        ws?.send(pcm);
         updateMeter(meterTracker, rms, peak);
         if (rms > 0.0025) speechSinceCommit.current = true;
+        if (testRef.current) {
+          const next = neuralVad.current?.phase() ?? detector.phase();
+          setPhase((current) => next === "idle" && current === "committed" ? current : next);
+        }
         if (neuralVad.current) return; // 커밋은 신경망 VAD 가 결정한다
         if (detector.update(rms, performance.now()) && speechSinceCommit.current) {
           commitTurn();
         }
       };
 
+      if (!ws) return;
       ws.onopen = () => ws.send(JSON.stringify({
         t: "start",
         speakerName: speakerName || undefined,
@@ -283,7 +341,9 @@ export function useServerVoiceInput({
       ws.onmessage = (message) => {
         const event = parseVoiceEvent(String(message.data));
         if (!event) return;
-        if (event.t === "ready") {
+        if (event.t === "voice-settings") {
+          settingsRef.current = event.settings;
+        } else if (event.t === "ready") {
           ready = true;
           setState("active");
           heartbeat.current = setInterval(() => {
@@ -292,10 +352,12 @@ export function useServerVoiceInput({
         } else if (event.t === "partial") {
           setPartial(event.text);
         } else if (event.t === "transcript") {
+          const receivedAt = performance.now();
           pendingTranscripts.current = Math.max(0, pendingTranscripts.current - 1);
           submission.current = submission.current
-            .then(() => submitTranscript(event))
+            .then(() => generation.current === run ? submitTranscript(event, receivedAt) : undefined)
             .catch(() => {
+              if (generation.current !== run) return;
               setError(strings.lost);
               disconnect();
             });
@@ -303,6 +365,7 @@ export function useServerVoiceInput({
           void queued.then(() => {
             if (
               submission.current === queued &&
+              generation.current === run &&
               stopping.current &&
               pendingTranscripts.current === 0
             ) disconnect();
@@ -338,5 +401,5 @@ export function useServerVoiceInput({
     }
   }, [autoSubmit, closed, deviceId, disconnect, enabled, lang, langs, refreshDevices, speakerName, state, strings, submitTranscript, token, updateMeter]);
 
-  return { state, partial, error, devices, deviceId, setDeviceId, start, stop, meter };
+  return { state, partial, error, devices, deviceId, setDeviceId, start, stop, meter, phase };
 }

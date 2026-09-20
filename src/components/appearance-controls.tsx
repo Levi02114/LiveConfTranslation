@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef, type ReactNode } from "react";
+
 import { useAppearance } from "@/hooks/use-appearance";
 import { FONT_SIZE_LABELS } from "@/lib/appearance";
 import type { UiStrings } from "@/lib/i18n-builtin";
@@ -24,6 +26,7 @@ export function AppearanceControls({
   textSize = true,
   language,
   qr,
+  leading,
 }: {
   strings: UiStrings["appearance"];
   textSize?: boolean;
@@ -44,14 +47,34 @@ export function AppearanceControls({
   };
   /** 관리자 주소를 휴대전화로 열기 위한 QR 진입점. */
   qr?: { label: string; onClick: () => void };
+  leading?: ReactNode;
 }) {
+  const toolbar = useRef<HTMLDivElement>(null);
+  const hasLeading = Boolean(leading);
+  useEffect(() => {
+    if (!hasLeading || !toolbar.current) return;
+    const element = toolbar.current;
+    const measure = () => document.documentElement.style.setProperty("--admin-controls-height", `${element.getBoundingClientRect().height}px`);
+    measure();
+    const Observer = globalThis.ResizeObserver;
+    if (!Observer) {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    const observer = new Observer(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [hasLeading]);
   const { effectiveTheme, fontSize, toggleTheme, stepFontSize } = useAppearance();
 
   const button =
     "inline-flex h-[1.3rem] cursor-pointer items-center justify-center border border-line px-[8px] leading-none transition-colors hover:bg-fg hover:text-bg";
 
   return (
-    <div data-guide="appearance" className="fixed top-2.5 right-3 left-3 z-50 flex items-center justify-end gap-[6px] bg-bg font-mono text-[11px] text-muted sm:left-auto sm:right-3.5 sm:gap-3">
+    <div ref={toolbar} data-guide="appearance" className={leading
+      ? "fixed top-0 right-0 left-0 z-50 flex flex-wrap items-center justify-end gap-2 border-b border-line bg-bg px-3 py-2 font-mono text-[11px] text-muted"
+      : "fixed top-2.5 right-3 left-3 z-50 flex items-center justify-end gap-[6px] bg-bg font-mono text-[11px] text-muted sm:left-auto sm:right-3.5 sm:gap-3"}>
+      {leading ? <div className="mr-auto max-w-full">{leading}</div> : null}
       {qr ? (
         <button
           data-guide="admin-qr"
@@ -71,7 +94,7 @@ export function AppearanceControls({
           onChange={(event) => language.onChange(event.target.value)}
           title={language.label}
           aria-label={language.label}
-          className="h-[1.3rem] min-w-0 flex-1 cursor-pointer border border-line bg-bg px-[6px] font-mono text-[11px] text-muted outline-none hover:text-fg sm:flex-none"
+          className={`h-[1.3rem] cursor-pointer border border-line bg-bg px-[6px] font-mono text-[11px] text-muted outline-none hover:text-fg ${leading ? "w-[10em] min-w-[10em] shrink-0" : "min-w-0 flex-1 sm:flex-none"}`}
         >
           {language.options.map((item) => (
             // 어느 언어로 보고 있든 읽을 수 있도록 그 언어 표기로 낸다.

@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 import { publishMessage, translateMessage } from "@/lib/pipeline";
-import { editMessage, getMeeting, getPageByToken, isPageEnabled } from "@/lib/repo";
+import { editMessage, getMeeting, getPageByToken, isPageEnabled, inputErrorResponse } from "@/lib/repo";
+import { cancelActiveTranslations } from "@/lib/translation-worker";
 
 type Params = { params: Promise<{ token: string; messageId: string }> };
 
@@ -11,6 +12,7 @@ const schema = z.object({
 });
 
 export async function PATCH(request: Request, { params }: Params) {
+  try {
   const { token, messageId: rawMessageId } = await params;
   const messageId = Number(rawMessageId);
   const page = getPageByToken(token);
@@ -46,6 +48,7 @@ export async function PATCH(request: Request, { params }: Params) {
   if (!meeting) return Response.json({ error: "not-found" }, { status: 404 });
 
   publishMessage(meeting.id, result.message);
+  cancelActiveTranslations(meeting.id, messageId);
   void translateMessage({
     meeting,
     messageId: result.message.id,
@@ -58,4 +61,9 @@ export async function PATCH(request: Request, { params }: Params) {
   }).catch((error) => console.error("[translate] 수정 원문 번역 오류", error));
 
   return Response.json({ message: result.message });
+  } catch (error) {
+    const response = inputErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
 }

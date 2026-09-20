@@ -10,6 +10,15 @@ export class AudioTurnDetector {
   private heardSpeech = false;
   private silentSince: number | null = null;
   private turnStartedAt: number | null = null;
+  private silenceMs = SILENCE_MS;
+
+  constructor(private readonly nextSilenceMs: () => number = () => SILENCE_MS) {}
+
+  phase(): "idle" | "speech" | "silence" {
+    return !this.heardSpeech ? "idle" : this.silentSince === null ? "speech" : "silence";
+  }
+
+  hasSpeech(): boolean { return this.heardSpeech; }
 
   calibrate(rms: number): void {
     const level = Number.isFinite(rms) && rms > 0 ? rms : 0;
@@ -31,7 +40,10 @@ export class AudioTurnDetector {
       );
 
     if (speaking) {
-      if (!this.heardSpeech) this.turnStartedAt = now;
+      if (!this.heardSpeech) {
+        this.turnStartedAt = now;
+        this.silenceMs = this.nextSilenceMs();
+      }
       this.heardSpeech = true;
       this.silentSince = null;
     } else if (this.heardSpeech) {
@@ -40,7 +52,7 @@ export class AudioTurnDetector {
 
     if (
       this.heardSpeech &&
-      ((this.silentSince !== null && now - this.silentSince >= SILENCE_MS) ||
+      ((this.silentSince !== null && now - this.silentSince >= this.silenceMs) ||
         (this.turnStartedAt !== null && now - this.turnStartedAt >= MAX_TURN_MS))
     ) {
       this.heardSpeech = false;

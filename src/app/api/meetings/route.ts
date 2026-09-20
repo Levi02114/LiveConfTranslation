@@ -2,11 +2,13 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { requireAdmin } from "@/lib/auth";
+import { notifyConnectionsChanged } from "@/lib/realtime/hub";
 import {
   createMeeting,
   hasLanguage,
   listMeetings,
   touchEngineSetting,
+  inputErrorResponse,
 } from "@/lib/repo";
 import { sessionConfigSchema } from "@/lib/session-config";
 import { localTranscriptionConfigured } from "@/lib/local-runtime";
@@ -36,6 +38,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  try {
   const denied = await requireAdmin();
   if (denied) return denied;
 
@@ -97,6 +100,12 @@ export async function POST(request: Request) {
     transcriptionProvider,
   });
   touchEngineSetting(requested);
+  notifyConnectionsChanged(meeting.id);
   revalidatePath("/admin");
   return Response.json({ meeting }, { status: 201 });
+  } catch (error) {
+    const response = inputErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
 }

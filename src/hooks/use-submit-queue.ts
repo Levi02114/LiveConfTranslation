@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from "react";
 
 type Task = () => Promise<void>;
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-type MessagePayload = {
+export type MessagePayload = {
   body: string;
   ingestKey: string;
   lang?: string;
@@ -13,6 +13,13 @@ type MessagePayload = {
 
 const RETRY_DELAYS_MS = [0, 750, 2_000] as const;
 const REQUEST_TIMEOUT_MS = 20_000;
+
+export function retryAfterMilliseconds(response: Response): number {
+  const raw = response.headers.get("retry-after");
+  if (!raw) return 0;
+  const value = /^\d+(\.\d+)?$/.test(raw.trim()) ? Number(raw) * 1000 : Date.parse(raw) - Date.now();
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
 
 export function queueAfter(previous: Promise<void>, task: Task): Promise<void> {
   return previous.then(task, task);
@@ -31,10 +38,12 @@ export async function postPageMessage(
   const fetcher = options.fetcher ?? fetch;
   const delays = options.delays ?? RETRY_DELAYS_MS;
   let lastError: unknown;
+  let retryAfter = 0;
 
   for (let attempt = 0; attempt < delays.length; attempt += 1) {
-    if (delays[attempt]) {
-      await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+    const delay = Math.max(delays[attempt], retryAfter);
+    if (delay) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? REQUEST_TIMEOUT_MS);
@@ -52,6 +61,10 @@ export async function postPageMessage(
       ) {
         return response;
       }
+      retryAfter = retryAfterMilliseconds(response);
+      // Leave long cooldowns to the recoverable outbox instead of hiding them in a pending request.
+      if (retryAfter > 30000) return response;
+      void response.body?.cancel();
     } catch (cause) {
       lastError = cause;
       if (attempt === delays.length - 1) throw cause;

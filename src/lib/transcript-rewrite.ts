@@ -19,6 +19,7 @@ export async function rewriteTranscript(input: {
   lang: LanguageCode;
   body: string;
   speakerName?: string | null;
+  signal?: AbortSignal;
 }): Promise<string> {
   const key = engineKey("openai");
   if (!key) return input.body;
@@ -65,7 +66,7 @@ export async function rewriteTranscript(input: {
           },
         ],
       }),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.any([AbortSignal.timeout(10_000), ...(input.signal ? [input.signal] : [])]),
     });
     if (!response.ok) throw new Error(`OpenAI ${response.status}`);
     const payload = await parseJsonResponse(response, responseSchema);
@@ -73,7 +74,7 @@ export async function rewriteTranscript(input: {
     const rewritten = content ? rewrittenSchema.safeParse(JSON.parse(content)) : null;
     return rewritten?.success ? rewritten.data.text : input.body;
   } catch (error) {
-    console.warn("[transcript-rewrite] 재작성 실패로 원문을 사용합니다", error);
+    console.warn("[transcript-rewrite] 재작성 실패로 원문을 사용합니다", error instanceof Error ? error.name : "Error");
     return input.body;
   }
 }

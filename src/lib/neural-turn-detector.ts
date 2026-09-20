@@ -10,10 +10,11 @@
  * **커밋 타이밍만** 결정한다.
  */
 
+import { DEFAULT_VOICE_SETTINGS, silenceMsFor } from "./voice-settings";
+
 // ponytail: 현장 마이크 편차가 크므로 오탐이 보이면 이 값들만 조정한다.
 export const MAX_TURN_MS = 15_000;
 const REDEMPTION_MS = 1_100; // 무음이 이 길이를 넘으면 턴 종료
-const REDEMPTION_DELIBERATE_MS = 1_700; // 천천히 말하는 언어의 턴 종료 무음
 const MIN_SPEECH_MS = 200;
 
 /**
@@ -21,16 +22,13 @@ const MIN_SPEECH_MS = 200;
  * 에서 발화가 중간에 잘린다(실측 평가에서 확인). 후보 언어 중 하나라도 해당하면
  * 긴 쪽을 쓴다 — 통합 입력처럼 언어가 섞이면 보수적으로 기다리는 편이 낫다.
  */
-const DELIBERATE_LANGS = new Set(["th", "si"]);
-
 export function redemptionMsFor(langs: readonly string[]): number {
-  return langs.some((lang) => DELIBERATE_LANGS.has(lang.toLowerCase().split("-")[0]))
-    ? REDEMPTION_DELIBERATE_MS
-    : REDEMPTION_MS;
+  return silenceMsFor(DEFAULT_VOICE_SETTINGS, langs);
 }
 
 type VadInstance = {
   destroy: () => Promise<void>;
+  setOptions: (options: { redemptionMs: number }) => void;
 };
 
 /** VAD 이벤트를 저장 가능한 발화 턴으로 묶는다. 오디오 모델과 무관해 단위 검사한다. */
@@ -40,6 +38,8 @@ export class SpeechTurnCommitter {
   private speechSinceCommit = false;
 
   constructor(private readonly onCommit: () => void) {}
+
+  hasSpeech(): boolean { return this.speechActive || this.speechSinceCommit; }
 
   handleSpeechStart(): void {
     this.speechActive = true;
@@ -92,10 +92,14 @@ export class SpeechTurnCommitter {
 export class NeuralTurnDetector {
   private vad: VadInstance | null = null;
   private readonly turns: SpeechTurnCommitter;
+  private currentPhase: "idle" | "speech" | "silence" = "idle";
 
   private constructor(onCommit: () => void) {
     this.turns = new SpeechTurnCommitter(onCommit);
   }
+
+  hasSpeech(): boolean { return this.turns.hasSpeech(); }
+  phase(): "idle" | "speech" | "silence" { return this.currentPhase; }
 
   /**
    * 스트림에 VAD 를 단다. 실패하면 null.
@@ -104,7 +108,7 @@ export class NeuralTurnDetector {
   static async create(
     stream: MediaStream,
     onCommit: () => void,
-    options: { redemptionMs?: number; audioContext?: AudioContext } = {},
+    options: { redemptionMs?: number; nextSilenceMs?: () => number; audioContext?: AudioContext } = {},
   ): Promise<NeuralTurnDetector | null> {
     const detector = new NeuralTurnDetector(onCommit);
     try {
@@ -130,10 +134,17 @@ export class NeuralTurnDetector {
           ort.env.wasm.wasmPaths = "/vad/";
           ort.env.wasm.numThreads = 1;
         },
-        onSpeechStart: () => detector.turns.handleSpeechStart(),
-        onSpeechEnd: () => detector.turns.handleSpeechEnd(),
-        onFrameProcessed: (probabilities) => detector.turns.handleSpeechFrame(probabilities.isSpeech),
-        onVADMisfire: () => detector.turns.handleMisfire(),
+        onSpeechStart: () => {
+          detector.vad?.setOptions({ redemptionMs: options.nextSilenceMs?.() ?? options.redemptionMs ?? REDEMPTION_MS });
+          detector.currentPhase = "speech";
+          detector.turns.handleSpeechStart();
+        },
+        onSpeechEnd: () => { detector.currentPhase = "idle"; detector.turns.handleSpeechEnd(); },
+        onFrameProcessed: (probabilities) => {
+          detector.turns.handleSpeechFrame(probabilities.isSpeech);
+          if (detector.turns.hasSpeech()) detector.currentPhase = probabilities.isSpeech >= 0.35 ? "speech" : "silence";
+        },
+        onVADMisfire: () => { detector.currentPhase = "idle"; detector.turns.handleMisfire(); },
       });
       return detector;
     } catch (error) {

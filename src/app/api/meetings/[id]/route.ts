@@ -1,7 +1,8 @@
 import { revalidatePath } from "next/cache";
 
 import { requireAdmin } from "@/lib/auth";
-import { publish } from "@/lib/realtime/hub";
+import { publish, notifyConnectionsChanged } from "@/lib/realtime/hub";
+import { cancelActiveTranslations } from "@/lib/translation-worker";
 import { releaseMeetingCaptures } from "@/lib/realtime/capture-lease";
 import {
   closeMeeting,
@@ -61,6 +62,7 @@ export async function POST(_request: Request, { params }: Params) {
   }
 
   closeMeeting(id);
+  notifyConnectionsChanged(id);
   releaseMeetingCaptures(id);
   revalidatePath("/admin");
 
@@ -87,6 +89,9 @@ export async function DELETE(_request: Request, { params }: Params) {
   if (!deleteClosedMeeting(id)) {
     return Response.json({ error: "세션을 찾을 수 없습니다" }, { status: 404 });
   }
+  cancelActiveTranslations(id);
+  notifyConnectionsChanged(id);
+  releaseMeetingCaptures(id);
   revalidatePath("/admin");
   return Response.json({ deleted: true });
 }

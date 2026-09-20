@@ -1,7 +1,7 @@
 import {
   createHmac,
   randomBytes,
-  scryptSync,
+  scrypt,
   timingSafeEqual,
 } from "node:crypto";
 import {
@@ -24,6 +24,22 @@ const MAX_PASSWORD_LENGTH = 128;
 const HASH_BYTES = 64;
 const SALT_BYTES = 16;
 const REVISION_BYTES = 24;
+
+declare global { var __passwordHashActive: number | undefined; }
+
+export class PasswordBusyError extends Error {}
+
+async function hashPassword(candidate: string, salt: Buffer): Promise<Buffer> {
+  if ((globalThis.__passwordHashActive ?? 0) >= 2) throw new PasswordBusyError("rate-limited");
+  globalThis.__passwordHashActive = (globalThis.__passwordHashActive ?? 0) + 1;
+  try {
+    return await new Promise<Buffer>((resolve, reject) => {
+      scrypt(candidate, salt, HASH_BYTES, (error, hash) => error ? reject(error) : resolve(hash));
+    });
+  } finally {
+    globalThis.__passwordHashActive--;
+  }
+}
 
 type StoredAdminPassword = {
   version: 1;
@@ -78,13 +94,14 @@ function safeEquals(a: Buffer, b: Buffer): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function verifyAdminPassword(candidate: string): boolean {
+export async function verifyAdminPassword(candidate: string): Promise<boolean> {
+  if (!candidate || candidate.length > MAX_PASSWORD_LENGTH) return false;
   const stored = readStored();
   if (!stored) {
     return safeEquals(Buffer.from(candidate), Buffer.from(adminPassword()));
   }
 
-  const actual = scryptSync(candidate, decode(stored.salt, SALT_BYTES), HASH_BYTES);
+  const actual = await hashPassword(candidate, decode(stored.salt, SALT_BYTES));
   return safeEquals(actual, decode(stored.hash, HASH_BYTES));
 }
 
@@ -117,20 +134,23 @@ function writeStored(value: StoredAdminPassword): void {
   }
 }
 
-export function changeAdminPassword(
+export async function changeAdminPassword(
   currentPassword: string,
   newPassword: string,
-): ChangeAdminPasswordResult {
-  if (!verifyAdminPassword(currentPassword)) return "invalid-current";
+): Promise<ChangeAdminPasswordResult> {
+  const revision = adminCredentialRevision();
+  if (!(await verifyAdminPassword(currentPassword))) return "invalid-current";
   if (newPassword.length < MIN_PASSWORD_LENGTH) return "too-short";
   if (newPassword.length > MAX_PASSWORD_LENGTH) return "too-long";
-  if (verifyAdminPassword(newPassword)) return "same-password";
+  if (await verifyAdminPassword(newPassword)) return "same-password";
 
   const salt = randomBytes(SALT_BYTES);
+  const hash = await hashPassword(newPassword, salt);
+  if (adminCredentialRevision() !== revision) return "invalid-current";
   writeStored({
     version: 1,
     salt: salt.toString("base64url"),
-    hash: scryptSync(newPassword, salt, HASH_BYTES).toString("base64url"),
+    hash: hash.toString("base64url"),
     revision: randomBytes(REVISION_BYTES).toString("base64url"),
   });
   return "ok";

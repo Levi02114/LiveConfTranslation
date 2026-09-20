@@ -6,8 +6,10 @@
  * DB 오버레이를 얹는 해석기는 `lib/i18n.ts` 에 있다.
  */
 import { z } from "zod";
+import { stringsForLocale } from "../../electron/telegram.cjs";
 
 import type { LanguageCode } from "@/lib/languages";
+import type { SecurityLimits } from "@/lib/security-limits";
 
 /**
  * 입력·출력 페이지의 UI 문구.
@@ -30,6 +32,8 @@ export type UiStrings = {
     capture: string;
   };
   input: {
+    retry: string;
+    retained: string;
     language: string;
     autoLanguage: string;
     placeholder: string;
@@ -104,13 +108,15 @@ export type UiStrings = {
     increase: string;
   };
   peers: { online: string; typing: string; you: string };
-  error: { sendFailed: string; loadFailed: string; notFound: string };
+  error: { sendFailed: string; loadFailed: string; notFound: string; rateLimited: string; payloadTooLarge: string; idempotencyConflict: string };
 };
 
 const ko: UiStrings = {
   connection: { connected: "연결됨", reconnecting: "다시 연결 중", disconnected: "연결 끊김" },
   role: { input: "입력", output: "출력", combined: "통합 조회", combinedInput: "통합 음성/타자 입력", capture: "음성 수집" },
   input: {
+    retry: "다시 보내기",
+    retained: "보내지 못한 문장입니다. 작성 중인 내용과 별도로 보관했습니다.",
     language: "입력 언어",
     autoLanguage: "자동 감지",
     placeholder: "세션 내용을 입력하세요",
@@ -186,6 +192,9 @@ const ko: UiStrings = {
   },
   peers: { online: "{count}명 접속 중", typing: "{count}명 입력 중", you: "나" },
   error: {
+    rateLimited: "요청 한도를 초과했습니다. 잠시 후 다시 보내 주세요.",
+    payloadTooLarge: "입력 내용이 너무 큽니다.",
+    idempotencyConflict: "같은 요청 키의 내용이 달라 저장하지 않았습니다.",
     sendFailed: "전송하지 못했습니다",
     loadFailed: "불러오지 못했습니다",
     notFound: "페이지를 찾을 수 없습니다",
@@ -200,6 +209,8 @@ const vi: UiStrings = {
   },
   role: { input: "Nhập liệu", output: "Bản dịch", combined: "Xem tổng hợp", combinedInput: "Nhập tổng hợp bằng giọng nói/bàn phím", capture: "Thu âm" },
   input: {
+    retry: "Gửi lại",
+    retained: "Các câu chưa gửi được đã được giữ riêng với nội dung đang nhập.",
     language: "Ngôn ngữ nhập",
     autoLanguage: "Tự động nhận diện",
     placeholder: "Nhập nội dung phiên",
@@ -279,6 +290,9 @@ const vi: UiStrings = {
     you: "Bạn",
   },
   error: {
+    rateLimited: "Đã vượt giới hạn yêu cầu. Vui lòng gửi lại sau.",
+    payloadTooLarge: "Nội dung nhập quá lớn.",
+    idempotencyConflict: "Nội dung của cùng mã yêu cầu đã thay đổi nên không được lưu.",
     sendFailed: "Không gửi được",
     loadFailed: "Không tải được",
     notFound: "Không tìm thấy trang",
@@ -293,6 +307,8 @@ const th: UiStrings = {
   },
   role: { input: "ป้อนข้อมูล", output: "คำแปล", combined: "มุมมองรวม", combinedInput: "ป้อนรวมด้วยเสียง/การพิมพ์", capture: "รับเสียง" },
   input: {
+    retry: "ส่งอีกครั้ง",
+    retained: "เก็บข้อความที่ส่งไม่สำเร็จแยกจากข้อความที่กำลังพิมพ์แล้ว",
     language: "ภาษาที่ป้อน",
     autoLanguage: "ตรวจจับอัตโนมัติ",
     placeholder: "พิมพ์เนื้อหาเซสชัน",
@@ -368,6 +384,9 @@ const th: UiStrings = {
   },
   peers: { online: "เชื่อมต่ออยู่ {count} คน", typing: "กำลังพิมพ์ {count} คน", you: "คุณ" },
   error: {
+    rateLimited: "เกินขีดจำกัดคำขอ โปรดส่งอีกครั้งภายหลัง",
+    payloadTooLarge: "ข้อความที่ป้อนมีขนาดใหญ่เกินไป",
+    idempotencyConflict: "เนื้อหาของรหัสคำขอเดียวกันเปลี่ยนไป จึงไม่ได้บันทึก",
     sendFailed: "ส่งไม่สำเร็จ",
     loadFailed: "โหลดไม่สำเร็จ",
     notFound: "ไม่พบหน้านี้",
@@ -382,6 +401,8 @@ const si: UiStrings = {
   },
   role: { input: "ඇතුළත් කිරීම", output: "පරිවර්තනය", combined: "ඒකාබද්ධ දසුන", combinedInput: "ඒකාබද්ධ හඬ/යතුරු ලියන ආදානය", capture: "හඬ ග්‍රහණය" },
   input: {
+    retry: "නැවත යවන්න",
+    retained: "යැවීමට නොහැකි වූ වාක්‍ය ලියමින් සිටින පාඨයෙන් වෙන්ව තබා ඇත.",
     language: "ආදාන භාෂාව",
     autoLanguage: "ස්වයංක්‍රීයව හඳුනාගන්න",
     placeholder: "සැසි අන්තර්ගතය ටයිප් කරන්න",
@@ -461,6 +482,9 @@ const si: UiStrings = {
     you: "ඔබ",
   },
   error: {
+    rateLimited: "ඉල්ලීම් සීමාව ඉක්මවා ඇත. පසුව නැවත යවන්න.",
+    payloadTooLarge: "ආදාන පාඨය ඉතා විශාලයි.",
+    idempotencyConflict: "එකම ඉල්ලීම් යතුරේ අන්තර්ගතය වෙනස් බැවින් සුරැකුවේ නැත.",
     sendFailed: "යැවීමට නොහැකි විය",
     loadFailed: "පූරණය කිරීමට නොහැකි විය",
     notFound: "පිටුව හමු නොවීය",
@@ -489,7 +513,126 @@ export const FALLBACK_UI: UiStrings = ko;
  * ⚠️ 한국어 외 문구는 기계적으로 옮긴 초안이다. `UiStrings` 와 같은 전제로,
  *    실제 운영 전에 각 언어 사용자에게 검수받아야 한다.
  */
+const tunnelStrings = {
+  ko: {
+    mode: "터널 연결 방식", quick: "임시 주소", named: "고정 도메인 (앱에서 실행)", external: "외부에서 관리하는 터널",
+    origin: "공개 HTTPS 주소", token: "Cloudflare 터널 토큰", tokenHelp: "터널 토큰만 입력하세요. 실행 명령이나 API 키가 아닙니다. 암호화 저장되며 다시 표시하지 않습니다. 같은 주소의 저장된 토큰을 쓰려면 비워 두세요.",
+    setup: "도메인 구매·DNS 등록·터널 생성 안내", check: "연결 검사", apply: "검사한 주소 적용", cancel: "검사 취소",
+    verified: "HTTPS와 이 서버의 WebSocket 연결을 확인했습니다. 2분 안에 적용하세요.",
+    confirm: "공유 링크와 QR을 검사한 주소로 변경할까요? 기존에 배포한 링크는 자동 변경되지 않습니다.",
+    restore: "기존 연결 방식으로 돌아가기", retain: "검사 중에는 기존 주소를 유지합니다. 적용해도 기존 터널은 즉시 종료하지 않습니다. 앱 종료 또는 해당 실행 환경에서 별도로 중지하세요.",
+    autoHelp: "고정 터널을 서버 시작 시 실행하고 프로세스 종료 시 다시 연결합니다. 컴퓨터와 앱이 켜져 있어야 합니다. Telegram 등록 없이 사용할 수 있습니다.",
+    tunnelInvalid: "경로 없는 공개 HTTPS 도메인과 올바른 터널 토큰을 입력하세요. 사설 주소는 사용할 수 없습니다.",
+    tunnelCheckFailed: "연결 검사에 실패했습니다. DNS, 터널 토큰, 로컬 서비스 주소와 WebSocket 허용 여부를 확인하세요. 기존 공유 주소는 유지됩니다.",
+    tunnelStopFirst: "현재 고정 터널을 중지한 뒤 같은 주소의 토큰을 변경하세요.",
+  },
+  en: {
+    mode: "Tunnel connection mode", quick: "Temporary address", named: "Fixed domain (run by this app)", external: "Externally managed tunnel",
+    origin: "Public HTTPS address", token: "Cloudflare tunnel token", tokenHelp: "Enter only the tunnel token, not a command or API key. It is encrypted and never shown again. Leave blank to reuse the saved token for the same address.",
+    setup: "Domain, DNS and tunnel setup guide", check: "Check connection", apply: "Apply checked address", cancel: "Cancel check",
+    verified: "HTTPS and WebSocket connectivity to this server verified. Apply within 2 minutes.",
+    confirm: "Change sharing links and QR codes to the checked address? Previously distributed links do not change automatically.",
+    restore: "Return to the previous connection mode", retain: "Checks keep the current address. Applying does not immediately stop the previous tunnel. Stop it separately in its running environment or exit the app.",
+    autoHelp: "Start the fixed tunnel with the server and restart it if its process exits. Keep the computer and app running. Telegram registration is not required.",
+    tunnelInvalid: "Enter a public HTTPS domain without a path and a valid tunnel token. Private addresses are not allowed.",
+    tunnelCheckFailed: "Connection check failed. Check DNS, the tunnel token, the local service address and WebSocket access. The previous sharing address is unchanged.",
+    tunnelStopFirst: "Stop the current fixed tunnel before changing the token for the same address.",
+  },
+  vi: {
+    mode: "Kiểu kết nối đường hầm", quick: "Địa chỉ tạm thời", named: "Tên miền cố định (ứng dụng chạy)", external: "Đường hầm được quản lý bên ngoài",
+    origin: "Địa chỉ HTTPS công khai", token: "Token đường hầm Cloudflare", tokenHelp: "Chỉ nhập token đường hầm, không phải lệnh hay khóa API. Token được mã hóa và không hiển thị lại. Để trống để dùng token đã lưu cho cùng địa chỉ.",
+    setup: "Hướng dẫn tên miền, DNS và đường hầm", check: "Kiểm tra kết nối", apply: "Áp dụng địa chỉ đã kiểm tra", cancel: "Hủy kiểm tra",
+    verified: "Đã xác minh HTTPS và WebSocket tới máy chủ này. Áp dụng trong 2 phút.",
+    confirm: "Đổi liên kết chia sẻ và mã QR sang địa chỉ đã kiểm tra? Liên kết đã phát trước đó không tự đổi.",
+    restore: "Trở lại kiểu kết nối trước", retain: "Giữ địa chỉ hiện tại khi kiểm tra. Áp dụng không dừng ngay đường hầm cũ. Hãy dừng riêng trong môi trường chạy hoặc thoát ứng dụng.",
+    autoHelp: "Chạy đường hầm cố định khi máy chủ khởi động và chạy lại nếu tiến trình dừng. Giữ máy tính và ứng dụng hoạt động. Không cần đăng ký Telegram.",
+    tunnelInvalid: "Nhập tên miền HTTPS công khai không có đường dẫn và token hợp lệ. Không cho phép địa chỉ riêng.",
+    tunnelCheckFailed: "Kiểm tra thất bại. Kiểm tra DNS, token, địa chỉ dịch vụ cục bộ và quyền truy cập WebSocket. Địa chỉ chia sẻ cũ được giữ nguyên.",
+    tunnelStopFirst: "Dừng đường hầm cố định hiện tại trước khi đổi token cho cùng địa chỉ.",
+  },
+  th: {
+    mode: "รูปแบบการเชื่อมต่อทันเนล", quick: "ที่อยู่ชั่วคราว", named: "โดเมนถาวร (แอปเป็นผู้รัน)", external: "ทันเนลที่จัดการจากภายนอก",
+    origin: "ที่อยู่ HTTPS สาธารณะ", token: "โทเค็นทันเนล Cloudflare", tokenHelp: "ใส่เฉพาะโทเค็นทันเนล ไม่ใช่คำสั่งหรือคีย์ API ระบบจะเข้ารหัสและไม่แสดงอีก เว้นว่างเพื่อใช้โทเค็นที่บันทึกไว้สำหรับที่อยู่เดิม",
+    setup: "คู่มือตั้งค่าโดเมน DNS และทันเนล", check: "ตรวจสอบการเชื่อมต่อ", apply: "ใช้ที่อยู่ที่ตรวจสอบแล้ว", cancel: "ยกเลิกการตรวจสอบ",
+    verified: "ยืนยัน HTTPS และ WebSocket มายังเซิร์ฟเวอร์นี้แล้ว กรุณานำไปใช้ภายใน 2 นาที",
+    confirm: "เปลี่ยนลิงก์แชร์และรหัส QR เป็นที่อยู่ที่ตรวจสอบแล้วหรือไม่? ลิงก์ที่แจกไปแล้วจะไม่เปลี่ยนอัตโนมัติ",
+    restore: "กลับไปใช้รูปแบบการเชื่อมต่อเดิม", retain: "คงที่อยู่เดิมระหว่างตรวจสอบ การนำไปใช้จะไม่หยุดทันเนลเดิมทันที โปรดหยุดแยกในสภาพแวดล้อมที่รันหรือปิดแอป",
+    autoHelp: "เริ่มทันเนลถาวรพร้อมเซิร์ฟเวอร์และเริ่มใหม่เมื่อกระบวนการหยุด ต้องเปิดคอมพิวเตอร์และแอปไว้ ไม่ต้องลงทะเบียน Telegram",
+    tunnelInvalid: "ใส่โดเมน HTTPS สาธารณะที่ไม่มีเส้นทางและโทเค็นที่ถูกต้อง ไม่อนุญาตที่อยู่ส่วนตัว",
+    tunnelCheckFailed: "ตรวจสอบไม่สำเร็จ โปรดตรวจ DNS โทเค็น ที่อยู่บริการภายใน และการอนุญาต WebSocket ที่อยู่แชร์เดิมยังคงอยู่",
+    tunnelStopFirst: "หยุดทันเนลถาวรปัจจุบันก่อนเปลี่ยนโทเค็นสำหรับที่อยู่เดิม",
+  },
+  si: {
+    mode: "ටනල් සම්බන්ධතා ආකාරය", quick: "තාවකාලික ලිපිනය", named: "ස්ථිර වසම (යෙදුමෙන් ක්‍රියාත්මක වේ)", external: "බාහිරව කළමනාකරණය කරන ටනලය",
+    origin: "පොදු HTTPS ලිපිනය", token: "Cloudflare ටනල් ටෝකනය", tokenHelp: "විධානයක් හෝ API යතුරක් නොව ටනල් ටෝකනය පමණක් ඇතුළත් කරන්න. එය සංකේතනය කර ගබඩා කරන අතර නැවත පෙන්වන්නේ නැත. එම ලිපිනය සඳහා සුරැකි ටෝකනය භාවිතා කිරීමට හිස්ව තබන්න.",
+    setup: "වසම, DNS සහ ටනලය සැකසීමේ මාර්ගෝපදේශය", check: "සම්බන්ධතාව පරීක්ෂා කරන්න", apply: "පරීක්ෂා කළ ලිපිනය යොදන්න", cancel: "පරීක්ෂාව අවලංගු කරන්න",
+    verified: "මෙම සේවාදායකයට HTTPS සහ WebSocket සම්බන්ධතාව තහවුරු විය. මිනිත්තු 2ක් ඇතුළත යොදන්න.",
+    confirm: "බෙදාගැනීමේ සබැඳි සහ QR කේත පරීක්ෂා කළ ලිපිනයට වෙනස් කරන්නද? කලින් බෙදාදුන් සබැඳි ස්වයංක්‍රීයව වෙනස් නොවේ.",
+    restore: "පෙර සම්බන්ධතා ආකාරයට ආපසු යන්න", retain: "පරීක්ෂා කරන අතරතුර වත්මන් ලිපිනය පවතී. යෙදීමෙන් පෙර ටනලය වහාම නවතින්නේ නැත. එය ක්‍රියාත්මක පරිසරයෙන් වෙනම නවත්වන්න හෝ යෙදුම වසන්න.",
+    autoHelp: "සේවාදායකය ආරම්භ වන විට ස්ථිර ටනලය අරඹා ක්‍රියාවලිය අවසන් වුවහොත් නැවත අරඹයි. පරිගණකය සහ යෙදුම ක්‍රියාත්මකව තබන්න. Telegram ලියාපදිංචිය අවශ්‍ය නොවේ.",
+    tunnelInvalid: "මාර්ගයක් නැති පොදු HTTPS වසමක් සහ වලංගු ටෝකනයක් ඇතුළත් කරන්න. පුද්ගලික ලිපින භාවිතා කළ නොහැක.",
+    tunnelCheckFailed: "සම්බන්ධතා පරීක්ෂාව අසාර්ථකයි. DNS, ටෝකනය, දේශීය සේවා ලිපිනය සහ WebSocket අවසර පරීක්ෂා කරන්න. පෙර බෙදාගැනීමේ ලිපිනය වෙනස් නොවේ.",
+    tunnelStopFirst: "එම ලිපිනයේ ටෝකනය වෙනස් කිරීමට පෙර වත්මන් ස්ථිර ටනලය නවත්වන්න.",
+  },
+  "zh-CN": {
+    mode: "隧道连接方式", quick: "临时地址", named: "固定域名（由应用运行）", external: "外部管理的隧道",
+    origin: "公开 HTTPS 地址", token: "Cloudflare 隧道令牌", tokenHelp: "只输入隧道令牌，不要输入命令或 API 密钥。令牌将加密保存且不再显示。留空可复用同一地址已保存的令牌。",
+    setup: "域名、DNS 与隧道设置指南", check: "检查连接", apply: "应用已检查的地址", cancel: "取消检查",
+    verified: "已确认 HTTPS 和 WebSocket 均连接到此服务器。请在 2 分钟内应用。",
+    confirm: "将共享链接和二维码改为已检查的地址？之前分发的链接不会自动改变。",
+    restore: "返回原来的连接方式", retain: "检查期间保留当前地址。应用后不会立即停止原隧道，请在其运行环境中单独停止或退出应用。",
+    autoHelp: "随服务器启动固定隧道，并在进程退出后重新启动。请保持电脑和应用运行。无需注册 Telegram。",
+    tunnelInvalid: "请输入不含路径的公开 HTTPS 域名和有效隧道令牌。不允许使用私有地址。",
+    tunnelCheckFailed: "连接检查失败。请检查 DNS、隧道令牌、本地服务地址及 WebSocket 访问权限。原共享地址保持不变。",
+    tunnelStopFirst: "更换同一地址的令牌前，请先停止当前固定隧道。",
+  },
+  fil: {
+    mode: "Paraan ng koneksyon ng tunnel", quick: "Pansamantalang address", named: "Permanenteng domain (pinapatakbo ng app)", external: "Tunnel na pinamamahalaan sa labas",
+    origin: "Pampublikong HTTPS address", token: "Cloudflare tunnel token", tokenHelp: "Tunnel token lang ang ilagay, hindi command o API key. Naka-encrypt itong ise-save at hindi muling ipapakita. Iwanang blangko upang gamitin ang naka-save na token para sa parehong address.",
+    setup: "Gabay sa domain, DNS at tunnel", check: "Suriin ang koneksyon", apply: "Gamitin ang nasuring address", cancel: "Kanselahin ang pagsusuri",
+    verified: "Napatunayan ang HTTPS at WebSocket sa server na ito. Ilapat sa loob ng 2 minuto.",
+    confirm: "Palitan ang mga link at QR code ng nasuring address? Hindi awtomatikong magbabago ang mga naipamahaging link.",
+    restore: "Bumalik sa dating paraan ng koneksyon", retain: "Nananatili ang kasalukuyang address habang sinusuri. Hindi agad hihinto ang dating tunnel kapag inilapat. Ihinto ito nang hiwalay sa kapaligirang nagpapatakbo nito o isara ang app.",
+    autoHelp: "Simulan ang permanenteng tunnel kasabay ng server at simulan muli kapag huminto ang proseso. Panatilihing bukas ang computer at app. Hindi kailangan ang Telegram.",
+    tunnelInvalid: "Maglagay ng pampublikong HTTPS domain na walang path at wastong tunnel token. Hindi pinapayagan ang pribadong address.",
+    tunnelCheckFailed: "Nabigo ang pagsusuri. Suriin ang DNS, tunnel token, lokal na service address at pahintulot sa WebSocket. Hindi nagbago ang dating address.",
+    tunnelStopFirst: "Ihinto muna ang kasalukuyang permanenteng tunnel bago palitan ang token para sa parehong address.",
+  },
+};
+
 export type AdminStrings = {
+  tunnel: typeof tunnelStrings.ko;
+  appSettings: {
+    title: string; connection: string; api: string; voice: string; security: string;
+    unavailable: string; insecure: string; share: string; ca: string; stopWarning: string; stopRequested: string;
+    delay: string; auto: string; manual: string; note: string; dry: string; paid: string; paidWarning: string;
+    source: string; target: string; nextTurn: string; speech: string; silence: string; committed: string;
+    transcriptionMs: string; translationMs: string; segment: string; reset: string; perLanguage: string; externalTunnel: string;
+  };
+  connectionSummary: { title: string; details: string };
+  operations: ReturnType<typeof stringsForLocale>;
+  security: Record<keyof SecurityLimits, string> & {
+    siteManagement: string;
+    jobSession: string;
+    chooseSession: string;
+    title: string;
+    description: string;
+    save: string;
+    saving: string;
+    saved: string;
+    failed: string;
+    limitReached: string;
+    jobs: string;
+    pending: string;
+    running: string;
+    failedJobs: string;
+    retry: string;
+    cancel: string;
+    confirmCancel: string;
+    providers: string;
+    active: string;
+    paused: string;
+  };
   language: { label: string };
   home: { title: string; description: string; login: string; direct: string };
   login: {
@@ -734,6 +877,9 @@ export type AdminStrings = {
   };
   languages: {
     add: string;
+    loading: string;
+    registered: string;
+    translationIncomplete: string;
     search: string;
     noResults: string;
     translateWith: string;
@@ -786,6 +932,58 @@ export type AdminStrings = {
 };
 
 const adminKo: AdminStrings = {
+  tunnel: tunnelStrings.ko,
+  connectionSummary: { title: "전체 세션 접속 수", details: "모든 세션의 현재 연결을 합산합니다. 언어별·페이지별 내역은 각 세션을 열어 확인하세요." },
+  appSettings: {
+    perLanguage: "원문 언어별로 대기 시간을 저장합니다. 테스트도 선택한 언어에 적용됩니다. 통합 음성 입력은 선택된 언어 중 가장 긴 대기 시간을 사용합니다. 되돌리기는 선택한 언어에만 적용됩니다.",
+    externalTunnel: "이 공개 주소의 터널은 서버 밖에서 관리 중입니다. 주소는 그대로 사용하며, 시작·중지는 해당 실행 환경에서 관리하세요.",
+    title: "앱 설정", connection: "연결·공유", api: "API·사용량", voice: "자동 전사", security: "보안·작업",
+    unavailable: "이 서버는 Electron 앱과 연결되어 있지 않습니다. 웹 설정은 계속 사용할 수 있습니다.",
+    insecure: "이 기능을 변경하려면 HTTPS 주소 또는 이 컴퓨터의 localhost로 접속하세요.",
+    share: "기본 공유 주소", ca: "로컬 HTTPS 인증서 다운로드",
+    stopWarning: "터널을 중지하면 현재 관리자와 참석자의 공개 주소 연결이 끊깁니다. 자동 복구도 꺼집니다. 중지할까요?",
+    stopRequested: "중지 요청을 전달했습니다. 공개 주소 연결이 끊어질 수 있습니다. 로컬 주소에서 상태를 확인하세요.",
+    delay: "말이 멈춘 뒤 전사를 확정하기까지의 대기 시간", auto: "언어에 맞게 자동", manual: "직접 설정",
+    note: "자동: 기본 1.1초, 태국어·싱할라어 포함 시 1.7초. 연속 발화는 최대 15초마다 나눕니다. 이 값은 전사·번역 API 처리 시간과 다릅니다.",
+    dry: "끊김 타이밍만 테스트 (API 호출 없음)", paid: "전사·번역 테스트", paidWarning: "마이크 음성을 선택한 전사 서비스로 전송하고 번역합니다. 온라인 엔진은 요금이 발생할 수 있습니다. 결과는 세션에 저장·배포하지 않습니다.",
+    source: "원문 언어", target: "번역 언어", nextTurn: "변경값은 테스트의 다음 발화부터 적용됩니다. 저장하면 실제 자동 전사에도 다음 발화부터 적용됩니다.",
+    speech: "발화 중", silence: "무음 대기 중", committed: "구간 확정", transcriptionMs: "전사 처리", translationMs: "번역 처리", segment: "확정 구간", reset: "기본값으로 되돌리기",
+  },
+  operations: stringsForLocale("ko"),
+  security: {
+  "siteManagement": "앱 관리",
+  "jobSession": "번역 작업을 관리할 세션",
+  "chooseSession": "세션을 선택하세요",
+  "title": "보안 및 사용 제한",
+  "description": "모든 세션에 적용됩니다. 제한을 낮춰도 접수된 번역과 진행 중인 음성은 유지됩니다.",
+  "save": "저장",
+  "saving": "저장 중",
+  "saved": "저장했습니다",
+  "failed": "처리하지 못했습니다. 다시 시도해 주세요.",
+  "limitReached": "설정된 사용 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.",
+  "jobs": "번역 작업",
+  "pending": "대기",
+  "running": "진행",
+  "failedJobs": "실패",
+  "retry": "실패·누락 번역 재시도",
+  "cancel": "대기 작업 취소",
+  "confirmCancel": "대기 중인 번역을 취소할까요? 원문은 보존됩니다.",
+  "providers": "제공자 상태",
+  "active": "호출 중",
+  "paused": "일시 중단",
+  "inputPerSecond": "페이지별 초당 입력",
+  "inputBurst": "페이지별 순간 입력",
+  "inputPerMinute": "세션별 분당 입력",
+  "transcriptionPerSession": "세션별 동시 전사",
+  "transcriptionTotal": "호스트 전체 동시 전사",
+  "translationOnline": "온라인 제공자별 동시 번역",
+  "translationLocal": "로컬 동시 번역",
+  "jobsPerSession": "세션별 미완료 번역",
+  "jobsTotal": "전체 미완료 번역",
+  "languages": "새 세션 언어 상한",
+  "connectionsTotal": "전체 실시간 연결",
+  "connectionsPerIp": "IP별 실시간 연결"
+},
   language: { label: "화면 언어" },
   home: {
     title: "실시간 세션 번역",
@@ -835,7 +1033,7 @@ const adminKo: AdminStrings = {
     languages: "언어 칩을 눌러 세션 언어를 고릅니다. +는 언어 추가, 톱니바퀴는 UI 문구 번역·수정, 책 아이콘은 단어집 등록과 CSV 업로드·다운로드입니다.",
     sessionSettings: "회의·집회 프리셋을 적용하거나 언어별 음성/타자 입력과 번역 출력을 정합니다. 닉네임, 통합 입력과 기본 언어도 여기서 켜며 현재 조합은 사용자 프리셋으로 저장할 수 있습니다.",
     translation: "온라인 엔진은 API 키 등록에서 키를 저장합니다. OpenAI는 사용량 조회도 제공합니다. Local AI가 설치되어 있으면 API 키 없이 선택할 수 있으며, 설치 여부는 첫 실행 마법사에서 정합니다.",
-    transcription: "음성 인식 엔진을 OpenAI, Google 또는 설치된 로컬 Whisper 중에서 고릅니다. Google을 고르면 서비스 계정 JSON 등록 버튼이 함께 나타납니다.",
+    transcription: "음성 인식 엔진을 OpenAI, Google 또는 설치된 로컬 Whisper 중에서 고릅니다. Google 서비스 계정 JSON과 API 키는 좌측 상단 앱 설정의 API·사용량에서 등록합니다.",
     fallback: "주 번역 엔진이 지원하지 않거나 실패한 언어에만 쓸 폴백 엔진입니다. 선택 사항이며, 사용 안 함으로 두면 임의의 엔진으로 우회하지 않습니다.",
     create: "세션 만들기를 누르면 현재 설정이 확정되고 세션 관리 페이지로 이동합니다. 생성 뒤에는 언어별 페이지 설정을 바꿀 수 없습니다.",
     sessionList: "진행 중 세션을 누르면 관리 페이지가 열립니다. 종료는 새 입력을 막고, 종료된 세션의 삭제는 기록까지 영구 삭제합니다. 다음을 누른 뒤 실제 세션을 만들거나 열면 설명이 이어집니다.",
@@ -1035,6 +1233,9 @@ const adminKo: AdminStrings = {
   },
   languages: {
     add: "언어 추가",
+    loading: "언어 목록 불러오는 중",
+    registered: "등록됨",
+    translationIncomplete: "언어는 등록되었습니다. 크레딧·API 설정을 확인한 뒤 문구 수정에서 다시 번역할 수 있습니다. 미번역 문구는 한국어로 표시됩니다.",
     search: "언어 검색",
     noResults: "결과가 없습니다",
     translateWith: "UI 문구 번역 엔진",
@@ -1088,6 +1289,58 @@ const adminKo: AdminStrings = {
 };
 
 const adminVi: AdminStrings = {
+  tunnel: tunnelStrings.vi,
+  connectionSummary: { title: "Tổng kết nối của tất cả phiên", details: "Tổng số kết nối hiện tại của mọi phiên. Mở từng phiên để xem chi tiết theo ngôn ngữ và trang." },
+  appSettings: {
+    perLanguage: "Lưu thời gian chờ riêng cho từng ngôn ngữ nguồn. Thử nghiệm dùng ngôn ngữ đã chọn. Nhập giọng nói kết hợp dùng thời gian dài nhất trong các ngôn ngữ đã chọn. Khôi phục chỉ áp dụng cho ngôn ngữ đã chọn.",
+    externalTunnel: "Đường hầm của địa chỉ công khai này được quản lý bên ngoài máy chủ. Địa chỉ vẫn sử dụng được; quản lý việc khởi động và dừng tại môi trường chạy đường hầm.",
+    title: "Cài đặt ứng dụng", connection: "Kết nối · Chia sẻ", api: "API · Mức sử dụng", voice: "Phiên âm tự động", security: "Bảo mật · Tác vụ",
+    unavailable: "Máy chủ này không kết nối với Electron. Bạn vẫn có thể dùng cài đặt web.",
+    insecure: "Dùng địa chỉ HTTPS hoặc localhost trên máy này để thay đổi chức năng này.",
+    share: "Địa chỉ chia sẻ mặc định", ca: "Tải chứng chỉ HTTPS cục bộ",
+    stopWarning: "Dừng đường hầm sẽ ngắt kết nối công khai của quản trị viên và người tham dự, đồng thời tắt tự khôi phục. Tiếp tục?",
+    stopRequested: "Đã gửi yêu cầu dừng. Kết nối công khai có thể bị ngắt. Kiểm tra trạng thái qua địa chỉ cục bộ.",
+    delay: "Thời gian chờ sau khi ngừng nói để chốt phiên âm", auto: "Tự động theo ngôn ngữ", manual: "Tùy chỉnh",
+    note: "Tự động: 1,1 giây; 1,7 giây khi có tiếng Thái hoặc Sinhala. Lời nói liên tục được chia tối đa mỗi 15 giây. Không bao gồm thời gian xử lý API phiên âm và dịch.",
+    dry: "Chỉ thử thời điểm ngắt (không gọi API)", paid: "Thử phiên âm và dịch", paidWarning: "Âm thanh được gửi đến dịch vụ phiên âm đã chọn rồi dịch. Dịch vụ trực tuyến có thể tính phí. Kết quả không được lưu hoặc phát vào phiên.",
+    source: "Ngôn ngữ nguồn", target: "Ngôn ngữ dịch", nextTurn: "Thay đổi áp dụng từ lượt nói tiếp theo trong thử nghiệm. Lưu để áp dụng vào phiên âm tự động từ lượt nói tiếp theo.",
+    speech: "Đang nói", silence: "Chờ khoảng lặng", committed: "Đã chốt đoạn", transcriptionMs: "Xử lý phiên âm", translationMs: "Xử lý bản dịch", segment: "Đoạn đã chốt", reset: "Khôi phục mặc định",
+  },
+  operations: stringsForLocale("vi"),
+  security: {
+  "siteManagement": "Quản lý ứng dụng",
+  "jobSession": "Phiên cần quản lý tác vụ dịch",
+  "chooseSession": "Chọn một phiên",
+  "title": "Bảo mật và giới hạn sử dụng",
+  "description": "Áp dụng cho mọi phiên. Giảm giới hạn không hủy bản dịch đã nhận hoặc dừng âm thanh đang chạy.",
+  "save": "Lưu",
+  "saving": "Đang lưu",
+  "saved": "Đã lưu",
+  "failed": "Không thể xử lý. Vui lòng thử lại.",
+  "limitReached": "Đã đạt giới hạn sử dụng. Vui lòng thử lại sau.",
+  "jobs": "Tác vụ dịch",
+  "pending": "Chờ",
+  "running": "Đang chạy",
+  "failedJobs": "Lỗi",
+  "retry": "Thử lại bản dịch lỗi hoặc còn thiếu",
+  "cancel": "Hủy tác vụ đang chờ",
+  "confirmCancel": "Hủy các bản dịch đang chờ? Văn bản gốc vẫn được giữ.",
+  "providers": "Trạng thái nhà cung cấp",
+  "active": "Đang gọi",
+  "paused": "Tạm dừng",
+  "inputPerSecond": "Nhập mỗi giây trên trang",
+  "inputBurst": "Nhập tức thời trên trang",
+  "inputPerMinute": "Nhập mỗi phút trong phiên",
+  "transcriptionPerSession": "Chép lời đồng thời trong phiên",
+  "transcriptionTotal": "Chép lời đồng thời toàn máy",
+  "translationOnline": "Dịch đồng thời mỗi nhà cung cấp",
+  "translationLocal": "Dịch cục bộ đồng thời",
+  "jobsPerSession": "Bản dịch chưa xong trong phiên",
+  "jobsTotal": "Tổng bản dịch chưa xong",
+  "languages": "Giới hạn ngôn ngữ phiên mới",
+  "connectionsTotal": "Tổng kết nối thời gian thực",
+  "connectionsPerIp": "Kết nối thời gian thực mỗi IP"
+},
   language: { label: "Ngôn ngữ hiển thị" },
   home: {
     title: "Dịch phiên theo thời gian thực",
@@ -1137,7 +1390,7 @@ const adminVi: AdminStrings = {
     languages: "Bấm thẻ để chọn ngôn ngữ của phiên. Dấu + thêm ngôn ngữ, bánh răng dịch và sửa nội dung UI, biểu tượng sách quản lý bảng thuật ngữ cùng nhập/xuất CSV.",
     sessionSettings: "Áp dụng mẫu Cuộc họp/Hội nghị hoặc chọn nhập bằng giọng nói/bàn phím và đầu ra bản dịch cho từng ngôn ngữ. Cũng có thể bật tên hiển thị, nhập tổng hợp, ngôn ngữ mặc định và lưu cấu hình thành mẫu riêng.",
     translation: "Với công cụ trực tuyến, lưu khóa ở nút đăng ký API. OpenAI còn có phần xem mức sử dụng. Nếu Local AI đã được cài trong trình hướng dẫn khởi động đầu tiên, bạn có thể chọn mà không cần khóa API.",
-    transcription: "Chọn nhận dạng giọng nói OpenAI, Google hoặc Whisper cục bộ đã cài. Khi chọn Google, nút đăng ký tệp JSON của tài khoản dịch vụ sẽ xuất hiện.",
+    transcription: "Chọn nhận dạng giọng nói OpenAI, Google hoặc Whisper cục bộ đã cài. Đăng ký tệp JSON tài khoản Google và khóa API trong Cài đặt ứng dụng → API · Mức sử dụng ở góc trên bên trái.",
     fallback: "Công cụ dự phòng chỉ xử lý ngôn ngữ mà công cụ chính không hỗ trợ hoặc xử lý thất bại. Đây là tùy chọn; nếu không dùng, ứng dụng sẽ không tự chuyển sang công cụ khác.",
     create: "Bấm Tạo phiên để chốt cấu hình hiện tại và mở trang quản lý phiên. Không thể đổi cấu hình trang theo ngôn ngữ sau khi tạo.",
     sessionList: "Bấm phiên đang diễn ra để quản lý. Kết thúc sẽ chặn dữ liệu mới; xóa phiên đã kết thúc sẽ xóa vĩnh viễn cả nhật ký. Sau khi bấm Tiếp, hãy tạo hoặc mở một phiên thật để tiếp tục hướng dẫn.",
@@ -1337,6 +1590,9 @@ const adminVi: AdminStrings = {
   },
   languages: {
     add: "Thêm ngôn ngữ",
+    loading: "Đang tải danh sách ngôn ngữ",
+    registered: "Đã đăng ký",
+    translationIncomplete: "Ngôn ngữ đã được đăng ký. Kiểm tra tín dụng và cài đặt API rồi dịch lại trong Sửa văn bản. Văn bản chưa dịch sẽ hiển thị bằng tiếng Hàn.",
     search: "Tìm ngôn ngữ",
     noResults: "Không có kết quả",
     translateWith: "Công cụ dịch giao diện",
@@ -1390,6 +1646,58 @@ const adminVi: AdminStrings = {
 };
 
 const adminTh: AdminStrings = {
+  tunnel: tunnelStrings.th,
+  connectionSummary: { title: "จำนวนการเชื่อมต่อทุกเซสชัน", details: "รวมการเชื่อมต่อปัจจุบันของทุกเซสชัน เปิดแต่ละเซสชันเพื่อดูรายละเอียดแยกตามภาษาและหน้า" },
+  appSettings: {
+    perLanguage: "บันทึกเวลารอแยกตามภาษาต้นฉบับ การทดสอบใช้ภาษาที่เลือก การป้อนเสียงรวมใช้เวลารอนานที่สุดของภาษาที่เลือก การคืนค่าใช้กับภาษาที่เลือกเท่านั้น",
+    externalTunnel: "ทันเนลของที่อยู่สาธารณะนี้จัดการภายนอกเซิร์ฟเวอร์ ยังใช้ที่อยู่เดิมได้ โปรดเริ่มหรือหยุดในสภาพแวดล้อมที่รันทันเนล",
+    title: "ตั้งค่าแอป", connection: "การเชื่อมต่อ · แชร์", api: "API · การใช้งาน", voice: "ถอดเสียงอัตโนมัติ", security: "ความปลอดภัย · งาน",
+    unavailable: "เซิร์ฟเวอร์นี้ไม่ได้เชื่อมต่อกับ Electron ยังใช้การตั้งค่าเว็บได้",
+    insecure: "ใช้ที่อยู่ HTTPS หรือ localhost บนเครื่องนี้เพื่อเปลี่ยนการตั้งค่านี้",
+    share: "ที่อยู่แชร์เริ่มต้น", ca: "ดาวน์โหลดใบรับรอง HTTPS ภายใน",
+    stopWarning: "การหยุดอุโมงค์จะตัดการเชื่อมต่อสาธารณะของผู้ดูแลและผู้เข้าร่วม และปิดการกู้คืนอัตโนมัติ ต้องการหยุดหรือไม่?",
+    stopRequested: "ส่งคำขอหยุดแล้ว การเชื่อมต่อสาธารณะอาจขาด ตรวจสอบสถานะผ่านที่อยู่ภายใน",
+    delay: "เวลารอหลังหยุดพูดก่อนยืนยันข้อความ", auto: "อัตโนมัติตามภาษา", manual: "กำหนดเอง",
+    note: "อัตโนมัติ: 1.1 วินาที หรือ 1.7 วินาทีเมื่อมีภาษาไทยหรือสิงหล แบ่งการพูดต่อเนื่องทุกไม่เกิน 15 วินาที ค่านี้ไม่ใช่เวลาประมวลผล API ถอดเสียงและแปล",
+    dry: "ทดสอบจังหวะตัดเท่านั้น (ไม่เรียก API)", paid: "ทดสอบถอดเสียงและแปล", paidWarning: "ส่งเสียงไมโครโฟนไปยังบริการถอดเสียงที่เลือกแล้วแปล บริการออนไลน์อาจมีค่าใช้จ่าย ผลไม่ถูกบันทึกหรือเผยแพร่ในเซสชัน",
+    source: "ภาษาต้นฉบับ", target: "ภาษาแปล", nextTurn: "ค่าที่เปลี่ยนมีผลตั้งแต่ช่วงพูดถัดไปในการทดสอบ บันทึกเพื่อใช้กับการถอดเสียงอัตโนมัติตั้งแต่ช่วงพูดถัดไป",
+    speech: "กำลังพูด", silence: "รอช่วงเงียบ", committed: "ยืนยันช่วงแล้ว", transcriptionMs: "ประมวลผลถอดเสียง", translationMs: "ประมวลผลแปล", segment: "ช่วงที่ยืนยัน", reset: "คืนค่าเริ่มต้น",
+  },
+  operations: stringsForLocale("th"),
+  security: {
+  "siteManagement": "จัดการแอป",
+  "jobSession": "เซสชันที่ต้องการจัดการงานแปล",
+  "chooseSession": "เลือกเซสชัน",
+  "title": "ความปลอดภัยและขีดจำกัดการใช้งาน",
+  "description": "ใช้กับทุกเซสชัน การลดขีดจำกัดจะไม่ยกเลิกคำแปลที่รับแล้วหรือหยุดเสียงที่กำลังทำงาน",
+  "save": "บันทึก",
+  "saving": "กำลังบันทึก",
+  "saved": "บันทึกแล้ว",
+  "failed": "ดำเนินการไม่สำเร็จ โปรดลองอีกครั้ง",
+  "limitReached": "ถึงขีดจำกัดการใช้งานแล้ว โปรดลองอีกครั้งภายหลัง",
+  "jobs": "งานแปล",
+  "pending": "รอ",
+  "running": "กำลังทำงาน",
+  "failedJobs": "ล้มเหลว",
+  "retry": "ลองคำแปลที่ล้มเหลวหรือขาดหายอีกครั้ง",
+  "cancel": "ยกเลิกงานที่รอ",
+  "confirmCancel": "ยกเลิกคำแปลที่รออยู่หรือไม่? ข้อความต้นฉบับจะยังคงอยู่",
+  "providers": "สถานะผู้ให้บริการ",
+  "active": "กำลังเรียกใช้",
+  "paused": "หยุดชั่วคราว",
+  "inputPerSecond": "ข้อความต่อวินาทีต่อหน้า",
+  "inputBurst": "ข้อความทันทีต่อหน้า",
+  "inputPerMinute": "ข้อความต่อนาทีต่อเซสชัน",
+  "transcriptionPerSession": "การถอดเสียงพร้อมกันต่อเซสชัน",
+  "transcriptionTotal": "การถอดเสียงพร้อมกันทั้งเครื่อง",
+  "translationOnline": "การแปลพร้อมกันต่อผู้ให้บริการ",
+  "translationLocal": "การแปลในเครื่องพร้อมกัน",
+  "jobsPerSession": "คำแปลที่ยังไม่เสร็จต่อเซสชัน",
+  "jobsTotal": "คำแปลที่ยังไม่เสร็จทั้งหมด",
+  "languages": "ขีดจำกัดภาษาของเซสชันใหม่",
+  "connectionsTotal": "การเชื่อมต่อเรียลไทม์ทั้งหมด",
+  "connectionsPerIp": "การเชื่อมต่อเรียลไทม์ต่อ IP"
+},
   language: { label: "ภาษาที่แสดง" },
   home: {
     title: "แปลเซสชันแบบเรียลไทม์",
@@ -1439,7 +1747,7 @@ const adminTh: AdminStrings = {
     languages: "กดปุ่มภาษาเพื่อเลือกภาษาของเซสชัน ปุ่ม + ใช้เพิ่มภาษา เฟืองใช้แปลและแก้ข้อความ UI และไอคอนหนังสือใช้จัดการคลังคำศัพท์พร้อมนำเข้า/ส่งออก CSV",
     sessionSettings: "ใช้ค่าที่ตั้งไว้สำหรับการประชุม/การชุมนุม หรือกำหนดการป้อนด้วยเสียง/การพิมพ์และผลลัพธ์การแปลของแต่ละภาษา ที่นี่ยังเปิดชื่อที่แสดง การป้อนรวม ภาษาเริ่มต้น และบันทึกเป็นค่าที่ตั้งไว้ส่วนตัวได้",
     translation: "เครื่องมือออนไลน์บันทึกคีย์ผ่านปุ่มลงทะเบียน API และ OpenAI มีหน้าดูการใช้งาน หากติดตั้ง Local AI ในตัวช่วยเริ่มต้นแล้ว สามารถเลือกใช้ได้โดยไม่ต้องมีคีย์ API",
-    transcription: "เลือกการรู้จำเสียงจาก OpenAI, Google หรือ Whisper ภายในเครื่องที่ติดตั้งไว้ เมื่อเลือก Google จะมีปุ่มลงทะเบียนไฟล์ JSON ของบัญชีบริการ",
+    transcription: "เลือกการรู้จำเสียงจาก OpenAI, Google หรือ Whisper ภายในเครื่องที่ติดตั้งไว้ ลงทะเบียน JSON บัญชี Google และคีย์ API ในตั้งค่าแอป → API · การใช้งาน ที่มุมซ้ายบน",
     fallback: "เครื่องมือสำรองใช้เฉพาะภาษาที่เครื่องมือหลักไม่รองรับหรือทำงานล้มเหลว เป็นตัวเลือกเสริม และเมื่อเลือกไม่ใช้ แอปจะไม่เปลี่ยนไปใช้เครื่องมืออื่นเอง",
     create: "กดสร้างเซสชันเพื่อยืนยันค่าปัจจุบันและเปิดหน้าจัดการ หลังสร้างแล้วจะเปลี่ยนการตั้งค่าหน้าตามภาษาไม่ได้",
     sessionList: "กดเซสชันที่กำลังดำเนินการเพื่อจัดการ การจบเซสชันจะหยุดข้อมูลใหม่ และการลบเซสชันที่จบแล้วจะลบบันทึกถาวร หลังจากกดถัดไป ให้สร้างหรือเปิดเซสชันจริงเพื่อดูคำแนะนำต่อ",
@@ -1639,6 +1947,9 @@ const adminTh: AdminStrings = {
   },
   languages: {
     add: "เพิ่มภาษา",
+    loading: "กำลังโหลดรายการภาษา",
+    registered: "ลงทะเบียนแล้ว",
+    translationIncomplete: "ลงทะเบียนภาษาแล้ว ตรวจสอบเครดิตและการตั้งค่า API แล้วแปลอีกครั้งในแก้ไขข้อความ ข้อความที่ยังไม่ได้แปลจะแสดงเป็นภาษาเกาหลี",
     search: "ค้นหาภาษา",
     noResults: "ไม่พบผลลัพธ์",
     translateWith: "เครื่องมือแปลข้อความหน้าจอ",
@@ -1692,6 +2003,58 @@ const adminTh: AdminStrings = {
 };
 
 const adminSi: AdminStrings = {
+  tunnel: tunnelStrings.si,
+  connectionSummary: { title: "සියලු සැසිවල සම්බන්ධතා එකතුව", details: "සියලු සැසිවල වත්මන් සම්බන්ධතා එකතු කරයි. භාෂාව සහ පිටුව අනුව විස්තර බැලීමට අදාළ සැසිය විවෘත කරන්න." },
+  appSettings: {
+    perLanguage: "මුල් භාෂාව අනුව රැඳී සිටින කාලය සුරකින්න. පරීක්ෂණයට තෝරාගත් භාෂාව යෙදේ. ඒකාබද්ධ හඬ ආදානය තෝරාගත් භාෂා අතර දිගම කාලය භාවිත කරයි. යළි පිහිටුවීම තෝරාගත් භාෂාවට පමණි.",
+    externalTunnel: "මෙම පොදු ලිපිනයේ උමඟ සේවාදායකයෙන් පිටත කළමනාකරණය වේ. ලිපිනය දිගටම භාවිත කළ හැක. ආරම්භ කිරීම සහ නැවැත්වීම එය ධාවනය වන පරිසරයෙන් කරන්න.",
+    title: "යෙදුම් සැකසුම්", connection: "සම්බන්ධතාව · බෙදාගැනීම", api: "API · භාවිතය", voice: "ස්වයංක්‍රීය පිටපත් කිරීම", security: "ආරක්ෂාව · කාර්යයන්",
+    unavailable: "මෙම සේවාදායකය Electron වෙත සම්බන්ධ නැත. වෙබ් සැකසුම් තවමත් භාවිත කළ හැක.",
+    insecure: "මෙය වෙනස් කිරීමට HTTPS ලිපිනයක් හෝ මෙම පරිගණකයේ localhost භාවිත කරන්න.",
+    share: "පෙරනිමි බෙදාගැනීමේ ලිපිනය", ca: "දේශීය HTTPS සහතිකය බාගන්න",
+    stopWarning: "උමඟ නැවැත්වීමෙන් පරිපාලකයාගේ හා සහභාගිවන්නන්ගේ පොදු සම්බන්ධතා විසන්ධි වන අතර ස්වයංක්‍රීය ප්‍රතිසාධනය අක්‍රිය වේ. නවත්වන්නද?",
+    stopRequested: "නැවැත්වීමේ ඉල්ලීම යවා ඇත. පොදු සම්බන්ධතාව විසන්ධි විය හැක. දේශීය ලිපිනයෙන් තත්ත්වය පරීක්ෂා කරන්න.",
+    delay: "කථාව නතර වූ පසු පිටපත තහවුරු කිරීමට රැඳී සිටින කාලය", auto: "භාෂාව අනුව ස්වයංක්‍රීය", manual: "අතින් සැකසීම",
+    note: "ස්වයංක්‍රීය: තත්පර 1.1; තායි හෝ සිංහල ඇතුළත් නම් තත්පර 1.7. අඛණ්ඩ කථාව උපරිම තත්පර 15කට වරක් බෙදේ. මෙය පිටපත් හා පරිවර්තන API සැකසුම් කාලය නොවේ.",
+    dry: "කැඩෙන වේලාව පමණක් පරීක්ෂා කරන්න (API ඇමතුම් නැත)", paid: "පිටපත් හා පරිවර්තන පරීක්ෂණය", paidWarning: "මයික්‍රෆෝන හඬ තෝරාගත් සේවාවට යවා පිටපත් කර පරිවර්තනය කරයි. මාර්ගගත සේවා සඳහා ගාස්තු අය විය හැක. ප්‍රතිඵල සැසියට සුරැකීම හෝ විකාශනය නොකරයි.",
+    source: "මුල් භාෂාව", target: "පරිවර්තන භාෂාව", nextTurn: "වෙනස්කම් පරීක්ෂණයේ ඊළඟ ප්‍රකාශයෙන් යෙදේ. සුරැකූ විට ස්වයංක්‍රීය පිටපත් කිරීමේ ඊළඟ ප්‍රකාශයෙන් යෙදේ.",
+    speech: "කථා කරමින්", silence: "නිහඬ කාලය බලා සිටිමින්", committed: "කොටස තහවුරු කළා", transcriptionMs: "පිටපත් සැකසීම", translationMs: "පරිවර්තන සැකසීම", segment: "තහවුරු කළ කොටස", reset: "පෙරනිමි යළි පිහිටුවන්න",
+  },
+  operations: stringsForLocale("si"),
+  security: {
+  "siteManagement": "යෙදුම් කළමනාකරණය",
+  "jobSession": "පරිවර්තන කාර්ය කළමනාකරණය සඳහා සැසිය",
+  "chooseSession": "සැසියක් තෝරන්න",
+  "title": "ආරක්ෂාව සහ භාවිත සීමා",
+  "description": "සියලු සැසිවලට අදාළ වේ. සීමා අඩු කළත් භාරගත් පරිවර්තන හෝ ක්‍රියාත්මක හඬ නතර නොවේ.",
+  "save": "සුරකින්න",
+  "saving": "සුරකිමින්",
+  "saved": "සුරකින ලදී",
+  "failed": "ක්‍රියාව අසාර්ථකයි. නැවත උත්සාහ කරන්න.",
+  "limitReached": "භාවිත සීමාවට ළඟා වී ඇත. පසුව නැවත උත්සාහ කරන්න.",
+  "jobs": "පරිවර්තන කාර්ය",
+  "pending": "පොරොත්තුවේ",
+  "running": "ක්‍රියාත්මකයි",
+  "failedJobs": "අසාර්ථකයි",
+  "retry": "අසාර්ථක හෝ අතුරුදහන් පරිවර්තන නැවත උත්සාහ කරන්න",
+  "cancel": "පොරොත්තු කාර්ය අවලංගු කරන්න",
+  "confirmCancel": "පොරොත්තු පරිවර්තන අවලංගු කරන්නද? මුල් පාඨය සුරැකේ.",
+  "providers": "සැපයුම්කරු තත්ත්වය",
+  "active": "ඇමතුම් ක්‍රියාත්මකයි",
+  "paused": "තාවකාලිකව නතර කර ඇත",
+  "inputPerSecond": "පිටුවකට තත්පරයක ආදාන",
+  "inputBurst": "පිටුවකට ක්ෂණික ආදාන",
+  "inputPerMinute": "සැසියකට මිනිත්තුවක ආදාන",
+  "transcriptionPerSession": "සැසියකට සමගාමී පිටපත් කිරීම්",
+  "transcriptionTotal": "පරිගණකයේ සමගාමී පිටපත් කිරීම්",
+  "translationOnline": "සැපයුම්කරුවකුට සමගාමී පරිවර්තන",
+  "translationLocal": "සමගාමී දේශීය පරිවර්තන",
+  "jobsPerSession": "සැසියක නිම නොකළ පරිවර්තන",
+  "jobsTotal": "මුළු නිම නොකළ පරිවර්තන",
+  "languages": "නව සැසියේ භාෂා සීමාව",
+  "connectionsTotal": "මුළු තත්කාලීන සම්බන්ධතා",
+  "connectionsPerIp": "IP එකකට තත්කාලීන සම්බන්ධතා"
+},
   language: { label: "සංදර්ශන භාෂාව" },
   home: {
     title: "තත්‍ය කාලීන සැසි පරිවර්තනය",
@@ -1741,7 +2104,7 @@ const adminSi: AdminStrings = {
     languages: "සැසි භාෂා තෝරා ගැනීමට භාෂා බොත්තම් ඔබන්න. + භාෂාවක් එක් කරයි, ගියර් නිරූපකය UI පෙළ පරිවර්තනය හා සංස්කරණය කරයි, පොත් නිරූපකය පදකෝෂය සහ CSV ආයාත/නිර්යාත පාලනය කරයි.",
     sessionSettings: "රැස්වීම/මහජන රැස්වීම පෙරසැකසුමක් යොදන්න හෝ එක් එක් භාෂාවට හඬ/යතුරු ලියන ආදානය සහ පරිවර්තන ප්‍රතිදානය සකසන්න. පෙන්වන නම, ඒකාබද්ධ ආදානය, පෙරනිමි භාෂාව සක්‍රිය කර ඔබේම පෙරසැකසුමක් ලෙස සුරැකිය හැක.",
     translation: "මාර්ගගත එන්ජින් සඳහා API ලියාපදිංචි කිරීමෙන් යතුර සුරකින්න. OpenAI භාවිත විස්තර ද පෙන්වයි. පළමු ආරම්භක විශාරදයෙන් Local AI ස්ථාපනය කර ඇත්නම් API යතුරක් නොමැතිව එය තෝරා ගත හැක.",
-    transcription: "OpenAI, Google හෝ ස්ථාපිත දේශීය Whisper අතරින් හඬ හඳුනාගැනීම තෝරන්න. Google තෝරාගත් විට සේවා ගිණුම් JSON ගොනුව ලියාපදිංචි කිරීමේ බොත්තම පෙන්වයි.",
+    transcription: "OpenAI, Google හෝ ස්ථාපිත දේශීය Whisper අතරින් හඬ හඳුනාගැනීම තෝරන්න. Google සේවා ගිණුම් JSON සහ API යතුරු ඉහළ වම් යෙදුම් සැකසුම් → API · භාවිතය තුළ ලියාපදිංචි කරන්න.",
     fallback: "විකල්ප එන්ජිම භාවිත වන්නේ ප්‍රධාන එන්ජිම සහය නොදක්වන හෝ අසාර්ථක වන භාෂා සඳහා පමණි. මෙය අත්‍යවශ්‍ය නොවන අතර භාවිත නොකරන විට යෙදුම වෙනත් එන්ජිමකට ස්වයංක්‍රීයව මාරු නොවේ.",
     create: "වත්මන් සැකසුම් තහවුරු කර සැසි කළමනාකරණ පිටුව විවෘත කිරීමට සැසියක් සාදන්න ඔබන්න. සැසිය සෑදූ පසු භාෂා පිටු සැකසුම් වෙනස් කළ නොහැක.",
     sessionList: "ක්‍රියාත්මක සැසියක් කළමනාකරණය කිරීමට එය ඔබන්න. අවසන් කිරීම නව ආදානය නවත්වන අතර අවසන් සැසියක් මැකීම ලොග් ද ස්ථිරව මකයි. ඊළඟ ඔබා සැබෑ සැසියක් සාදන්න හෝ විවෘත කරන්න; එවිට මාර්ගෝපදේශය දිගටම යයි.",
@@ -1941,6 +2304,9 @@ const adminSi: AdminStrings = {
   },
   languages: {
     add: "භාෂාවක් එක් කරන්න",
+    loading: "භාෂා ලැයිස්තුව පූරණය කරමින්",
+    registered: "ලියාපදිංචි කර ඇත",
+    translationIncomplete: "භාෂාව ලියාපදිංචි කර ඇත. ණය ශේෂය සහ API සැකසුම් පරීක්ෂා කර පෙළ සංස්කරණයෙන් නැවත පරිවර්තනය කරන්න. නොපරිවර්තනය කළ පෙළ කොරියානු භාෂාවෙන් පෙන්වයි.",
     search: "භාෂාව සොයන්න",
     noResults: "ප්‍රතිඵල නැත",
     translateWith: "අතුරුමුහුණත් පරිවර්තන එන්ජිම",
@@ -2003,6 +2369,78 @@ export const BUILTIN_ADMIN = new Map<LanguageCode, AdminStrings>([
 
 export const FALLBACK_ADMIN: AdminStrings = adminKo;
 
+/** New phrases for existing extra languages. Other phrases retain their existing DB/fallback provenance. */
+export const BUILTIN_ADMIN_ADDITIONS = new Map<LanguageCode, Pick<AdminStrings, "appSettings" | "connectionSummary" | "tunnel"> & {
+  languages: Pick<AdminStrings["languages"], "loading" | "registered" | "translationIncomplete">;
+}>([
+  ["en", {
+    tunnel: tunnelStrings.en,
+    connectionSummary: { title: "Connections across all sessions", details: "Current connections across all sessions combined. Open a session to see its language and page breakdown." },
+    languages: { loading: "Loading…", registered: "Registered", translationIncomplete: "The language has been registered. Check your credit and API settings, then retry translation in Edit UI text. Untranslated text is shown in Korean." },
+    appSettings: {
+      title: "App settings", connection: "Connection · sharing", api: "API · usage", voice: "Automatic transcription", security: "Security · jobs",
+      unavailable: "Server controls are unavailable. Other web settings remain available.",
+      insecure: "Use an HTTPS address or localhost on this computer to change these settings.",
+      share: "Default sharing address", ca: "Download the local HTTPS certificate",
+      stopWarning: "Stopping the tunnel disconnects administrators and attendees using the public address and disables automatic recovery. Stop the tunnel?",
+      stopRequested: "Stop requested. The public connection may disconnect. Check the status at the local address.",
+      delay: "Wait after speech stops before finalizing the transcript", auto: "Automatic by language", manual: "Set manually",
+      note: "Automatic: 1.1 seconds by default, or 1.7 seconds for Thai and Sinhala. Continuous speech is split at most every 15 seconds. This is separate from transcription and translation API processing time.",
+      dry: "Test segment timing only (no API calls)", paid: "Test transcription and translation",
+      paidWarning: "Microphone audio will be sent to the selected transcription service and translated. Online services may incur charges. Results are not saved to or broadcast in a session.",
+      source: "Source language", target: "Translation language",
+      nextTurn: "Changes apply from the next utterance in the test. Save to apply them to live automatic transcription from the next utterance.",
+      speech: "Speaking", silence: "Waiting for silence", committed: "Segment finalized", transcriptionMs: "Transcription processing", translationMs: "Translation processing", segment: "Finalized segment", reset: "Restore defaults",
+      perLanguage: "Save a separate wait time for each source language. The test uses the selected language. Combined voice input uses the longest wait among the selected languages. Reset affects only the selected language.",
+      externalTunnel: "This public address uses a tunnel managed outside the server. The address remains usable; manage starting and stopping in the environment running that tunnel.",
+    },
+  }],
+  ["zh-CN", {
+    tunnel: tunnelStrings["zh-CN"],
+    connectionSummary: { title: "所有会话的连接总数", details: "汇总所有会话的当前连接数。打开具体会话可查看按语言和页面分类的详情。" },
+    languages: { loading: "正在加载…", registered: "已注册", translationIncomplete: "语言已注册。请检查余额和 API 设置，然后在“编辑界面文字”中重新翻译。尚未翻译的文字将以韩语显示。" },
+    appSettings: {
+      title: "应用设置", connection: "连接与共享", api: "API 与用量", voice: "自动转写", security: "安全与任务",
+      unavailable: "服务器控制功能暂不可用。其他网页设置仍可使用。",
+      insecure: "请使用 HTTPS 地址或本机的 localhost 来修改这些设置。",
+      share: "默认共享地址", ca: "下载本地 HTTPS 证书",
+      stopWarning: "停止隧道将断开通过公开地址连接的管理员和参与者，并关闭自动恢复。是否停止？",
+      stopRequested: "已发送停止请求，公开连接可能会断开。请通过本地地址查看状态。",
+      delay: "停止说话后，确认转写内容前的等待时间", auto: "按语言自动设置", manual: "手动设置",
+      note: "自动模式：默认 1.1 秒，泰语和僧伽罗语为 1.7 秒。连续发言最长每 15 秒分段一次。此等待时间不包含转写和翻译 API 的处理时间。",
+      dry: "仅测试分段时机（不调用 API）", paid: "测试转写与翻译",
+      paidWarning: "麦克风音频将发送至所选转写服务并进行翻译。在线服务可能产生费用。测试结果不会保存到会话中，也不会向参与者发布。",
+      source: "原文语言", target: "翻译语言",
+      nextTurn: "修改将从测试中的下一段发言开始生效。保存后，实际自动转写也将从下一段发言开始使用新设置。",
+      speech: "正在说话", silence: "等待静音", committed: "已确认分段", transcriptionMs: "转写处理时间", translationMs: "翻译处理时间", segment: "已确认片段", reset: "恢复默认值",
+      perLanguage: "分别保存每种原文语言的等待时间，测试也使用所选语言。合并语音输入使用所选语言中最长的等待时间。恢复默认值仅影响当前所选语言。",
+      externalTunnel: "此公开地址的隧道由服务器外部管理。地址仍可使用；请在运行该隧道的环境中管理启动和停止。",
+    },
+  }],
+  ["fil", {
+    tunnel: tunnelStrings.fil,
+    connectionSummary: { title: "Kabuuang koneksyon sa lahat ng sesyon", details: "Pinagsamang kasalukuyang koneksyon ng lahat ng sesyon. Buksan ang isang sesyon para makita ang detalye ayon sa wika at pahina." },
+    languages: { loading: "Naglo-load…", registered: "Nairehistro na", translationIncomplete: "Nairehistro na ang wika. Suriin ang credit at mga setting ng API, at subukang isalin muli sa Pag-edit ng teksto ng UI. Ipapakita sa Korean ang tekstong hindi pa naisalin." },
+    appSettings: {
+      title: "Mga setting ng app", connection: "Koneksyon · pagbabahagi", api: "API · paggamit", voice: "Awtomatikong transkripsiyon", security: "Seguridad · mga gawain",
+      unavailable: "Hindi magagamit ang mga kontrol ng server. Magagamit pa rin ang ibang setting sa web.",
+      insecure: "Gumamit ng HTTPS address o localhost sa computer na ito upang baguhin ang mga setting.",
+      share: "Default na address para sa pagbabahagi", ca: "I-download ang lokal na HTTPS certificate",
+      stopWarning: "Ang paghinto ng tunnel ay magdidiskonekta sa mga administrador at kalahok na gumagamit ng pampublikong address at papatayin ang awtomatikong pagbawi. Ihinto ang tunnel?",
+      stopRequested: "Naipadala na ang kahilingang huminto. Maaaring maputol ang pampublikong koneksyon. Tingnan ang katayuan sa lokal na address.",
+      delay: "Paghihintay matapos huminto ang pagsasalita bago kumpirmahin ang transkripsiyon", auto: "Awtomatiko ayon sa wika", manual: "Manu-manong itakda",
+      note: "Awtomatiko: 1.1 segundo bilang default, o 1.7 segundo para sa Thai at Sinhala. Hinahati ang tuloy-tuloy na pagsasalita nang hindi lalampas sa bawat 15 segundo. Hiwalay ito sa oras ng pagproseso ng API para sa transkripsiyon at pagsasalin.",
+      dry: "Subukan lang ang oras ng paghahati (walang tawag sa API)", paid: "Subukan ang transkripsiyon at pagsasalin",
+      paidWarning: "Ipapadala ang audio ng mikropono sa napiling serbisyo ng transkripsiyon at isasalin. Maaaring may bayad ang mga online na serbisyo. Hindi ise-save o ibabahagi sa sesyon ang mga resulta.",
+      source: "Wika ng orihinal", target: "Wika ng salin",
+      nextTurn: "Ilalapat ang pagbabago sa susunod na bahagi ng pagsasalita sa pagsubok. I-save upang mailapat din sa susunod na bahagi sa aktuwal na awtomatikong transkripsiyon.",
+      speech: "Nagsasalita", silence: "Naghihintay ng katahimikan", committed: "Nakumpirma ang bahagi", transcriptionMs: "Pagproseso ng transkripsiyon", translationMs: "Pagproseso ng salin", segment: "Nakumpirmang bahagi", reset: "Ibalik ang mga default",
+      perLanguage: "Mag-save ng hiwalay na oras ng paghihintay sa bawat wika ng orihinal. Gagamitin din sa pagsubok ang napiling wika. Ang pinagsamang voice input ay gumagamit ng pinakamahabang oras sa mga napiling wika. Ang pag-reset ay para lang sa napiling wika.",
+      externalTunnel: "Pinamamahalaan sa labas ng server ang tunnel ng pampublikong address na ito. Magagamit pa rin ang address; pamahalaan ang pagsisimula at paghinto sa kapaligirang nagpapatakbo ng tunnel.",
+    },
+  }],
+]);
+
 /**
  * 중첩 객체를 점 경로 하나짜리 map 으로 편다.
  *
@@ -2013,7 +2451,7 @@ export const FALLBACK_ADMIN: AdminStrings = adminKo;
  */
 const stringGroupsSchema = z.record(z.string(), z.record(z.string(), z.string()));
 
-export function flattenStrings(source: UiStrings | AdminStrings): Map<string, string> {
+export function flattenStrings(source: UiStrings | { [K in keyof AdminStrings]?: Partial<AdminStrings[K]> }): Map<string, string> {
   const out = new Map<string, string>();
   for (const [group, entries] of Object.entries(stringGroupsSchema.parse(source))) {
     for (const [key, value] of Object.entries(entries)) out.set(`${group}.${key}`, value);

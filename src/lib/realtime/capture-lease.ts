@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { stopTranscription } from "@/lib/realtime/transcription-registry";
 
 /** 브라우저별 전사 세션이 완료 이벤트를 제출할 수 있게 하는 짧은 활성권. */
-const TTL_MS = 20_000;
+const TTL_MS = 30_000;
 
 type Lease = {
   meetingId: string;
@@ -28,6 +29,7 @@ function pruneExpired(now = Date.now()): void {
     if (lease.expiresAt > now) continue;
     state().leases.delete(leaseId);
     state().clients.delete(clientKey(lease.pageId, lease.clientId));
+    stopTranscription(leaseId);
   }
 }
 
@@ -82,6 +84,7 @@ export function releaseParticipantCaptures(meetingId: string, participantId: str
     if (lease.meetingId !== meetingId || lease.clientId !== participantId) continue;
     state().leases.delete(leaseId);
     state().clients.delete(clientKey(lease.pageId, lease.clientId));
+    stopTranscription(leaseId);
   }
 }
 
@@ -103,6 +106,7 @@ export function releaseCapture(pageId: string, leaseId?: string): void {
   if (!current || current.pageId !== pageId) return;
   state().leases.delete(leaseId);
   state().clients.delete(clientKey(pageId, current.clientId));
+  stopTranscription(leaseId);
 }
 
 export function releaseMeetingCaptures(meetingId: string): void {
@@ -110,5 +114,6 @@ export function releaseMeetingCaptures(meetingId: string): void {
     if (lease.meetingId !== meetingId) continue;
     state().leases.delete(leaseId);
     state().clients.delete(clientKey(lease.pageId, lease.clientId));
+    stopTranscription(leaseId);
   }
 }

@@ -25,6 +25,14 @@ import { WebSocket as WsSocket, WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
 
 import { isAdminFromCookieHeader } from "@/lib/auth-core";
+import { desktopOperations, sessionConnections } from "@/lib/desktop-operations";
+import { desktopTransportAllowed } from "@/lib/desktop-control";
+import { startServerControl } from "@/lib/server-control";
+import { startNamedTunnelControl, tunnelProbeAnswer } from "@/lib/named-tunnel";
+import { notifyAppSettings, subscribeAppSettings, type VoiceSettings } from "@/lib/voice-settings";
+import { validateRequest, limitRequestBody } from "@/lib/http-security";
+import { rateLimit } from "@/lib/security-limits";
+import { activeTranscriptions } from "@/lib/realtime/transcription-registry";
 import { matchDetectedLanguage } from "@/lib/detected-language";
 import {
   localHttpsCaPath,
@@ -32,6 +40,7 @@ import {
   localHttpsPfxPath,
   localHttpsPort,
   openaiRealtimeTranscribeUrl,
+  serverEnvironment,
 } from "@/lib/env";
 import {
   hasCleanSinhalaScript,
@@ -49,10 +58,14 @@ import {
   type Connection,
   join,
   leave,
+  subscribeConnections,
 } from "@/lib/realtime/hub";
 import { parseClientMessage, type ServerMessage } from "@/lib/realtime/protocol";
 import {
   getMeeting,
+  getVoiceSettings,
+  listLanguages,
+  getSecurityLimits,
   getMeetingLanguageConfigs,
   getPageByToken,
   isPageEnabled,
@@ -65,6 +78,7 @@ import {
   claimExclusiveCapture,
   releaseCapture,
   renewCapture,
+  ownsCapture,
 } from "@/lib/realtime/capture-lease";
 import { engineKey, googleSpeechCredentials } from "@/lib/secrets";
 import {
@@ -80,11 +94,11 @@ declare global {
   var __liveConfTranslationAppRoot: string | undefined;
 }
 
-const dev = process.env.NODE_ENV !== "production";
-const port = Number(process.env.PORT ?? 3000);
+const { dev, port, hostname } = serverEnvironment();
 // 0.0.0.0 으로 열어야 같은 네트워크의 참석자 기기에서 접속할 수 있다.
-const hostname = process.env.HOSTNAME ?? "0.0.0.0";
 const appRoot = globalThis.__liveConfTranslationAppRoot ?? process.cwd();
+globalThis.__liveConfDesktopOperations = desktopOperations;
+globalThis.__liveConfSettingsChanged = notifyAppSettings;
 
 const app = next({ dev, hostname, port, dir: appRoot });
 const handle = app.getRequestHandler();
@@ -93,6 +107,17 @@ const handle = app.getRequestHandler();
 let anonymousCounter = 0;
 
 const requestHandler = (req: Parameters<typeof handle>[0], res: Parameters<typeof handle>[1]) => {
+  if (!validateRequest(req, !["GET", "HEAD", "OPTIONS"].includes(req.method ?? "GET"))) {
+    res.writeHead(403, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "invalid-origin" }));
+    return;
+  }
+  if (!limitRequestBody(req, res)) return;
+  if (req.method === "GET" && req.url === "/api/tunnel-probe") {
+    const answer = tunnelProbeAnswer(req.headers.host, req.headers["x-tunnel-probe"]);
+    res.writeHead(answer ? 200 : 404, { "cache-control": "no-store", "content-type": "text/plain" });
+    res.end(answer ?? ""); return;
+  }
   if (req.method === "GET" && req.url === "/api/health") {
     res.writeHead(200, {
       "cache-control": "no-store",
@@ -119,7 +144,8 @@ const requestHandler = (req: Parameters<typeof handle>[0], res: Parameters<typeo
   }
 
   handle(req, res).catch((error) => {
-    console.error("[http] 요청 처리 실패", error);
+    console.error("[http] 요청 처리 실패", error instanceof Error ? error.name : "Error");
+    if (res.writableEnded) return;
     res.statusCode = 500;
     res.end("Internal Server Error");
   });
@@ -127,21 +153,62 @@ const requestHandler = (req: Parameters<typeof handle>[0], res: Parameters<typeo
 
 const server = createServer(requestHandler);
 
-const wss = new WebSocketServer({ noServer: true });
-const transcriptionWss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 });
+const transcriptionWss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
+const connectionsByIp = new Map<string, number>();
+function admitConnection(ws: WebSocket, ip: string): void {
+  connectionsByIp.set(ip, (connectionsByIp.get(ip) ?? 0) + 1);
+  ws.once("close", () => {
+    const count = (connectionsByIp.get(ip) ?? 1) - 1;
+    if (count) connectionsByIp.set(ip, count); else connectionsByIp.delete(ip);
+  });
+}
+const liveSockets = new WeakSet<WebSocket>();
+const statsAuth = new WeakMap<WebSocket, () => boolean>();
+const pingTimer = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (statsAuth.has(ws) && !statsAuth.get(ws)!()) { ws.close(1008, "Unauthorized"); continue; }
+    if (!liveSockets.has(ws)) { ws.terminate(); continue; }
+    liveSockets.delete(ws);
+    ws.ping();
+  }
+}, 30_000);
+pingTimer.unref();
 
 function attachUpgrade(serverInstance: HttpServer | HttpsServer) {
 serverInstance.on("upgrade", (request, socket, head) => {
+  try {
+  if (!validateRequest(request, true)) {
+    socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+    socket.destroy();
+    return;
+  }
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  if (url.pathname === "/ws/tunnel-probe") {
+    const answer = tunnelProbeAnswer(request.headers.host, request.headers["x-tunnel-probe"]);
+    if (!answer) { socket.write("HTTP/1.1 404 Not Found\r\n\r\n"); socket.destroy(); return; }
+    wss.handleUpgrade(request, socket, head, (ws) => { ws.on("error", () => {}); ws.send(answer); ws.close(); });
+    return;
+  }
+  const ip = connectionIp(request);
+  const limits = getSecurityLimits();
+  if (wss.clients.size + transcriptionWss.clients.size >= limits.connectionsTotal ||
+    (connectionsByIp.get(ip) ?? 0) >= limits.connectionsPerIp) {
+    socket.write("HTTP/1.1 429 Too Many Requests\r\nRetry-After: 30\r\n\r\n");
+    socket.destroy();
+    return;
+  }
 
   if (url.pathname === "/ws/transcribe") {
-    const target = resolveTranscriptionTarget(url);
+    const target = url.searchParams.get("test") === "1"
+      ? resolveTestTarget(url, request) : resolveTranscriptionTarget(url);
     if (!target) {
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;
     }
     transcriptionWss.handleUpgrade(request, socket, head, (ws) => {
+      admitConnection(ws, ip);
       attachTranscription(ws, target);
     });
     return;
@@ -149,6 +216,38 @@ serverInstance.on("upgrade", (request, socket, head) => {
 
   if (url.pathname !== "/ws") {
     // Next 의 HMR 소켓 등 다른 업그레이드는 건드리지 않는다.
+    return;
+  }
+
+  if (url.searchParams.get("stats") === "1") {
+    if (!isAdminFromCookieHeader(request.headers.cookie)) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      admitConnection(ws, ip);
+      liveSockets.add(ws);
+      ws.on("pong", () => liveSockets.add(ws));
+      statsAuth.set(ws, () => isAdminFromCookieHeader(request.headers.cookie));
+      const sendStats = (ids?: string[]) => {
+        if (!statsAuth.get(ws)!()) { ws.close(1008, "Unauthorized"); return; }
+        if (ws.readyState !== ws.OPEN) return;
+        if (ws.bufferedAmount > MAX_VIEWER_BUFFERED_BYTES) { ws.close(1013, "Slow client"); return; }
+        const message: ServerMessage = { t: "connection-stats", snapshot: !ids, at: Date.now(), ...sessionConnections(ids) };
+        ws.send(JSON.stringify(message));
+      };
+      const unsubscribe = subscribeConnections({ changed: sendStats, close: () => ws.close(1008, "Unauthorized") });
+      ws.on("close", unsubscribe);
+      ws.on("error", unsubscribe);
+      const sendSettings = () => {
+        if (!statsAuth.get(ws)!()) { ws.close(1008, "Unauthorized"); return; }
+        if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ t: "app-settings-changed" }));
+      };
+      ws.on("close", subscribeAppSettings(sendSettings));
+      sendSettings();
+      sendStats();
+    });
     return;
   }
 
@@ -160,8 +259,14 @@ serverInstance.on("upgrade", (request, socket, head) => {
   }
 
   wss.handleUpgrade(request, socket, head, (ws) => {
+    admitConnection(ws, ip);
+    liveSockets.add(ws);
+    ws.on("pong", () => liveSockets.add(ws));
     attach(ws, resolved, connectionIp(request));
   });
+  } catch {
+    socket.destroy();
+  }
 });
 }
 
@@ -177,7 +282,7 @@ type Target = {
 const connectionIpSchema = z.string().trim().min(1).max(64);
 
 function connectionIp(request: IncomingMessage): string {
-  const cloudflare = connectionIpSchema.safeParse(request.headers["cf-connecting-ip"]);
+  const cloudflare = connectionIpSchema.safeParse(request.headers["x-lct-ip"]);
   const remote = connectionIpSchema.safeParse(request.socket.remoteAddress);
   const value = cloudflare.success ? cloudflare.data : remote.success ? remote.data : "—";
   return value.startsWith("::ffff:") ? value.slice(7) : value.slice(0, 64);
@@ -213,12 +318,33 @@ function resolveConnectionTarget(url: URL, cookie: string | undefined): Target |
 }
 
 type TranscriptionTarget = {
+  testAuthorized?: () => boolean;
   page: Page & { lang: LanguageCode };
   meeting: Meeting;
   clientId: string;
   languages: LanguageCode[];
   mode: "single" | "combined";
 };
+
+function resolveTestTarget(url: URL, request: IncomingMessage): TranscriptionTarget | null {
+  const headers = new Headers();
+  for (const key of ["x-forwarded-proto", "x-lct-ip"]) {
+    const value = request.headers[key];
+    const parsed = z.string().safeParse(value);
+    if (parsed.success) headers.set(key, parsed.data);
+  }
+  if (!isAdminFromCookieHeader(request.headers.cookie) || !desktopTransportAllowed(url.href, headers)) return null;
+  const lang = url.searchParams.get("source");
+  const provider = z.enum(["openai", "google", "local"]).safeParse(url.searchParams.get("provider"));
+  const clientId = url.searchParams.get("clientId");
+  if (!lang || !listLanguages().some((row) => row.code === lang) || !provider.success || !clientId || !/^[a-f0-9]{32}$/.test(clientId)) return null;
+  const id = `admin-test:${clientId}`;
+  return { testAuthorized: () => isAdminFromCookieHeader(request.headers.cookie), clientId, languages: [lang], mode: "single",
+    page: { id, meetingId: "admin-test", token: "", kind: "input", lang, createdAt: Date.now() },
+    meeting: { id: "admin-test", title: "", status: "open", engine: "openai", fallbackEngine: null,
+      inputMode: "realtime", speakerLabels: false, translationModel: null, transcriptionProvider: provider.data,
+      transcriptionContext: null, createdAt: Date.now(), closedAt: null } };
+}
 
 function resolveTranscriptionTarget(url: URL): TranscriptionTarget | null {
   const token = url.searchParams.get("token");
@@ -243,8 +369,6 @@ function resolveTranscriptionTarget(url: URL): TranscriptionTarget | null {
   }
   if (
     (page.kind !== "input" && page.kind !== "capture") ||
-    (meeting.transcriptionProvider === "openai" &&
-      singleTranscriptionProfile(lang).transport !== "websocket") ||
     (page.kind === "capture" && meeting.inputMode !== "realtime")
   ) return null;
   return {
@@ -276,9 +400,11 @@ const transcriptionClientMessageSchema = z.union([
   }),
   z.object({ t: z.literal("heartbeat") }),
   z.object({ t: z.literal("commit") }),
+  z.object({ t: z.literal("clear") }),
 ]);
 
 type TranscriptionServerMessage =
+  | { t: "voice-settings"; settings: VoiceSettings }
   | { t: "error"; reason: "busy" | "key-required" | "google-unavailable" | "local-unavailable" | "speaker-required" | "invalid-language" | "lost" }
   | { t: "ready"; leaseId: string | null }
   | { t: "partial"; text: string }
@@ -312,6 +438,21 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   let selectedLang: LanguageCode | null = null;
   let started = false;
   let closed = false;
+  const abort = new AbortController();
+  let lastHeartbeat = Date.now();
+  let turnBytes = 0;
+  let queuedSegments = 0;
+  let openaiPending = 0;
+  let queuedBytes = 0;
+  let audioAllowance = 256 * 1024;
+  let lastAudio = Date.now();
+  let waitingSince = 0;
+  const watchdog = setInterval(() => {
+    if (Date.now() - lastHeartbeat >= 30_000 || (target.testAuthorized && !target.testAuthorized()) || (leaseId && (!ownsCapture(target.page.id, leaseId) ||
+      (!target.testAuthorized && (getMeeting(target.meeting.id)?.status !== "open" || !isPageEnabled(target.page))))) ||
+      (waitingSince && Date.now() - waitingSince >= 60_000)) fail("lost");
+  }, 1000);
+  watchdog.unref();
   const committed: string[] = [];
   const completedEvents = new Map<string, OpenAiTranscriptionEvent>();
   const partials = new Map<string, string>();
@@ -330,8 +471,11 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   let rescueAudio: RescueAudioTurns | null = null;
 
   const send = (message: TranscriptionServerMessage) => {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));
+    if (!closed && ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));
   };
+  const sendVoiceSettings = () => send({ t: "voice-settings", settings: getVoiceSettings() });
+  const unsubscribeSettings = subscribeAppSettings(sendVoiceSettings);
+  sendVoiceSettings();
   const flushPartial = () => {
     if (partialTimer) clearTimeout(partialTimer);
     partialTimer = null;
@@ -344,14 +488,25 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   const cleanup = () => {
     if (closed) return;
     closed = true;
+    unsubscribeSettings();
+    clearInterval(watchdog);
+    abort.abort();
+    bufferedPcm = [];
+    bufferedBytes = 0;
+    rescueAudio = null;
+    committed.length = 0;
+    completedEvents.clear();
+    partials.clear();
     if (partialTimer) clearTimeout(partialTimer);
     partialTimer = null;
     if (leaseId) releaseCapture(target.page.id, leaseId);
-    upstream?.close();
+    upstream?.terminate();
     upstream = null;
+    ws.close(1000);
   };
   const fail = (reason: "busy" | "key-required" | "google-unavailable" | "local-unavailable" | "speaker-required" | "invalid-language" | "lost") => {
     send({ t: "error", reason });
+    cleanup();
     ws.close(1011, reason);
   };
 
@@ -374,24 +529,30 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
       });
 
   const commitServerTranscription = () => {
+    if (closed || !started) return;
+    if (queuedSegments >= 4 || queuedBytes + bufferedBytes > 6 * 1024 * 1024) { fail("busy"); return; }
     const pcm = Buffer.concat(bufferedPcm, bufferedBytes);
     bufferedPcm = [];
     bufferedBytes = 0;
     send({ t: "partial", text: "" });
     const itemId = randomUUID();
     const params = localParams();
+    queuedSegments++;
+    queuedBytes += pcm.length;
     serverQueue = serverQueue.then(async () => {
+      if (closed) return;
       if (pcm.byteLength < 9_600) {
         send({ t: "transcript", itemId, contentIndex: 0, body: "", lang: selectedLang ?? target.page.lang, usedFallback: false, leaseId });
         return;
       }
       const requestedLang = selectedLang ?? target.page.lang;
       const result = google
-        ? await transcribeGooglePcm({ pcm, lang: requestedLang, keywords: params.keywords })
+        ? await transcribeGooglePcm({ pcm, lang: requestedLang, keywords: params.keywords, signal: abort.signal })
         : await transcribeLocalPcm({
             pcm,
             languages: selectedLang ? [selectedLang] : target.languages,
             prompt: params.prompt,
+            signal: abort.signal,
           });
       const lang = selectedLang ?? result.lang ?? target.page.lang;
       send({
@@ -406,6 +567,9 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
     }).catch(() => {
       console.error(`[${google ? "google" : "local"}-transcribe] 확정 전사 실패`);
       if (!closed) fail("lost");
+    }).finally(() => {
+      queuedSegments--;
+      queuedBytes -= pcm.length;
     });
   };
   const handleCompleted = async (itemId: string, event: OpenAiTranscriptionEvent) => {
@@ -461,6 +625,7 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
           key: sessionKey,
           prompt: rescuePrompt,
           language: apiLanguage,
+          signal: abort.signal,
         });
         let rescueStatus = "failed";
         if (rescued) {
@@ -507,7 +672,7 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
     if (draining) return;
     draining = true;
     try {
-      while (nextTranscript < committed.length) {
+      while (!closed && nextTranscript < committed.length) {
         const itemId = committed[nextTranscript];
         const event = completedEvents.get(itemId);
         if (!event) break;
@@ -515,6 +680,8 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
         completedEvents.delete(itemId);
         await handleCompleted(itemId, event);
       }
+      if (nextTranscript) { committed.splice(0, nextTranscript); nextTranscript = 0; }
+      waitingSince = committed.length || completedEvents.size ? waitingSince || Date.now() : 0;
     } finally {
       draining = false;
       if (
@@ -525,6 +692,14 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   };
 
   const start = () => {
+    const limits = getSecurityLimits();
+    const active = [...activeTranscriptions().values()];
+    if (target.testAuthorized ? !target.testAuthorized() : getMeeting(target.meeting.id)?.status !== "open" || !isPageEnabled(target.page)) { fail("lost"); return; }
+    if (active.some((entry) => entry.meetingId === target.meeting.id && entry.clientId === target.clientId) ||
+      active.length >= limits.transcriptionTotal ||
+      active.filter((entry) => entry.meetingId === target.meeting.id).length >= limits.transcriptionPerSession ||
+      rateLimit(`voice:participant:${target.meeting.id}:${target.clientId}`, 3 / 60, 3) ||
+      rateLimit(`voice:session:${target.meeting.id}`, 30 / 60, 30)) { fail("busy"); return; }
     if (local && !localTranscriptionConfigured()) {
       fail("local-unavailable");
       return;
@@ -541,6 +716,10 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
       return;
     }
     leaseId = lease.leaseId;
+    activeTranscriptions().set(leaseId, {
+      meetingId: target.meeting.id, pageId: target.page.id, clientId: target.clientId,
+      signal: abort.signal, stop: () => fail("lost"),
+    });
     if (local) {
       void ensureLocalTranscriptionRuntime().then(() => {
         if (closed) return;
@@ -558,8 +737,6 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
 
     const key = engineKey("openai");
     if (!key) {
-      releaseCapture(target.page.id, leaseId);
-      leaseId = null;
       fail("key-required");
       return;
     }
@@ -573,6 +750,7 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
     // 전사 세션은 모델명이 아니라 intent=transcription 으로 연다.
     // ?model=gpt-transcribe 는 현재 API 가 거부한다(전사 모델은 세션 모델이 될 수 없다).
     upstream = new WsSocket(openaiRealtimeTranscribeUrl(), {
+      maxPayload: 256 * 1024,
       headers: {
         authorization: `Bearer ${key}`,
         "OpenAI-Safety-Identifier": createHash("sha256")
@@ -604,6 +782,8 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
       }));
     });
     upstream.on("message", (raw) => {
+      if (closed) return;
+      if (committed.length + completedEvents.size + partials.size > 64) { fail("lost"); return; }
       let value;
       try {
         value = JSON.parse(raw.toString());
@@ -619,6 +799,7 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
       }
       if (event.type === "input_audio_buffer.committed" && event.item_id) {
         committed.push(event.item_id);
+        waitingSince ||= Date.now();
         rescueAudio?.bindCommit(event.item_id);
         void drainCompleted();
         return;
@@ -629,8 +810,10 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
       }
       if (event.type === "conversation.item.input_audio_transcription.delta") {
         partials.set(event.item_id, (partials.get(event.item_id) ?? "") + (event.delta ?? ""));
+        if ((partials.get(event.item_id)?.length ?? 0) > 10000) { fail("lost"); return; }
         schedulePartial();
       } else if (event.type === "conversation.item.input_audio_transcription.completed") {
+        openaiPending = Math.max(0, openaiPending - 1);
         partials.delete(event.item_id);
         flushPartial();
         completedEvents.set(event.item_id, event);
@@ -646,6 +829,7 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   };
 
   ws.on("message", (raw, binary) => {
+    if (closed) return;
     if (binary) {
       if (!started) return;
       const audio = Buffer.isBuffer(raw)
@@ -656,6 +840,14 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
       if (audio.byteLength > 256 * 1024) {
         ws.close(1009, "Audio frame too large");
         return;
+      }
+      const now = Date.now();
+      audioAllowance = Math.min(256 * 1024, audioAllowance + (now - lastAudio) * 48);
+      lastAudio = now;
+      audioAllowance -= audio.length;
+      turnBytes += audio.length;
+      if (audio.length % 2 || audioAllowance < 0 || turnBytes > 30 * 48_000 || queuedBytes + turnBytes > 6 * 1024 * 1024) {
+        fail("busy"); return;
       }
       if (local || google) {
         bufferedPcm.push(audio);
@@ -712,10 +904,22 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
       started = true;
       start();
     } else if (message.t === "heartbeat" && leaseId) {
+      lastHeartbeat = Date.now();
       if (!renewCapture(target.page.id, leaseId)) fail("lost");
+    } else if (message.t === "clear" && started) {
+      turnBytes = 0;
+      bufferedPcm = [];
+      bufferedBytes = 0;
+      rescueAudio?.discardCurrent();
+      if (upstream?.readyState === WsSocket.OPEN) upstream.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
     } else if (message.t === "commit") {
+      if (!started || !turnBytes) return;
+      turnBytes = 0;
       if (local || google) commitServerTranscription();
       else if (upstream?.readyState === WsSocket.OPEN) {
+        if (openaiPending >= 4) { fail("busy"); return; }
+        openaiPending++;
+        waitingSince ||= Date.now();
         rescueAudio?.markCommit();
         upstream.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
       }
@@ -804,9 +1008,12 @@ function attach(ws: WebSocket, target: Target, ip: string) {
  * CJS 출력은 최상위 await 를 지원하지 않는다.
  */
 async function main() {
+  globalThis.__liveConfServerStarted = true;
   await app.prepare();
 
   server.listen(port, hostname, () => {
+    startServerControl();
+    startNamedTunnelControl();
     console.log(`▲ 실시간 세션 번역 서버: http://${hostname}:${port}`);
     if (dev) console.log("  개발 모드");
   });

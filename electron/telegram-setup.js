@@ -92,7 +92,15 @@ function stepToken(strings) {
 function chatRow(chat, strings) {
   const kind = chat.type === "private" ? strings.privateChat : strings.groupChat;
   return node("div", { className: "chat" }, [
-    node("div", { className: "chat-name", text: `${chat.title} · ${kind}` }),
+    node("div", { className: "chat-name" }, [
+      node("div", { text: `${chat.title} · ${kind}` }),
+      ...(chat.type === "private" ? [node("label", { className: "toggle" }, [
+        node("input", { type: "checkbox", checked: chat.managementEnabled === true, disabled: busy,
+          onchange: (event) => void run(() => api.setManagement(chat.id, event.target.checked)),
+        }),
+        node("span", { text: strings.managePermission }),
+      ])] : []),
+    ]),
     node("button", {
       type: "button",
       text: strings.test,
@@ -121,6 +129,7 @@ function stepChats(strings) {
   return node("section", { className: "card" }, [
     node("h2", { text: strings.stepChats }),
     node("p", { text: strings.connectHelp }),
+    node("p", { className: "notice", text: strings.manageHelp }),
     node("div", { className: "actions" }, [
       node("button", {
         type: "button",
@@ -165,6 +174,7 @@ function stepEnable(strings) {
       node("p", { className: "muted", text: strings.autoHelp }),
     ])]),
     node("p", { className: "notice", text: strings.quickTunnelNotice }),
+    node("p", { className: "notice", text: strings.manageHelp }),
   ]);
 }
 
@@ -193,6 +203,10 @@ function render() {
       node("button", { type: "button", text: label, "aria-current": index === step ? "step" : undefined, onclick: () => changeStep(index) })
     )),
     [stepCreate, stepToken, stepChats, stepEnable][step](strings),
+    ...(state.bot ? [node("div", { className: "card", role: "status" }, [
+      node("p", { text: state.receiver === "conflict" ? strings.pollingConflict : state.receiver === "invalid-token" ? strings.invalidToken : state.receiver === "ready" ? strings.receiverReady : strings.receiverWaiting }),
+      node("button", { type: "button", text: strings.retryReceiver, disabled: busy, onclick: () => void run(() => api.retryReceiver()) }),
+    ])] : []),
     node("p", { className: `message${messageError ? " error" : ""}`, text: message, role: messageError ? "alert" : "status" }),
     node("footer", {}, [
       node("button", { type: "button", text: strings.close, onclick: () => void api.close() }),
@@ -204,6 +218,7 @@ function render() {
   ]));
 }
 
+api.onState?.((next) => { state = next; if (!busy) render(); });
 api.getState().then((result) => {
   if (!result.ok) throw new Error(result.error);
   state = result.state;

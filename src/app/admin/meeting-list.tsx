@@ -8,6 +8,7 @@ import { AppearanceControls } from "@/components/appearance-controls";
 import { generateQr, QrDialog, type QrImage } from "@/components/qr-dialog";
 import { useSetAdminLang } from "@/hooks/use-admin-lang";
 import { usePublicOrigin } from "@/hooks/use-public-origin";
+import { useConnectionStats } from "@/hooks/use-connection-stats";
 import type { AdminStrings, UiStrings } from "@/lib/i18n-builtin";
 import type { Language, LanguageCode } from "@/lib/languages";
 import { formatTimestamp } from "@/lib/log-format";
@@ -18,13 +19,11 @@ import { transcriptionProviderSchema } from "@/lib/repo-schema";
 
 import { AdminBusyOverlay } from "./admin-busy-overlay";
 import { AppGuide, continueAppGuideToDashboard } from "./app-guide";
-import { EngineKeysDialog, type EngineKeyStatus } from "./engine-keys-dialog";
-import { GoogleSpeechDialog, type GoogleSpeechStatus } from "./google-speech-dialog";
+import type { EngineKeyStatus } from "./engine-keys-dialog";
+import type { GoogleSpeechStatus } from "./google-speech-dialog";
 import { GlossaryDialog } from "./glossary-dialog";
 import { LanguageDialog } from "./language-dialog";
 import { OpenaiModelSelect } from "./openai-model-select";
-import { OpenaiUsageDialog } from "./openai-usage-dialog";
-import { PasswordChangeDialog } from "./password-change-dialog";
 import { UiStringsDialog } from "./ui-strings-dialog";
 import { SessionConfigEditor } from "./meetings/[id]/session-settings";
 
@@ -55,8 +54,6 @@ export function MeetingList({
   languages,
   defaultLangs,
   engines: initialEngines,
-  engineKeys,
-  googleSpeechCredentials,
   defaultEngine,
   openaiModel,
   presets,
@@ -107,22 +104,18 @@ export function MeetingList({
   const [deleting, setDeleting] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
   const [meetingRows, setMeetingRows] = useState(meetings);
+  const connections = useConnectionStats();
   // 키를 등록하면 "(키 없음)" 표시가 즉시 사라져야 한다.
   const [engines, setEngines] = useState(initialEngines);
-  const engineKeysDialog = (
-    <EngineKeysDialog
-      strings={strings.keys}
-      engines={engines.filter((item) => item.id !== "local").map((item) => ({ id: item.id, label: item.label }))}
-      initial={engineKeys}
-      onChange={(status) =>
-        setEngines((prev) =>
-          prev.map((item) =>
-            item.id === status.engine ? { ...item, configured: status.configured } : item,
-          ),
-        )
-      }
-    />
-  );
+  useEffect(() => {
+    const changed = (event: Event) => {
+      // SAFETY: only EngineKeysDialog dispatches this internal event, with validated API status.
+      const status = (event as CustomEvent<EngineKeyStatus>).detail;
+      setEngines((rows) => rows.map((item) => item.id === status.engine ? { ...item, configured: status.configured } : item));
+    };
+    window.addEventListener("lct-engine-keys", changed);
+    return () => window.removeEventListener("lct-engine-keys", changed);
+  }, []);
 
   // Next 16은 뒤로가기 때 이전 RSC 화면을 복원한다. 다시 보일 때 DB 목록을 합친다.
   useEffect(() => router.refresh(), [router]);
@@ -337,8 +330,9 @@ export function MeetingList({
     }
   };
 
-  const open = meetingRows.filter((meeting) => meeting.status === "open");
-  const closed = meetingRows.filter((meeting) => meeting.status === "closed");
+  const visibleMeetings = connections.at === null ? meetingRows : meetingRows.filter((meeting) => connections.sessions.has(meeting.id));
+  const open = visibleMeetings.filter((meeting) => (connections.sessions.get(meeting.id)?.status ?? meeting.status) === "open");
+  const closed = visibleMeetings.filter((meeting) => (connections.sessions.get(meeting.id)?.status ?? meeting.status) === "closed");
   const busyLabel = pending
     ? strings.list.creating
     : closing
@@ -360,10 +354,11 @@ export function MeetingList({
   const langs = config.languages.map((row) => row.lang);
 
   return (
-    <div className="mx-auto max-w-[840px] px-4 pt-20 pb-12 sm:px-8 sm:pb-16">
+    <div className="admin-page mx-auto max-w-[840px] px-4 pt-20 pb-12 sm:px-8 sm:pb-16">
       <AdminBusyOverlay label={busyLabel} />
       <AppGuide stage="admin" strings={strings} ui={ui} />
       <AppearanceControls
+        leading={<button className="app-settings-launcher" aria-haspopup="dialog" onClick={() => window.dispatchEvent(new Event("lct-open-settings"))}>⚙ {strings.appSettings.title}</button>}
         strings={ui.appearance}
         qr={{ label: strings.dashboard.showQr, onClick: () => void showAdminQr() }}
         language={{
@@ -379,7 +374,6 @@ export function MeetingList({
           {strings.list.heading}
         </div>
         <div className="flex items-center gap-3">
-          <PasswordChangeDialog strings={strings.passwordChange} />
           <button
             type="button"
             onClick={() => void logout()}
@@ -482,8 +476,6 @@ export function MeetingList({
             hidden={engine !== "openai"}
           />
 
-          {engine !== "local" ? engineKeysDialog : null}
-          {engine === "openai" ? <OpenaiUsageDialog strings={strings.openaiUsage} /> : null}
         </div>
 
         {engine === "local" ? (
@@ -509,12 +501,6 @@ export function MeetingList({
               {strings.list.transcriptionLocal}{localTranscriptionAvailable ? "" : ` · ${strings.list.notInstalled}`}
             </option>
           </select>
-          {transcriptionProvider === "google" ? (
-            <GoogleSpeechDialog
-              strings={strings.speechCredentials}
-              initial={googleSpeechCredentials}
-            />
-          ) : null}
         </div>
 
         <div data-guide="fallback-engine" className="flex flex-wrap items-center gap-3.5">
@@ -551,11 +537,16 @@ export function MeetingList({
         </div>
       </div>
 
+      <section aria-label={strings.connectionSummary.title} data-connection-summary className="mb-6 space-y-2 border-y border-line py-4 font-mono text-[0.75rem] leading-relaxed">
+        <p>{strings.connectionSummary.title}: <strong>{connections.at === null ? "—" : [...connections.sessions.values()].reduce((total, session) => total + session.total, 0)}</strong> · <span className="text-muted">{connections.state === "open" && connections.at !== null ? strings.operations.liveCounts : strings.operations.staleCounts}</span></p>
+        <p className="text-muted">{strings.connectionSummary.details}</p>
+        <p className="text-muted">{strings.operations.countNotice}</p>
+      </section>
       <Section guide="session-list" title={strings.list.active} empty={strings.list.noActive} count={open.length}>
         {open.map((meeting) => (
           <div
             key={meeting.id}
-            className="flex w-full flex-col gap-3 border-t border-line py-4 sm:flex-row sm:items-center sm:gap-4"
+            className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 border-t border-line py-4"
           >
             <button
               type="button"
@@ -589,7 +580,7 @@ export function MeetingList({
         {closed.map((meeting) => (
           <div
             key={meeting.id}
-            className="flex w-full flex-col gap-3 border-t border-line py-4 text-muted sm:flex-row sm:items-center sm:gap-4"
+            className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 border-t border-line py-4 text-muted"
           >
             <button
               type="button"

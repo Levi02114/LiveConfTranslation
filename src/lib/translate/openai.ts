@@ -12,6 +12,7 @@ import {
   type BatchTranslateInput,
   type GlossaryTermPair,
   TranslationError,
+  translationHttpError,
   type TranslateInput,
   type TranslationEngine,
 } from "./types";
@@ -29,6 +30,7 @@ const openaiErrorSchema = z.object({
   }).optional(),
 });
 const BILLING_ERROR_CODES = new Set([
+  "insufficient_quota",
   "credit_balance_exhausted",
   "organization_spend_limit_exceeded",
   "project_spend_limit_exceeded",
@@ -152,6 +154,7 @@ async function requestChat(
   messages: ChatMessage[],
   signal?: AbortSignal,
   json = false,
+  model?: string | null,
 ): Promise<string> {
   const key = engineKey("openai");
   if (!key) {
@@ -167,7 +170,7 @@ async function requestChat(
         "content-type": "application/json",
       },
       body: JSON.stringify(Object.assign({
-        model: resolveOpenaiModel(),
+        model: model ?? resolveOpenaiModel(),
         messages,
       }, json ? { response_format: { type: "json_object" } } : undefined)),
       signal,
@@ -179,17 +182,7 @@ async function requestChat(
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
     const code = classifyOpenAiError(response.status, detail);
-    const hint = code === "openai-billing-limit"
-      ? " (크레딧 또는 사용 한도 소진)"
-      : code === "openai-rate-limit"
-        ? " (요청 한도 초과)"
-        : "";
-    throw new TranslationError(
-      `OpenAI 가 ${response.status} 를 반환했습니다${hint}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
-      "openai",
-      undefined,
-      code,
-    );
+    throw translationHttpError(response, "openai", code);
   }
 
   const payload = await parseJsonResponse(response, chatResponseSchema);
@@ -227,7 +220,7 @@ export const openaiEngine: TranslationEngine = {
     return Boolean(engineKey("openai"));
   },
 
-  async translate({ text, from, to, context, glossary, signal }: TranslateInput) {
+  async translate({ text, from, to, context, glossary, signal, model }: TranslateInput) {
     const userContent = context?.length
       ? `<context_do_not_translate>\n${context.join("\n")}\n</context_do_not_translate>\n\n<translate>\n${text}\n</translate>`
       : text;
@@ -237,7 +230,7 @@ export const openaiEngine: TranslationEngine = {
       { role: "system", content: buildSystemPrompt(from, to, styleCue, glossary) },
       { role: "user", content: userContent },
     ];
-    const first = stripWrapper(await requestChat(messages, signal));
+    const first = stripWrapper(await requestChat(messages, signal, false, model));
     if (!hasHangulLeak(first, to)) return first;
 
     const corrected = stripWrapper(
@@ -251,6 +244,8 @@ export const openaiEngine: TranslationEngine = {
           },
         ],
         signal,
+        false,
+        model,
       ),
     );
 

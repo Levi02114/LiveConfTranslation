@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 
 import { ADMIN_LANG_COOKIE, toAdminLang } from "@/lib/admin-lang";
 import { isAdmin } from "@/lib/auth";
-import { getAdminStrings, getStrings, resolveEntries } from "@/lib/i18n";
+import { getAdminStrings, getStrings } from "@/lib/i18n";
 import { getLanguage, isBuiltinLanguage, type LanguageCode } from "@/lib/languages";
 import {
   getMeetingLangs,
@@ -20,9 +20,7 @@ import {
   googleSpeechCredentialsStatus,
   resolveOpenaiModel,
 } from "@/lib/secrets";
-import { getEngine, listEngines, refreshEngineSupport } from "@/lib/translate";
-import type { EngineId } from "@/lib/translate/types";
-import { translateUiStrings } from "@/lib/ui-translate";
+import { listEngines, refreshEngineSupport } from "@/lib/translate";
 import { localTranscriptionConfigured } from "@/lib/local-runtime";
 
 import { MeetingList } from "./meeting-list";
@@ -43,26 +41,11 @@ function describeLanguages(display: LanguageCode) {
   }));
 }
 
-async function fillMissingUiStrings(languages: readonly LanguageCode[], preferred: EngineId) {
-  const engines = [getEngine(preferred), ...listEngines()].filter(
-    (engine, index, all) => all.findIndex((item) => item.id === engine.id) === index,
-  );
-
-  for (const code of languages) {
-    if (!resolveEntries(code).some((entry) => entry.origin === "fallback")) continue;
-    const engine = engines.find(
-      (item) => item.isConfigured() && item.supports("ko") && item.supports(code),
-    );
-    if (engine) {
-      await translateUiStrings(code, engine.id, { keepManual: true, missingOnly: true });
-    }
-  }
-}
-
 export async function generateMetadata(): Promise<Metadata> {
   const codes = listLanguages().map((row) => row.code);
   const lang = toAdminLang((await cookies()).get(ADMIN_LANG_COOKIE)?.value, codes);
-  return { title: getAdminStrings(lang).list.heading };
+  const strings = getAdminStrings(lang);
+  return { title: strings.list.heading, other: { "lct-site-management": strings.security.siteManagement } };
 }
 
 export default async function AdminPage() {
@@ -77,8 +60,6 @@ export default async function AdminPage() {
   const defaultTranscriptionProvider = savedTranscriptionProvider === "local" && !localTranscriptionAvailable
     ? "openai"
     : savedTranscriptionProvider ?? (localTranscriptionAvailable ? "local" : "openai");
-  await fillMissingUiStrings(languages, selectedEngine);
-
   const lang = toAdminLang((await cookies()).get(ADMIN_LANG_COOKIE)?.value, languages);
 
   const meetings = listMeetings().map((meeting) => ({

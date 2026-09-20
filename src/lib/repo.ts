@@ -8,6 +8,12 @@
  * 불러오면 번들 단계에서 바로 실패한다 — 보호는 그대로 유지된다.
  */
 import { getDb } from "@/lib/db";
+import { randomUUID } from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
+import { z } from "zod";
+import { DEFAULT_VOICE_SETTINGS, voiceSettingsSchema } from "./voice-settings";
+import { inputFingerprint } from "@/lib/input-fingerprint";
+import { rateLimit, securityLimitsSchema, type SecurityLimits } from "@/lib/security-limits";
 import { newId, newPageToken } from "@/lib/ids";
 import type { LanguageCode } from "@/lib/languages";
 import {
@@ -59,6 +65,102 @@ import { parseRequiredSqlRow, parseSqlRow, parseSqlRows } from "@/lib/sqlite-sch
  */
 
 export type MeetingStatus = "open" | "closed";
+
+/** Replace only unchanged, machine-generated legacy titles; never overwrite manual wording. */
+export function migrateAppManagementTitle(db: DatabaseSync): void {
+  const update = db.prepare("UPDATE ui_strings SET text = ? WHERE lang = ? AND key = 'admin.security.siteManagement' AND origin = 'machine' AND text = ?");
+  for (const [lang, previous, current] of [
+    ["ko", "사이트 관리", "앱 관리"],
+    ["vi", "Quản lý trang web", "Quản lý ứng dụng"],
+    ["th", "จัดการเว็บไซต์", "จัดการแอป"],
+    ["si", "වෙබ් අඩවි කළමනාකරණය", "යෙදුම් කළමනාකරණය"],
+  ]) update.run(current, lang, previous);
+}
+
+/** Called by db.open with its connection; never calls getDb during initialization. */
+export function migrateSecurity(db: DatabaseSync): void {
+  db.exec("BEGIN");
+  try {
+  db.exec("CREATE TABLE IF NOT EXISTS security_settings (id INTEGER PRIMARY KEY CHECK(id = 1), value TEXT NOT NULL)");
+  db.exec(`CREATE TABLE IF NOT EXISTS translation_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    source_revision INTEGER NOT NULL,
+    target_lang TEXT NOT NULL,
+    engine TEXT NOT NULL,
+    actual_engine TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','running','succeeded','failed','cancelled')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_at INTEGER NOT NULL,
+    lease_until INTEGER,
+    lease_token TEXT,
+    error TEXT,
+    UNIQUE(message_id, source_revision, target_lang)
+  );
+  CREATE INDEX IF NOT EXISTS idx_jobs_due ON translation_jobs(status, next_at, engine);
+  CREATE INDEX IF NOT EXISTS idx_jobs_session ON translation_jobs(meeting_id, status);
+  CREATE INDEX IF NOT EXISTS idx_jobs_lease ON translation_jobs(status, lease_until);`);
+    if (!db.prepare("PRAGMA table_info(messages)").all().some((row) => row.name === "input_fingerprint")) {
+      db.exec("ALTER TABLE messages ADD COLUMN input_fingerprint TEXT");
+    }
+    db.exec(`DROP INDEX IF EXISTS idx_messages_ingest_key;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_ingest_page
+        ON messages(meeting_id, page_id, ingest_key) WHERE page_id IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_ingest_session
+        ON messages(meeting_id, ingest_key) WHERE page_id IS NULL;`);
+    const update = db.prepare("UPDATE messages SET input_fingerprint = ? WHERE id = ?");
+    for (const row of db.prepare("SELECT id, lang, body, speaker_name FROM messages WHERE input_fingerprint IS NULL").all()) {
+      update.run(inputFingerprint(String(row.lang), String(row.body), row.speaker_name == null ? null : String(row.speaker_name)), row.id);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function getVoiceSettings(): import("./voice-settings").VoiceSettings {
+  const row = getDb().prepare("SELECT model FROM engine_settings WHERE engine = 'voice-segmentation'").get();
+  return row ? voiceSettingsSchema.parse(JSON.parse(String(row.model))) : { ...DEFAULT_VOICE_SETTINGS };
+}
+
+/** Encrypted standalone operations settings; never serialized into page props. */
+export function getServerControlSettings(): string | null {
+  const row = getDb().prepare("SELECT model FROM engine_settings WHERE engine = 'server-control'").get();
+  return row ? String(row.model) : null;
+}
+
+export function setServerControlSettings(encrypted: string): void {
+  getDb().prepare("INSERT INTO engine_settings(engine, model, updated_at) VALUES('server-control', ?, ?) ON CONFLICT(engine) DO UPDATE SET model = excluded.model, updated_at = excluded.updated_at")
+    .run(encrypted, Date.now());
+}
+
+/** Encrypted fixed-domain settings shared by Electron and standalone servers. */
+export function getNamedTunnelSettings(): string | null {
+  const row = getDb().prepare("SELECT model FROM engine_settings WHERE engine = 'named-tunnel'").get();
+  return row ? String(row.model) : null;
+}
+
+export function setNamedTunnelSettings(encrypted: string): void {
+  getDb().prepare("INSERT INTO engine_settings(engine, model, updated_at) VALUES('named-tunnel', ?, ?) ON CONFLICT(engine) DO UPDATE SET model = excluded.model, updated_at = excluded.updated_at")
+    .run(encrypted, Date.now());
+}
+
+export function setVoiceSettings(value: import("./voice-settings").VoiceSettings): void {
+  getDb().prepare("INSERT INTO engine_settings(engine, model, updated_at) VALUES('voice-segmentation', ?, ?) ON CONFLICT(engine) DO UPDATE SET model = excluded.model, updated_at = excluded.updated_at")
+    .run(JSON.stringify(voiceSettingsSchema.parse(value)), Date.now());
+}
+
+export function getSecurityLimits(): SecurityLimits {
+  const row = getDb().prepare("SELECT value FROM security_settings WHERE id = 1").get();
+  return securityLimitsSchema.parse(row ? JSON.parse(String(row.value)) : {});
+}
+
+export function setSecurityLimits(value: SecurityLimits): void {
+  getDb().prepare("INSERT INTO security_settings(id, value) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value")
+    .run(JSON.stringify(securityLimitsSchema.parse(value)));
+}
 export type InputMode = "human" | "realtime";
 export type TranscriptionProvider = "openai" | "google" | "local";
 export type PageKind = "input" | "output" | "combined" | "combined-input" | "capture";
@@ -199,6 +301,7 @@ export function createMeeting(input: {
   translationModel?: string | null;
   transcriptionProvider?: TranscriptionProvider;
 }): Meeting {
+  if (input.config.languages.length > getSecurityLimits().languages) throw new InputError("language-limit");
   const now = Date.now();
   const id = newId();
 
@@ -399,10 +502,12 @@ export function deleteSessionPreset(id: string): boolean {
 
 /** 종료된 세션과 그 하위 페이지·원문·번역을 실제로 삭제한다. */
 export function deleteClosedMeeting(id: string): boolean {
-  const result = getDb()
-    .prepare(`DELETE FROM meetings WHERE id = ? AND status = 'closed'`)
-    .run(id);
-  return result.changes > 0;
+  return transaction(() => {
+    if (getMeeting(id)?.status !== "closed") return false;
+    // Remove messages before pages: SET NULL must not merge distinct idempotency scopes.
+    getDb().prepare("DELETE FROM messages WHERE meeting_id = ?").run(id);
+    return getDb().prepare("DELETE FROM meetings WHERE id = ? AND status = 'closed'").run(id).changes > 0;
+  });
 }
 
 // ---------------------------------------------------------------- 페이지
@@ -448,6 +553,38 @@ export function insertMessage(input: {
 /** AI 완료 이벤트 재전송 시 같은 원문을 두 번 만들지 않는다. */
 export type InsertMessageResult = { message: Message; inserted: boolean };
 
+export class InputError extends Error {
+  constructor(public readonly code: "idempotency-conflict" | "session-closed" | "page-disabled" | "queue-full" | "rate-limited" | "language-limit", public readonly retryAfter = 2) {
+    super(code);
+  }
+}
+
+export function checkInputRate(meetingId: string, pageId: string | null, stage = "save"): void {
+  const limits = getSecurityLimits();
+  const retry = rateLimit(`input:${stage}:page:${meetingId}:${pageId}`, limits.inputPerSecond, limits.inputBurst) ||
+    rateLimit(`input:${stage}:session:${meetingId}`, limits.inputPerMinute / 60, limits.inputPerMinute);
+  if (retry) throw new InputError("rate-limited", retry);
+}
+
+export function findMessageRetry(meetingId: string, pageId: string | null, ingestKey: string | undefined, fingerprint: string): Message | null {
+  if (!ingestKey) return null;
+  const raw = getDb().prepare("SELECT * FROM messages WHERE meeting_id = ? AND page_id IS ? AND ingest_key = ?").get(meetingId, pageId, ingestKey);
+  if (!raw) return null;
+  if (raw.input_fingerprint !== fingerprint) throw new InputError("idempotency-conflict");
+  const existing = parseRequiredSqlRow(messageRowSchema, raw, "중복 원문");
+  return { id: existing.id, meetingId: existing.meeting_id, pageId: existing.page_id,
+    lang: existing.lang, body: existing.body, speakerName: existing.speaker_name,
+    revision: existing.revision, editedAt: existing.edited_at, createdAt: existing.created_at };
+}
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Maps a caught domain exception to an HTTP response; other errors are rethrown by the caller.
+export function inputErrorResponse(error: unknown): Response | null {
+  if (!(error instanceof InputError)) return null;
+  const limited = ["queue-full", "rate-limited", "language-limit"].includes(error.code);
+  return Response.json({ error: error.code }, { status: limited ? 429 : 409,
+    headers: limited ? { "Retry-After": String(error.retryAfter) } : undefined });
+}
+
 export function insertMessageOnce(input: {
   meetingId: string;
   pageId: string | null;
@@ -455,13 +592,26 @@ export function insertMessageOnce(input: {
   body: string;
   speakerName?: string | null;
   ingestKey?: string;
+  fingerprint?: string;
 }): InsertMessageResult {
+  return transaction(() => {
+  const fingerprint = input.fingerprint ?? inputFingerprint(input.lang, input.body, input.speakerName);
+  const existing = findMessageRetry(input.meetingId, input.pageId, input.ingestKey, fingerprint);
+  if (existing) return { inserted: false, message: existing };
+  if (getMeeting(input.meetingId)?.status !== "open") throw new InputError("session-closed");
+  if (input.pageId !== null) {
+    const page = getMeetingPages(input.meetingId).find((page) => page.id === input.pageId);
+    if (!page || !isPageEnabled(page) || !["input", "capture", "combined-input"].includes(page.kind)) {
+      throw new InputError("page-disabled");
+    }
+  }
+  checkInputRate(input.meetingId, input.pageId);
   const now = Date.now();
   const result = getDb()
     .prepare(
-      `INSERT OR IGNORE INTO messages
-         (meeting_id, page_id, lang, body, speaker_name, ingest_key, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO messages
+         (meeting_id, page_id, lang, body, speaker_name, ingest_key, input_fingerprint, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       input.meetingId,
@@ -470,30 +620,10 @@ export function insertMessageOnce(input: {
       input.body,
       input.speakerName ?? null,
       input.ingestKey ?? null,
+      fingerprint,
       now,
     );
-
-  if (result.changes === 0 && input.ingestKey) {
-    const existing = parseRequiredSqlRow(
-      messageRowSchema,
-      getDb().prepare(`SELECT * FROM messages WHERE ingest_key = ?`).get(input.ingestKey),
-      "중복 원문",
-    );
-    return {
-      inserted: false,
-      message: {
-        id: existing.id,
-        meetingId: existing.meeting_id,
-        pageId: existing.page_id,
-        lang: existing.lang,
-        body: existing.body,
-        speakerName: existing.speaker_name,
-        revision: existing.revision,
-        editedAt: existing.edited_at,
-        createdAt: existing.created_at,
-      },
-    };
-  }
+  enqueueTranslationJobs(input.meetingId, Number(result.lastInsertRowid), 0, input.lang);
 
   return {
     inserted: true,
@@ -509,6 +639,7 @@ export function insertMessageOnce(input: {
       createdAt: now,
     },
   };
+  });
 }
 
 export type EditMessageResult =
@@ -536,6 +667,9 @@ export function editMessage(input: {
     if (!row) return { ok: false, reason: "not-found" };
     if (row.meeting_status !== "open") return { ok: false, reason: "closed" };
     if (row.revision !== input.revision) return { ok: false, reason: "conflict" };
+    const page = getMeetingPages(row.meeting_id).find((page) => page.id === input.pageId);
+    if (!page || !isPageEnabled(page)) throw new InputError("page-disabled");
+    checkInputRate(row.meeting_id, input.pageId);
 
     const editedAt = Date.now();
     const revision = row.revision + 1;
@@ -545,6 +679,8 @@ export function editMessage(input: {
     ).run(input.body, revision, editedAt, row.id, input.pageId, row.revision);
     if (updated.changes === 0) return { ok: false, reason: "conflict" };
     getDb().prepare(`DELETE FROM translations WHERE message_id = ?`).run(row.id);
+    getDb().prepare("UPDATE translation_jobs SET status = 'cancelled', lease_token = NULL WHERE message_id = ? AND status IN ('pending', 'running', 'failed')").run(row.id);
+    enqueueTranslationJobs(row.meeting_id, row.id, revision, row.lang);
 
     return {
       ok: true,
@@ -630,16 +766,9 @@ export function upsertTranslation(input: {
   error?: string | null;
 }): number | null {
   const now = Date.now();
-  const current = parseSqlRow(
-    messageRowSchema.pick({ revision: true }),
-    getDb().prepare(`SELECT revision FROM messages WHERE id = ?`).get(input.messageId),
-    "번역 대상 revision",
-  );
-  if (!current || current.revision !== input.revision) return null;
-
-  getDb().prepare(
+  const result = getDb().prepare(
     `INSERT INTO translations (message_id, lang, body, engine, status, error, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+     SELECT ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM messages WHERE id = ? AND revision = ?)
      ON CONFLICT (message_id, lang) DO UPDATE SET
        body = excluded.body,
        engine = excluded.engine,
@@ -654,8 +783,121 @@ export function upsertTranslation(input: {
     input.status,
     input.error ?? null,
     now,
+    input.messageId,
+    input.revision,
   );
-  return now;
+  return result.changes ? now : null;
+}
+
+const translationJobSchema = z.object({
+  id: z.number(), meeting_id: z.string(), message_id: z.number(), source_revision: z.number(),
+  target_lang: z.string(), engine: z.enum(["openai", "google", "deepl", "local"]),
+  attempts: z.number(), lease_token: z.string(),
+});
+export type TranslationJob = z.infer<typeof translationJobSchema>;
+
+function enqueueTranslationJobs(meetingId: string, messageId: number, revision: number, sourceLang: string): void {
+  const targets = getMeetingActiveLangs(meetingId).filter((lang) => lang !== sourceLang);
+  const limits = getSecurityLimits();
+  const total = Number(getDb().prepare("SELECT COUNT(*) AS n FROM translation_jobs WHERE status IN ('pending','running')").get()?.n ?? 0);
+  const session = Number(getDb().prepare("SELECT COUNT(*) AS n FROM translation_jobs WHERE meeting_id = ? AND status IN ('pending','running')").get(meetingId)?.n ?? 0);
+  if (total + targets.length > limits.jobsTotal || session + targets.length > limits.jobsPerSession) throw new InputError("queue-full");
+  const insert = getDb().prepare(`INSERT OR IGNORE INTO translation_jobs
+    (meeting_id, message_id, source_revision, target_lang, engine, next_at) VALUES (?, ?, ?, ?, ?, ?)`);
+  const engine = getMeeting(meetingId)!.engine;
+  for (const target of targets) insert.run(meetingId, messageId, revision, target, engine, Date.now());
+}
+
+export function recoverTranslationJobs(now = Date.now()): void {
+  getDb().prepare("UPDATE translation_jobs SET status = 'pending', lease_token = NULL, lease_until = NULL WHERE status = 'running' AND lease_until <= ?").run(now);
+}
+
+export function claimTranslationJob(engines: readonly EngineId[], now = Date.now()): TranslationJob | null {
+  if (!engines.length) return null;
+  return transaction(() => {
+    const row = getDb().prepare(`SELECT id FROM translation_jobs WHERE status = 'pending' AND next_at <= ? AND engine IN (${engines.map(() => "?").join(",")}) ORDER BY next_at, id LIMIT 1`).get(now, ...engines);
+    if (!row) return null;
+    return translationJobSchema.parse(getDb().prepare(`UPDATE translation_jobs SET status = 'running', attempts = attempts + 1,
+      lease_until = ?, lease_token = ? WHERE id = ? AND status = 'pending' RETURNING *`).get(now + 120000, randomUUID(), row.id));
+  });
+}
+
+export function translationJobMessage(job: Pick<TranslationJob, "message_id" | "source_revision">): Message | null {
+  const row = getDb().prepare("SELECT * FROM messages WHERE id = ? AND revision = ?").get(job.message_id, job.source_revision);
+  if (!row) return null;
+  const message = messageRowSchema.parse(row);
+  return { id: message.id, meetingId: message.meeting_id, pageId: message.page_id, lang: message.lang,
+    body: message.body, speakerName: message.speaker_name, revision: message.revision,
+    editedAt: message.edited_at, createdAt: message.created_at };
+}
+
+export function renewTranslationJob(job: TranslationJob): boolean {
+  return getDb().prepare("UPDATE translation_jobs SET lease_until = ? WHERE id = ? AND lease_token = ? AND status = 'running'")
+    .run(Date.now() + 120000, job.id, job.lease_token).changes > 0;
+}
+
+export function finishTranslationJob(job: TranslationJob, result: { body: string; engine: EngineId; error?: string }): number | null {
+  return transaction(() => {
+    const changed = getDb().prepare("UPDATE translation_jobs SET status = ?, actual_engine = ?, error = ?, lease_token = NULL, lease_until = NULL WHERE id = ? AND lease_token = ? AND status = 'running'")
+      .run(result.error ? "failed" : "succeeded", result.engine, result.error ?? null, job.id, job.lease_token);
+    if (!changed.changes) return null;
+    return upsertTranslation({ messageId: job.message_id, revision: job.source_revision, lang: job.target_lang,
+      body: result.body, engine: result.engine, status: result.error ? "error" : "ok", error: result.error });
+  });
+}
+
+export function rescheduleTranslationJob(job: TranslationJob, error: string, delay: number, countAttempt = true): void {
+  getDb().prepare("UPDATE translation_jobs SET status = 'pending', next_at = ?, error = ?, attempts = attempts - ?, lease_token = NULL, lease_until = NULL WHERE id = ? AND lease_token = ? AND status = 'running'")
+    .run(Date.now() + delay, error, countAttempt ? 0 : 1, job.id, job.lease_token);
+}
+
+export function nextTranslationJobTime(engines: readonly EngineId[]): number | null {
+  const row = getDb().prepare(`SELECT MIN(at) AS at FROM (
+    SELECT MIN(next_at) AS at FROM translation_jobs WHERE status = 'pending' AND engine IN (${engines.length ? engines.map(() => "?").join(",") : "NULL"})
+    UNION ALL SELECT MIN(lease_until) AS at FROM translation_jobs WHERE status = 'running')`).get(...engines);
+  return row?.at == null ? null : Number(row.at);
+}
+
+export function getTranslationJobCounts(meetingId: string) {
+  const counts = { pending: 0, running: 0, failed: 0 };
+  const rows = getDb().prepare("SELECT status, COUNT(*) AS n FROM translation_jobs WHERE meeting_id = ? AND status IN ('pending','running','failed') GROUP BY status").all(meetingId);
+  for (const row of rows) counts[z.enum(["pending", "running", "failed"]).parse(row.status)] = Number(row.n);
+  return counts;
+}
+
+export function manageTranslationJobs(meetingId: string, action: "retry" | "cancel") {
+  return transaction(() => {
+    const cancelled: { message: Message; lang: string; engine: EngineId; createdAt: number }[] = [];
+    if (action === "cancel") {
+      const pending = parseSqlRows(translationJobSchema.omit({ lease_token: true }),
+        getDb().prepare("SELECT * FROM translation_jobs WHERE meeting_id = ? AND status = 'pending'").all(meetingId), "취소할 번역 작업");
+      for (const job of pending) {
+        const message = translationJobMessage(job);
+        if (!message) continue;
+        const createdAt = upsertTranslation({ messageId: message.id, revision: message.revision, lang: job.target_lang,
+          body: "", engine: job.engine, status: "error", error: "translation-cancelled" });
+        if (createdAt !== null) cancelled.push({ message, lang: job.target_lang, engine: job.engine, createdAt });
+      }
+      getDb().prepare("UPDATE translation_jobs SET status = 'cancelled', error = 'cancelled' WHERE meeting_id = ? AND status = 'pending'").run(meetingId);
+      return cancelled;
+    }
+    const limits = getSecurityLimits();
+    const counts = getTranslationJobCounts(meetingId);
+    const missing = getDb().prepare(`SELECT m.id, m.revision, ml.lang, mt.engine FROM messages m
+      JOIN meetings mt ON mt.id = m.meeting_id
+      JOIN meeting_langs ml ON ml.meeting_id = m.meeting_id AND ml.lang != m.lang AND (ml.input_enabled = 1 OR ml.output_enabled = 1)
+      LEFT JOIN translations t ON t.message_id = m.id AND t.lang = ml.lang
+      LEFT JOIN translation_jobs j ON j.message_id = m.id AND j.source_revision = m.revision AND j.target_lang = ml.lang
+      WHERE m.meeting_id = ? AND (t.id IS NULL OR t.status = 'error') AND j.id IS NULL LIMIT ?`).all(meetingId, limits.jobsPerSession + 1);
+    const total = Number(getDb().prepare("SELECT COUNT(*) AS n FROM translation_jobs WHERE status IN ('pending','running')").get()?.n ?? 0);
+    if (counts.pending + counts.running + counts.failed + missing.length > limits.jobsPerSession || total + counts.failed + missing.length > limits.jobsTotal) throw new InputError("queue-full");
+    const insertMissing = getDb().prepare("INSERT INTO translation_jobs(meeting_id, message_id, source_revision, target_lang, engine, next_at) VALUES (?, ?, ?, ?, ?, ?)");
+    for (const row of missing) insertMissing.run(meetingId, row.id, row.revision, row.lang, row.engine, Date.now());
+    getDb().prepare(`UPDATE translation_jobs SET status = 'pending', attempts = 0, error = NULL, next_at = ?
+      WHERE meeting_id = ? AND status = 'failed' AND EXISTS(SELECT 1 FROM messages m WHERE m.id = translation_jobs.message_id AND m.revision = translation_jobs.source_revision)`)
+      .run(Date.now(), meetingId);
+    return cancelled;
+  });
 }
 
 /** 대시보드가 처음 열릴 때 채워 넣을 최근 원문 */

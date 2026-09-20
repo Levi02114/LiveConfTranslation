@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppearanceControls } from "@/components/appearance-controls";
+import { FailedSubmissions, type FailedSubmission } from "@/components/failed-submissions";
 import { TranslationEntry } from "@/components/translation-entry";
 import { VoiceLevelMeter } from "@/components/voice-level-meter";
 import { useRealtime } from "@/hooks/use-realtime";
-import { postPageMessage, useSubmitQueue } from "@/hooks/use-submit-queue";
+import { postPageMessage, retryAfterMilliseconds, useSubmitQueue } from "@/hooks/use-submit-queue";
+import { parseMessageResponse } from "@/lib/client-json";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { upsertSource, upsertTranslation } from "@/lib/combined-entry";
 import { newBrowserId } from "@/lib/browser-id";
@@ -63,6 +65,7 @@ export function InputView({
   const [participantId] = useState(newBrowserId);
   const targetLanguage = useMemo(() => [language], [language]);
   const { enqueue, sending } = useSubmitQueue();
+  const [failedSubmissions, setFailedSubmissions] = useState<FailedSubmission[]>([]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -250,10 +253,14 @@ export function InputView({
     send({ t: "draft", text: "" });
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setError(null);
-    const restore = () => setText((current) => current.trim() ? `${body}\n${current}` : body);
     const ingestKey = `typed:${participantId}:${newBrowserId()}`;
-
-    enqueue(async () => {
+    const retain = (response?: Response) => setFailedSubmissions((current) => [...current.filter((item) => item.id !== ingestKey), {
+      id: ingestKey, body, retryAt: Date.now() + (response ? retryAfterMilliseconds(response) : 0), retry: attempt,
+    }]);
+    const attempt = () => {
+      setError(null);
+      setFailedSubmissions((current) => current.filter((item) => item.id !== ingestKey));
+      enqueue(async () => {
       try {
         const response = await postPageMessage(token, {
           body,
@@ -261,15 +268,19 @@ export function InputView({
           speakerName: speakerLabels ? speakerName.trim() : undefined,
         });
 
-        if (response.status === 409) setClosed(true);
+        const payload = parseMessageResponse(await response.text());
+        if (payload?.error === "session-closed") setClosed(true);
         if (response.ok) return;
-        setError(strings.error.sendFailed);
-        restore();
+        setError(response.status === 429 ? strings.error.rateLimited : response.status === 413 ? strings.error.payloadTooLarge :
+          payload?.error === "idempotency-conflict" ? strings.error.idempotencyConflict : strings.error.sendFailed);
+        retain(response);
       } catch {
         setError(strings.error.sendFailed);
-        restore();
+        retain();
       }
-    });
+      });
+    };
+    attempt();
   };
 
   const selectVoiceMode = (enabled: boolean) => {
@@ -519,6 +530,7 @@ export function InputView({
             </span>
           </div>
 
+          <FailedSubmissions entries={failedSubmissions} strings={strings.input} disabled={closed || sending} />
           <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end sm:gap-4">
             <textarea
               ref={textareaRef}

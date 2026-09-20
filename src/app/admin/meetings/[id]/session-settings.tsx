@@ -214,10 +214,10 @@ export function SessionConfigEditor({
         <div className="mb-2 font-mono text-[11px] text-muted">{strings.settings.languages}</div>
         <div className="border-t border-line">
           {value.languages.map((row) => (
-            <div key={row.lang} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-line py-3">
-              <span className="min-w-0 break-words text-[14px]">{languageByCode.get(row.lang)?.label ?? row.lang}</span>
+            <div key={row.lang} className="grid grid-cols-2 items-start gap-3 border-b border-line py-3 sm:grid-cols-3">
+              <span className="col-span-2 min-w-0 break-words text-[14px] sm:col-span-1">{languageByCode.get(row.lang)?.label ?? row.lang}</span>
               {(["inputEnabled", "outputEnabled"] as const).map((field) => (
-                <label key={field} className="flex cursor-pointer items-center gap-2 whitespace-nowrap font-mono text-[11px]">
+                <label key={field} className="flex min-w-0 cursor-pointer items-start gap-2 font-mono text-[11px] [overflow-wrap:anywhere]">
                   <input
                     type="checkbox"
                     checked={row[field]}
@@ -235,7 +235,7 @@ export function SessionConfigEditor({
                             : value.combinedInputFallbackLang,
                       });
                     }}
-                    className="h-[15px] w-[15px] accent-[var(--fg)]"
+                    className="mt-0.5 h-[15px] w-[15px] shrink-0 accent-[var(--fg)]"
                   />
                   {field === "inputEnabled" ? strings.settings.input : strings.settings.output}
                 </label>

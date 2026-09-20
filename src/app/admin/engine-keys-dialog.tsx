@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
 import type { AdminStrings } from "@/lib/i18n-builtin";
@@ -31,18 +31,31 @@ export function EngineKeysDialog({
   engines,
   initial,
   onChange,
+  inline = false,
 }: {
   strings: AdminStrings["keys"];
   engines: { id: EngineId; label: string }[];
   initial: EngineKeyStatus[];
   /** 등록·삭제 결과를 부모에게 알린다 — 엔진 목록의 "(키 없음)" 표시가 따라가야 한다. */
   onChange?: (status: EngineKeyStatus) => void;
+  inline?: boolean;
 }) {
+  const Container = inline ? "section" : "dialog";
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [keys, setKeys] = useState<EngineKeyStatus[]>(initial);
   const [drafts, setDrafts] = useState<Partial<Record<EngineId, string>>>({});
   const [busy, setBusy] = useState<EngineId | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!inline) return;
+    const abort = new AbortController();
+    void fetch("/api/admin/engine-keys", { signal: abort.signal }).then(async (response) => {
+      const parsed = z.object({ keys: z.array(engineKeyStatusSchema) }).safeParse(await response.json());
+      if (!response.ok || !parsed.success) throw new Error();
+      setKeys(parsed.data.keys);
+    }).catch(() => { if (!abort.signal.aborted) setError(strings.saveFailed); });
+    return () => abort.abort();
+  }, [inline, strings.saveFailed]);
 
   const statusOf = (engine: EngineId) => keys.find((key) => key.engine === engine);
 
@@ -105,6 +118,7 @@ export function EngineKeysDialog({
   return (
     <>
       <button
+        hidden={inline}
         type="button"
         onClick={() => dialogRef.current?.showModal()}
         className="cursor-pointer border border-line px-2.5 py-1.5 font-mono text-[12px] text-muted transition-colors hover:border-fg hover:bg-fg hover:text-bg"
@@ -112,14 +126,14 @@ export function EngineKeysDialog({
         {strings.button}
       </button>
 
-      <dialog
+      <Container
         ref={dialogRef}
         onClose={() => {
           // 창을 닫으면 입력해 둔 값도 지운다. 화면에 키가 남아 있지 않게.
           setDrafts({});
           setError(null);
         }}
-        className="m-auto w-[min(560px,calc(100vw-32px))] border border-line bg-bg p-0 text-fg backdrop:bg-black/45"
+        className={inline ? "settings-inline" : "m-auto w-[min(560px,calc(100vw-32px))] border border-line bg-bg p-0 text-fg backdrop:bg-black/45"}
       >
         <div className="px-7 py-6">
           <div className="flex items-baseline justify-between gap-4">
@@ -200,7 +214,7 @@ export function EngineKeysDialog({
             })}
           </div>
         </div>
-      </dialog>
+      </Container>
     </>
   );
 }

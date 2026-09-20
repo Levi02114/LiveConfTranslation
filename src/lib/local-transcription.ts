@@ -41,6 +41,7 @@ export async function transcribeLocalPcm(input: {
   pcm: Buffer;
   languages: readonly LanguageCode[];
   prompt: string;
+  signal?: AbortSignal;
 }): Promise<{ body: string; lang: LanguageCode | null; confidence: number }> {
   const origin = await ensureLocalTranscriptionRuntime();
   const form = new FormData();
@@ -53,7 +54,8 @@ export async function transcribeLocalPcm(input: {
   form.set("carry_initial_prompt", "true");
   form.set("language", input.languages.length === 1 ? input.languages[0].split("-")[0] : "auto");
 
-  const response = await fetch(`${origin}/inference`, { method: "POST", body: form });
+  const signal = AbortSignal.any([AbortSignal.timeout(120_000), ...(input.signal ? [input.signal] : [])]);
+  const response = await fetch(`${origin}/inference`, { method: "POST", body: form, signal });
   if (!response.ok) throw new Error(`whisper.cpp ${response.status}`);
   const parsed = responseSchema.safeParse(await response.json().catch(() => null));
   if (!parsed.success) throw new Error("whisper.cpp 응답이 올바르지 않습니다");

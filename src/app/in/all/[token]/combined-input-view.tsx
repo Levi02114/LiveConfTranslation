@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppearanceControls } from "@/components/appearance-controls";
+import { FailedSubmissions, type FailedSubmission } from "@/components/failed-submissions";
 import { TranslationEntry } from "@/components/translation-entry";
 import { VoiceLevelMeter } from "@/components/voice-level-meter";
 import { useServerVoiceInput } from "@/hooks/use-combined-voice-input";
 import { useRealtime } from "@/hooks/use-realtime";
-import { postPageMessage, useSubmitQueue } from "@/hooks/use-submit-queue";
+import { postPageMessage, retryAfterMilliseconds, useSubmitQueue } from "@/hooks/use-submit-queue";
 import { upsertSource, upsertTranslation } from "@/lib/combined-entry";
 import { newBrowserId } from "@/lib/browser-id";
 import { parseMessageResponse } from "@/lib/client-json";
@@ -68,6 +69,7 @@ export function CombinedInputView({
   const [speakerError, setSpeakerError] = useState<string | null>(null);
   const [participantId] = useState(newBrowserId);
   const { enqueue, sending } = useSubmitQueue();
+  const [failedSubmissions, setFailedSubmissions] = useState<FailedSubmission[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -128,10 +130,10 @@ export function CombinedInputView({
     } else if (message.t === "presence") {
       setPeers(message.peers);
     } else if (message.t === "voice-stop") {
-      stopVoice();
+      stopVoice(false);
     } else if (message.t === "meeting-closed") {
       setClosed(true);
-      stopVoice();
+      stopVoice(false);
     }
   }, [stopVoice, strings.speaker.duplicate, token]);
   const { state, send } = useRealtime(
@@ -229,13 +231,18 @@ export function CombinedInputView({
     }
     setError(null);
     setFallbackNotice(null);
-    const restore = () => {
+    const retain = (response?: Response) => {
       setPendingLanguageBody(null);
-      setText((current) => current.trim() ? `${body}\n${current}` : body);
+      setFailedSubmissions((current) => [...current.filter((item) => item.id !== ingestKey), {
+        id: ingestKey, body, retryAt: Date.now() + (response ? retryAfterMilliseconds(response) : 0), retry: attempt,
+      }]);
     };
     const ingestKey = `typed:${participantId}:${newBrowserId()}`;
 
-    enqueue(async () => {
+    const attempt = () => {
+      setError(null);
+      setFailedSubmissions((current) => current.filter((item) => item.id !== ingestKey));
+      enqueue(async () => {
       try {
         const response = await postPageMessage(token, {
           body,
@@ -244,23 +251,26 @@ export function CombinedInputView({
           speakerName: speakerLabels ? speakerName.trim() : undefined,
         });
         const payload = parseMessageResponse(await response.text());
-        if (response.status === 409) {
+        if (payload?.error === "session-closed") {
           setClosed(true);
-          restore();
+          retain(response);
         } else if (response.status === 422 && payload?.error === "language-ambiguous") {
           setPendingLanguageBody(body);
         } else if (!response.ok) {
-          setError(strings.error.sendFailed);
-          restore();
+          setError(response.status === 429 ? strings.error.rateLimited : response.status === 413 ? strings.error.payloadTooLarge :
+            payload?.error === "idempotency-conflict" ? strings.error.idempotencyConflict : strings.error.sendFailed);
+          retain(response);
         } else {
           setPendingLanguageBody(null);
           if (payload?.usedFallback) showFallback(payload.message?.lang ?? fallbackLang);
         }
       } catch {
         setError(strings.error.sendFailed);
-        restore();
+        retain();
       }
-    });
+      });
+    };
+    attempt();
   };
   const saveSpeakerName = () => {
     const name = speakerDraft.trim();
@@ -492,6 +502,7 @@ export function CombinedInputView({
             <span>{strings.peers.online.replace("{count}", String(peers.length + 1))}</span>
             <span className="text-fg">{!speakerReady ? strings.speaker.required : fallbackNotice ?? error}</span>
           </div>
+          <FailedSubmissions entries={failedSubmissions} strings={strings.input} disabled={closed || sending} />
           <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end sm:gap-4">
             <textarea
               ref={textareaRef}

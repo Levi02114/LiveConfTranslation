@@ -62,7 +62,7 @@ export interface TranslationEngine {
    */
   supports(lang: LanguageCode): boolean;
   /** 엔진 API가 제공하는 최신 지원 언어를 로드한다. */
-  refreshSupport?(): Promise<void>;
+  refreshSupport?(signal?: AbortSignal): Promise<void>;
   /** API 키가 설정되어 실제로 호출 가능한 상태인지 */
   isConfigured(): boolean;
   translate(input: TranslateInput): Promise<string>;
@@ -83,8 +83,25 @@ export class TranslationError extends Error {
     readonly cause?: unknown,
     /** 화면에 안전하게 전달할 수 있는, 제공자 응답과 독립적인 오류 코드. */
     readonly code?: string,
+    readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = "TranslationError";
   }
+}
+
+export function translationHttpError(response: Response, engine: EngineId, code?: string): TranslationError {
+  const raw = response.headers.get("retry-after");
+  const retryAfterMs = raw == null ? undefined : /^\d+(\.\d+)?$/.test(raw.trim())
+    ? Number(raw) * 1000 : Math.max(0, Date.parse(raw) - Date.now());
+  const safeCode = code ?? (response.status === 401 || response.status === 403 ? "provider-auth" :
+    response.status === 456 || response.status === 402 ? "provider-credit" :
+    response.status === 429 ? "provider-rate-limit" : response.status >= 500 ? "provider-unavailable" : "provider-request");
+  return new TranslationError(safeCode, engine, undefined, safeCode,
+    Number.isFinite(retryAfterMs) ? retryAfterMs : undefined);
+}
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- This function classifies caught provider errors at the exception boundary.
+export function isTransientTranslationError(error: unknown): boolean {
+  return !(error instanceof TranslationError && ["provider-auth", "provider-credit", "provider-request", "engine-unavailable", "unsupported-language", "openai-billing-limit", "openai-auth"].includes(error.code ?? ""));
 }

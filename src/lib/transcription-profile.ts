@@ -2,7 +2,7 @@ import type { LanguageCode } from "@/lib/languages";
 
 export type SingleTranscriptionProfile = {
   model: "gpt-live-transcribe" | "gpt-transcribe";
-  transport: "webrtc" | "websocket";
+  transport: "websocket";
 };
 
 /**
@@ -14,6 +14,6 @@ export function singleTranscriptionProfile(lang: LanguageCode): SingleTranscript
   if (primary === "th") return { model: "gpt-transcribe", transport: "websocket" };
   return {
     model: "gpt-live-transcribe",
-    transport: primary === "si" ? "websocket" : "webrtc",
+    transport: "websocket",
   };
 }

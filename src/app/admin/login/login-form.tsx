@@ -15,12 +15,14 @@ export function LoginForm({
   languages,
   strings,
   ui,
+  destination = "/admin",
 }: {
   lang: LanguageCode;
   /** 우상단 표시 언어 드롭다운에 넣을 목록. 서버가 DB 에서 읽어 내려 준다. */
   languages: readonly Language[];
   strings: AdminStrings;
   ui: UiStrings;
+  destination?: "/admin" | "/admin/site-management";
 }) {
   const router = useRouter();
   const setLang = useSetAdminLang();
@@ -50,7 +52,7 @@ export function LoginForm({
       // 서버 컴포넌트가 새 쿠키로 다시 그려지도록 갱신한 뒤 넘어간다.
       startNavigation(() => {
         router.refresh();
-        router.replace("/admin");
+        router.replace(destination);
       });
     } catch {
       setError(strings.login.failed);

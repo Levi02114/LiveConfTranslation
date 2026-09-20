@@ -10,7 +10,23 @@ import { z } from "zod";
 /** 같은 입력 페이지에 들어와 있는 다른 속기사 */
 export type Peer = { clientId: string; name: string; typing: boolean; draft: string };
 
+export type ConnectionCounts = {
+  total: number;
+  languages: Array<{ lang: string; input: number; output: number }>;
+  combinedInput: number;
+  combined: number;
+  capture: number;
+};
+export type SessionConnections = ConnectionCounts & {
+  meetingId: string;
+  status: "open" | "closed";
+};
+
 export type ServerMessage =
+  | { t: "app-settings-changed" }
+  | { t: "connection-stats"; snapshot: boolean; at: number; sessions: SessionConnections[]; removed: string[] }
+  | { t: "security-changed" }
+  | { t: "translation-jobs"; counts: { pending: number; running: number; failed: number }; providers?: Record<string, { active: number; blockedUntil: number }> }
   | { t: "hello"; clientId: string; name: string }
   | { t: "name-result"; ok: true; name: string }
   | { t: "name-result"; ok: false; reason: "duplicate" }

@@ -85,7 +85,7 @@ test("th 단일 세션은 gpt-transcribe 로 라우팅하고 delay 를 빼고, k
   });
   assert.deepEqual(singleTranscriptionProfile("vi"), {
     model: "gpt-live-transcribe",
-    transport: "webrtc",
+    transport: "websocket",
   });
   assert.deepEqual(singleTranscriptionProfile("si"), {
     model: "gpt-live-transcribe",

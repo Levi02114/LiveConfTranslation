@@ -110,6 +110,8 @@ test("선택한 폴백만 미지원 언어 번역을 대신한다", async () => 
       body: "안녕하세요",
     });
     const { translateMessage } = await import("../pipeline");
+    const { startTranslationWorker, stopTranslationWorker } = await import("../translation-worker");
+    startTranslationWorker();
     await translateMessage({
       meeting,
       messageId: message.id,
@@ -118,6 +120,10 @@ test("선택한 폴백만 미지원 언어 번역을 대신한다", async () => 
       revision: message.revision,
       createdAt: message.createdAt,
     });
+    for (let attempt = 0; attempt < 100 && !getRecentCombined(meeting.id)[0]?.translations.length; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    stopTranslationWorker();
     assert.deepEqual(
       getRecentCombined(meeting.id)[0]?.translations.map(({ lang, body, status }) => ({
         lang,

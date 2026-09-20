@@ -1,11 +1,15 @@
 import { z } from "zod";
 
 import { detectTextLanguage } from "@/lib/detect-text-language";
+import { inputFingerprint } from "@/lib/input-fingerprint";
 import {
   getMeeting,
   getMeetingLanguageConfigs,
   getPageByToken,
   isPageEnabled,
+  inputErrorResponse,
+  findMessageRetry,
+  checkInputRate,
 } from "@/lib/repo";
 import { acceptMessage, translateMessage } from "@/lib/pipeline";
 
@@ -29,6 +33,7 @@ const schema = z.object({
  * 서버리스로 옮긴다면 응답 후 실행이 중단되므로 대기 큐가 필요해진다.
  */
 export async function POST(request: Request, { params }: Params) {
+  try {
   const { token } = await params;
 
   const page = getPageByToken(token);
@@ -48,10 +53,6 @@ export async function POST(request: Request, { params }: Params) {
     return Response.json({ error: "세션을 찾을 수 없습니다" }, { status: 404 });
   }
 
-  if (meeting.status === "closed") {
-    return Response.json({ error: "종료된 세션입니다" }, { status: 409 });
-  }
-
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return Response.json(
@@ -62,6 +63,11 @@ export async function POST(request: Request, { params }: Params) {
   if (meeting.speakerLabels && !parsed.data.speakerName) {
     return Response.json({ error: "닉네임을 입력해 주세요" }, { status: 400 });
   }
+  const fingerprint = inputFingerprint(parsed.data.lang ?? null, parsed.data.body, meeting.speakerLabels ? parsed.data.speakerName : null);
+  const existing = findMessageRetry(meeting.id, page.id, parsed.data.ingestKey, fingerprint);
+  if (existing) return Response.json({ message: existing, inserted: false, usedFallback: false });
+  if (meeting.status === "closed") return Response.json({ error: "session-closed" }, { status: 409 });
+  checkInputRate(meeting.id, page.id, "admission");
 
   const candidates = getMeetingLanguageConfigs(meeting.id)
     .filter((row) => row.inputEnabled)
@@ -80,6 +86,7 @@ export async function POST(request: Request, { params }: Params) {
           meeting.engine === "local" || meeting.transcriptionProvider === "local"
             ? "local"
             : "openai",
+          request.signal,
         )
     : { lang: fallbackLang, usedFallback: false };
 
@@ -97,6 +104,7 @@ export async function POST(request: Request, { params }: Params) {
     body: parsed.data.body,
     speakerName: meeting.speakerLabels ? parsed.data.speakerName : null,
     ingestKey: parsed.data.ingestKey,
+    fingerprint,
   });
   const message = result.message;
 
@@ -121,4 +129,9 @@ export async function POST(request: Request, { params }: Params) {
     { message, usedFallback: detected.usedFallback, inserted: result.inserted },
     { status: result.inserted ? 201 : 200 },
   );
+  } catch (error) {
+    const response = inputErrorResponse(error);
+    if (response) return response;
+    throw error;
+  }
 }

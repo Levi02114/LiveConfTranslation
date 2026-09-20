@@ -26,10 +26,11 @@ const responseSchema = z.object({
 });
 type UsageResponse = z.infer<typeof responseSchema>;
 
-export function OpenaiUsageDialog({ strings }: { strings: AdminStrings["openaiUsage"] }) {
+export function OpenaiUsageDialog({ strings, inline = false, initial = null }: { strings: AdminStrings["openaiUsage"]; inline?: boolean; initial?: z.infer<typeof statusSchema> | null }) {
+  const Container = inline ? "section" : "dialog";
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [period, setPeriod] = useState<UsagePeriod>("day");
-  const [status, setStatus] = useState<z.infer<typeof statusSchema> | null>(null);
+  const [status, setStatus] = useState<z.infer<typeof statusSchema> | null>(initial);
   const [rows, setRows] = useState<NonNullable<UsageResponse["rows"]>>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState<"load" | "save" | "delete" | null>(null);
@@ -122,6 +123,7 @@ export function OpenaiUsageDialog({ strings }: { strings: AdminStrings["openaiUs
   return (
     <>
       <button
+        hidden={inline}
         type="button"
         onClick={() => {
           dialogRef.current?.showModal();
@@ -132,13 +134,13 @@ export function OpenaiUsageDialog({ strings }: { strings: AdminStrings["openaiUs
         {strings.button}
       </button>
 
-      <dialog
+      <Container
         ref={dialogRef}
         onClose={() => {
           setDraft("");
           setError(null);
         }}
-        className="m-auto max-h-[calc(100dvh-32px)] w-[min(680px,calc(100vw-32px))] overflow-y-auto border border-line bg-bg p-0 text-fg backdrop:bg-black/45"
+        className={inline ? "settings-inline" : "m-auto max-h-[calc(100dvh-32px)] w-[min(680px,calc(100vw-32px))] overflow-y-auto border border-line bg-bg p-0 text-fg backdrop:bg-black/45"}
       >
         <div className="px-5 py-5 sm:px-7 sm:py-6">
           <div className="flex items-baseline justify-between gap-4">
@@ -231,7 +233,7 @@ export function OpenaiUsageDialog({ strings }: { strings: AdminStrings["openaiUs
           <p className="mt-5 font-mono text-[10px] leading-[1.7] text-muted">{strings.organizationNote}</p>
           <p className="mt-2 font-mono text-[10px] leading-[1.7] text-muted">{strings.pricingNote}</p>
         </div>
-      </dialog>
+      </Container>
     </>
   );
 }

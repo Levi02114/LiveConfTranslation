@@ -7,6 +7,7 @@ import { deeplEngine } from "./deepl";
 import { googleEngine } from "./google";
 import { openaiEngine } from "./openai";
 import { localEngine } from "./local";
+import { callProvider } from "./provider-control";
 import {
   type BatchTranslateInput,
   type EngineId,
@@ -43,7 +44,7 @@ export async function refreshEngineSupport() {
 
 async function engineProblem(
   engine: TranslationEngine,
-  input: Pick<TranslateInput, "from" | "to">,
+  input: Pick<TranslateInput, "from" | "to" | "signal">,
 ) {
   if (!engine.isConfigured()) {
     return engine.id === "local"
@@ -52,9 +53,9 @@ async function engineProblem(
   }
 
   try {
-    await engine.refreshSupport?.();
+    await engine.refreshSupport?.(input.signal);
   } catch (error) {
-    return error instanceof Error ? error.message : `${engine.label} 지원 언어 조회에 실패했습니다`;
+    throw error instanceof TranslationError ? error : new TranslationError("provider-unavailable", engine.id, undefined, "provider-unavailable");
   }
 
   const unsupported = !engine.supports(input.from)
@@ -85,27 +86,21 @@ export async function translateText(
   input: TranslateInput,
   fallback: EngineId | null = null,
 ): Promise<TranslateResult> {
-  const engine = ENGINES[preferred];
   const enriched = { ...input, glossary: listGlossaryPairs(input.from, input.to) };
-
-  const reason = await engineProblem(engine, enriched);
-  if (reason) {
-    if (!fallback || fallback === preferred) {
-      throw new TranslationError(reason, preferred);
-    }
-
-    const fallbackEngine = ENGINES[fallback];
-    const fallbackReason = await engineProblem(fallbackEngine, enriched);
-    if (fallbackReason) {
-      throw new TranslationError(`${reason}; 폴백 실패: ${fallbackReason}`, fallback);
-    }
-
-    const text = await fallbackEngine.translate(enriched);
-    return { text, engine: fallback, fallbackReason: reason };
+  const attempt = (id: EngineId) => callProvider(id, input.signal, async (signal) => {
+    const engine = ENGINES[id];
+    const reason = await engineProblem(engine, { ...enriched, signal });
+    if (reason) throw new TranslationError(reason, id, undefined, "engine-unavailable");
+    signal.throwIfAborted();
+    return engine.translate({ ...enriched, signal });
+  });
+  try {
+    return { text: await attempt(preferred), engine: preferred };
+  } catch (error) {
+    if (!fallback || fallback === preferred || input.signal?.aborted) throw error;
+    return { text: await attempt(fallback), engine: fallback,
+      fallbackReason: error instanceof TranslationError ? error.code ?? "translation-failed" : "translation-failed" };
   }
-
-  const text = await engine.translate(enriched);
-  return { text, engine: preferred };
 }
 
 /**

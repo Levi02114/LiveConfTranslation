@@ -20,6 +20,7 @@ export async function detectTextLanguage(
   candidates: readonly LanguageCode[],
   fallback: LanguageCode,
   provider: "openai" | "local" = "openai",
+  signal?: AbortSignal,
 ): Promise<{ lang: LanguageCode | null; usedFallback: boolean; confidence?: number }> {
   // 한글·태국·싱할라·중일 문자는 그 자체가 충분한 증거다. 느린 인터넷에서
   // 굳이 OpenAI 언어 감지 왕복을 기다리지 않는다.
@@ -41,6 +42,7 @@ export async function detectTextLanguage(
   try {
     const response = await fetch(`${openaiBaseUrl()}/chat/completions`, {
       method: "POST",
+      signal: AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])]),
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
       body: JSON.stringify({
         model: resolveOpenaiModel(),
@@ -66,7 +68,7 @@ export async function detectTextLanguage(
     const lang = matchDetectedLanguage(detected?.success ? detected.data.language : null, candidates);
     return lang ? { lang, usedFallback: false } : { lang: fallback, usedFallback: true };
   } catch (error) {
-    console.warn("[language-detection] 텍스트 언어 감지 실패", error);
+    console.warn("[language-detection] 텍스트 언어 감지 실패", error instanceof Error ? error.name : "Error");
     return { lang: fallback, usedFallback: true };
   }
 }

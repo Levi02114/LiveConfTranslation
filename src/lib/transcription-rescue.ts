@@ -47,6 +47,8 @@ export class RescueAudioTurns {
     this.lastCommitOffset = this.totalOffset;
   }
 
+  discardCurrent(): void { this.lastCommitOffset = this.totalOffset; }
+
   bindCommit(itemId: string): void {
     const segment = this.pending.shift();
     if (segment) this.byItem.set(itemId, segment);
@@ -106,6 +108,7 @@ export async function rescueTranscribe(opts: {
   key: string;
   prompt: string;
   language?: string;
+  signal?: AbortSignal;
 }): Promise<string | null> {
   try {
     const form = new FormData();
@@ -117,7 +120,7 @@ export async function rescueTranscribe(opts: {
       method: "POST",
       headers: { authorization: `Bearer ${opts.key}` },
       body: form,
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.any([AbortSignal.timeout(10_000), ...(opts.signal ? [opts.signal] : [])]),
     });
     if (!response.ok) return null;
     const payload = await parseJsonResponse(response, transcriptionResponseSchema);

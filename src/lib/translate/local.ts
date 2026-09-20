@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { ensureLocalTranslationRuntime, localTranslationConfigured } from "@/lib/local-runtime";
 
-import { TranslationError, type TranslateInput, type TranslationEngine } from "./types";
+import { TranslationError, translationHttpError, type TranslateInput, type TranslationEngine } from "./types";
 
 const responseSchema = z.object({ content: z.string() });
 const englishNames = new Intl.DisplayNames(["en"], { type: "language" });
@@ -47,7 +47,8 @@ async function translate(input: TranslateInput): Promise<string> {
     throw new TranslationError("로컬 번역 모델에 연결하지 못했습니다", "local", cause);
   }
   if (!response.ok) {
-    throw new TranslationError(`로컬 번역 모델이 ${response.status}를 반환했습니다`, "local");
+    void response.body?.cancel();
+    throw translationHttpError(response, "local");
   }
   const parsed = responseSchema.safeParse(await response.json().catch(() => null));
   const output = parsed.success ? clean(parsed.data.content) : "";

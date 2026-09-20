@@ -64,6 +64,12 @@ export function AppGuide({
   const selector = steps[index]?.target;
 
   useEffect(() => {
+    const restart = () => { sessionStorage.setItem(STORAGE_KEY, stage); setIndex(0); setOpen(true); };
+    window.addEventListener("lct-app-guide", restart);
+    return () => window.removeEventListener("lct-app-guide", restart);
+  }, [stage]);
+
+  useEffect(() => {
     const requested = stage === "admin" && new URLSearchParams(window.location.search).get("guide") === "1";
     if (requested) {
       sessionStorage.setItem(STORAGE_KEY, "admin");

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
 import type { AdminStrings } from "@/lib/i18n-builtin";
@@ -21,16 +21,29 @@ const responseSchema = z.object({
 export function GoogleSpeechDialog({
   strings,
   initial,
+  inline = false,
 }: {
   strings: AdminStrings["speechCredentials"];
   initial: GoogleSpeechStatus;
+  inline?: boolean;
 }) {
+  const Container = inline ? "section" : "dialog";
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [status, setStatus] = useState(initial);
   const [draft, setDraft] = useState("");
   const [fileName, setFileName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!inline) return;
+    const abort = new AbortController();
+    void fetch("/api/admin/google-speech", { signal: abort.signal }).then(async (response) => {
+      const parsed = responseSchema.safeParse(await response.json());
+      if (!response.ok || !parsed.success || !parsed.data.credentials) throw new Error();
+      setStatus(parsed.data.credentials);
+    }).catch(() => { if (!abort.signal.aborted) setError(strings.saveFailed); });
+    return () => abort.abort();
+  }, [inline, strings.saveFailed]);
 
   const save = async () => {
     if (!draft || busy) return;
@@ -79,20 +92,21 @@ export function GoogleSpeechDialog({
   return (
     <>
       <button
+        hidden={inline}
         type="button"
         onClick={() => dialogRef.current?.showModal()}
         className="cursor-pointer border border-line px-2.5 py-1.5 font-mono text-[12px] text-muted transition-colors hover:border-fg hover:bg-fg hover:text-bg"
       >
         {strings.button}
       </button>
-      <dialog
+      <Container
         ref={dialogRef}
         onClose={() => {
           setDraft("");
           setFileName("");
           setError(null);
         }}
-        className="m-auto max-h-[calc(100dvh-32px)] w-[min(560px,calc(100vw-32px))] overflow-y-auto border border-line bg-bg p-0 text-fg backdrop:bg-black/45"
+        className={inline ? "settings-inline" : "m-auto max-h-[calc(100dvh-32px)] w-[min(560px,calc(100vw-32px))] overflow-y-auto border border-line bg-bg p-0 text-fg backdrop:bg-black/45"}
       >
         <div className="px-7 py-6">
           <div className="flex items-baseline justify-between gap-4">
@@ -157,7 +171,7 @@ export function GoogleSpeechDialog({
             </div>
           </div>
         </div>
-      </dialog>
+      </Container>
     </>
   );
 }

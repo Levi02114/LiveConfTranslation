@@ -9,6 +9,8 @@ import { generateQr, QrDialog, type QrImage } from "@/components/qr-dialog";
 import { copyText } from "@/lib/clipboard";
 import { useSetAdminLang } from "@/hooks/use-admin-lang";
 import { usePublicOrigin } from "@/hooks/use-public-origin";
+import { useConnectionStats } from "@/hooks/use-connection-stats";
+import { ConnectionCountsView } from "../../connection-counts";
 import type { AdminStrings, UiStrings } from "@/lib/i18n-builtin";
 import type { Language, LanguageCode } from "@/lib/languages";
 import { formatTimestamp } from "@/lib/log-format";
@@ -62,7 +64,10 @@ export function DashboardView({
   ui: UiStrings;
   displayLanguages: Language[];
 }) {
-  const [closed, setClosed] = useState(meeting.status === "closed");
+  const [locallyClosed, setClosed] = useState(meeting.status === "closed");
+  const connections = useConnectionStats();
+  const closed = locallyClosed || connections.sessions.get(meeting.id)?.status === "closed" ||
+    (connections.at !== null && !connections.sessions.has(meeting.id));
   const [closedAt, setClosedAt] = useState<number | null>(meeting.closedAt);
   const [copied, setCopied] = useState<{ key: string; ok: boolean } | null>(null);
   const [qr, setQr] = useState<QrImage | null>(null);
@@ -211,12 +216,13 @@ export function DashboardView({
     "cursor-pointer border border-line px-3 py-2 font-mono text-[12px] text-muted transition-colors hover:border-fg hover:bg-fg hover:text-bg";
 
   return (
-    <div lang={lang} className="mx-auto max-w-[980px] px-4 pt-20 pb-12 sm:px-8 sm:pb-16">
+    <div lang={lang} className="admin-page mx-auto max-w-[980px] px-4 pt-20 pb-12 sm:px-8 sm:pb-16">
       <AdminBusyOverlay
         label={closing ? strings.list.closingSession : navigating ? strings.list.loading : null}
       />
       <AppGuide stage="dashboard" strings={strings} ui={ui} />
       <AppearanceControls
+        leading={<button className="app-settings-launcher" aria-haspopup="dialog" onClick={() => window.dispatchEvent(new Event("lct-open-settings"))}>⚙ {strings.appSettings.title}</button>}
         strings={ui.appearance}
         language={{
           value: lang,
@@ -297,6 +303,8 @@ export function DashboardView({
       {closeError ? <div className="mt-4 font-mono text-[12px]">{closeError}</div> : null}
 
       <section className="mt-5 border-y border-line py-4">
+        <ConnectionCountsView counts={connections.sessions.get(meeting.id)} live={connections.state === "open" && connections.at !== null} strings={strings.operations} lang={lang} />
+        <p className="mb-4 mt-1 font-mono text-[0.75rem] text-muted">{strings.operations.countNotice}</p>
         <div data-guide="participants" className="font-mono text-[11px] text-muted">
           {strings.dashboard.participantStatus}
         </div>
@@ -537,7 +545,7 @@ function UrlCell({
         >
           {url || "—"}
         </span>
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5 [&>button]:max-w-full [&>button]:whitespace-normal [&>button]:[overflow-wrap:anywhere]">
           <button type="button" disabled={!url} onClick={() => onCopy(url)} className={className}>
             {copied ? (copied.ok ? strings.copied : strings.copyFailed) : strings.copy}
           </button>

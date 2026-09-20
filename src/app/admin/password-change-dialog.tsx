@@ -30,9 +30,12 @@ const passwordResponseSchema = z.object({
 
 export function PasswordChangeDialog({
   strings,
+  inline = false,
 }: {
   strings: AdminStrings["passwordChange"];
+  inline?: boolean;
 }) {
+  const Container = inline ? "section" : "dialog";
   const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -121,6 +124,7 @@ export function PasswordChangeDialog({
     <>
       <AdminBusyOverlay label={pending ? strings.saving : null} />
       <button
+        hidden={inline}
         type="button"
         onClick={() => dialogRef.current?.showModal()}
         className="cursor-pointer font-mono text-[11px] text-muted hover:text-fg"
@@ -128,13 +132,13 @@ export function PasswordChangeDialog({
         {strings.button}
       </button>
 
-      <dialog
+      <Container
         ref={dialogRef}
         onCancel={(event) => {
           if (pending) event.preventDefault();
         }}
         onClose={reset}
-        className="m-auto w-[min(440px,calc(100vw-32px))] border border-line bg-bg p-0 text-fg backdrop:bg-black/45"
+        className={inline ? "settings-inline" : "m-auto w-[min(440px,calc(100vw-32px))] border border-line bg-bg p-0 text-fg backdrop:bg-black/45"}
       >
         <div className="px-6 py-6 sm:px-7">
           <div className="flex items-baseline justify-between gap-4">
@@ -158,7 +162,7 @@ export function PasswordChangeDialog({
               </p>
               <button
                 type="button"
-                onClick={() => dialogRef.current?.close()}
+                onClick={() => inline ? reset() : dialogRef.current?.close()}
                 className="mt-7 w-full cursor-pointer border border-fg py-2.5 font-mono text-[13px] transition-colors hover:bg-fg hover:text-bg"
               >
                 {strings.close}
@@ -222,7 +226,7 @@ export function PasswordChangeDialog({
               <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
                 <button
                   type="button"
-                  onClick={() => dialogRef.current?.close()}
+                  onClick={() => inline ? reset() : dialogRef.current?.close()}
                   disabled={pending}
                   className="cursor-pointer border border-line px-4 py-2.5 font-mono text-[12px] text-muted hover:border-fg hover:text-fg disabled:cursor-default disabled:opacity-30"
                 >
@@ -239,7 +243,7 @@ export function PasswordChangeDialog({
             </form>
           )}
         </div>
-      </dialog>
+      </Container>
     </>
   );
 }

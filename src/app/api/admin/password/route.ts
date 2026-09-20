@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { changeAdminPassword } from "@/lib/admin-password";
+import { changeAdminPassword, PasswordBusyError } from "@/lib/admin-password";
 import { createAdminSession, isAdmin } from "@/lib/auth";
 import { disconnectAdminConnections } from "@/lib/realtime/hub";
 
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = changeAdminPassword(
+    const result = await changeAdminPassword(
       parsed.data.currentPassword,
       parsed.data.newPassword,
     );
@@ -33,6 +33,7 @@ export async function POST(request: Request) {
     disconnectAdminConnections();
     return Response.json({ ok: true });
   } catch (error) {
+    if (error instanceof PasswordBusyError) return Response.json({ error: "rate-limited" }, { status: 429, headers: { "Retry-After": "1" } });
     console.error(
       "[auth] 관리자 비밀번호를 변경하지 못했습니다:",
       error instanceof Error ? error.message : error,

@@ -10,6 +10,7 @@ import type { LanguageCode } from "@/lib/languages";
 import {
   type BatchTranslateInput,
   TranslationError,
+  translationHttpError,
   type TranslateInput,
   type TranslationEngine,
 } from "./types";
@@ -69,21 +70,20 @@ const translationResponseSchema = z.object({
   translations: z.array(z.object({ text: z.string() })),
 });
 
-async function fetchSupport(key: string): Promise<DeepLSupport> {
+async function fetchSupport(key: string, signal?: AbortSignal): Promise<DeepLSupport> {
   let response: Response;
   try {
     response = await fetch(`${deeplApiUrl(key)}/v3/languages?resource=translate_text`, {
       headers: { authorization: `DeepL-Auth-Key ${key}` },
+      signal: AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])]),
     });
   } catch (cause) {
     throw new TranslationError("DeepL 지원 언어 목록을 불러오지 못했습니다", "deepl", cause);
   }
 
   if (!response.ok) {
-    throw new TranslationError(
-      `DeepL 지원 언어 조회가 ${response.status} 를 반환했습니다`,
-      "deepl",
-    );
+    void response.body?.cancel();
+    throw translationHttpError(response, "deepl");
   }
 
   const payload = await parseJsonResponse(response, supportResponseSchema);
@@ -103,7 +103,7 @@ async function fetchSupport(key: string): Promise<DeepLSupport> {
   return { source, target, glossary, expiresAt: Date.now() + SUPPORT_TTL };
 }
 
-async function loadSupport(): Promise<DeepLSupport> {
+async function loadSupport(signal?: AbortSignal): Promise<DeepLSupport> {
   const cached = globalThis.__lctDeepLSupport;
   if (cached && cached.expiresAt > Date.now()) return cached;
   if (globalThis.__lctDeepLSupportPromise) return globalThis.__lctDeepLSupportPromise;
@@ -111,7 +111,7 @@ async function loadSupport(): Promise<DeepLSupport> {
   const key = engineKey("deepl");
   if (!key) throw new TranslationError("DeepL API 키가 등록되지 않았습니다", "deepl");
 
-  globalThis.__lctDeepLSupportPromise = fetchSupport(key);
+  globalThis.__lctDeepLSupportPromise = fetchSupport(key, signal);
 
   try {
     return (globalThis.__lctDeepLSupport = await globalThis.__lctDeepLSupportPromise);
@@ -151,6 +151,7 @@ async function glossaryId(
   sourceLang: string,
   targetLang: string,
   entries: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const state = glossaryState(key);
   if (state.id) return state.id;
@@ -159,7 +160,7 @@ async function glossaryId(
   state.idPromise = (async () => {
     const base = deeplApiUrl(key);
     const headers = { authorization: `DeepL-Auth-Key ${key}` };
-    const listed = await fetch(`${base}/v3/glossaries`, { headers });
+    const listed = await fetch(`${base}/v3/glossaries`, { headers, signal: AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])]) });
     if (!listed.ok) throw new Error(`DeepL 용어집 조회가 ${listed.status} 를 반환했습니다`);
     const payload = await parseJsonResponse(listed, glossaryListSchema);
     if (!payload) throw new Error("DeepL 용어집 목록 응답이 올바르지 않습니다");
@@ -169,6 +170,7 @@ async function glossaryId(
     if (existing?.glossary_id) return existing.glossary_id;
 
     const created = await fetch(`${base}/v3/glossaries`, {
+      signal: AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])]),
       method: "POST",
       headers: { ...headers, "content-type": "application/json" },
       body: JSON.stringify({
@@ -201,9 +203,10 @@ async function ensureGlossary(
   sourceLang: string,
   targetLang: string,
   pairs: readonly { source: string; target: string }[],
+  signal?: AbortSignal,
 ): Promise<string | undefined> {
   if (!pairs.length) return undefined;
-  const support = await loadSupport();
+  const support = await loadSupport(signal);
   if (!support.glossary.has(sourceLang) || !support.glossary.has(targetLang)) return undefined;
 
   const state = glossaryState(key);
@@ -214,8 +217,9 @@ async function ensureGlossary(
   if (running) return running;
 
   const task = (async () => {
-    const id = await glossaryId(key, sourceLang, targetLang, entries);
+    const id = await glossaryId(key, sourceLang, targetLang, entries, signal);
     const response = await fetch(`${deeplApiUrl(key)}/v3/glossaries/${id}/dictionaries`, {
+      signal: AbortSignal.any([AbortSignal.timeout(30_000), ...(signal ? [signal] : [])]),
       method: "PUT",
       headers: {
         authorization: `DeepL-Auth-Key ${key}`,
@@ -250,7 +254,7 @@ async function callDeepl(
     throw new TranslationError("DeepL API 키가 등록되지 않았습니다", "deepl");
   }
 
-  const support = await loadSupport();
+  const support = await loadSupport(signal);
   const sourceLang = languageCode(from, "source", support.source);
   const targetLang = languageCode(to, "target", support.target);
   if (!sourceLang || !targetLang) {
@@ -262,7 +266,7 @@ async function callDeepl(
 
   let glossaryId: string | undefined;
   try {
-    glossaryId = await ensureGlossary(key, sourceLang, targetLang, glossary);
+    glossaryId = await ensureGlossary(key, sourceLang, targetLang, glossary, signal);
   } catch (cause) {
     throw new TranslationError("DeepL 용어집을 동기화하지 못했습니다", "deepl", cause);
   }
@@ -287,13 +291,8 @@ async function callDeepl(
   }
 
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    // 456 은 이번 달 번역 한도 소진. 원인이 분명하니 그대로 알려 준다.
-    const hint = response.status === 456 ? " (이번 달 번역 한도를 모두 썼습니다)" : "";
-    throw new TranslationError(
-      `DeepL 이 ${response.status} 를 반환했습니다${hint}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
-      "deepl",
-    );
+    void response.body?.cancel();
+    throw translationHttpError(response, "deepl");
   }
 
   const payload = await parseJsonResponse(response, translationResponseSchema);
@@ -319,8 +318,8 @@ export const deeplEngine: TranslationEngine = {
     );
   },
 
-  async refreshSupport() {
-    await loadSupport();
+  async refreshSupport(signal) {
+    await loadSupport(signal);
   },
 
   isConfigured() {
