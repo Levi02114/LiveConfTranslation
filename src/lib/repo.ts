@@ -8,6 +8,7 @@
  * 불러오면 번들 단계에서 바로 실패한다 — 보호는 그대로 유지된다.
  */
 import { getDb } from "@/lib/db";
+import { log, errorFields } from "./diagnostics";
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
@@ -252,6 +253,7 @@ function transaction<T>(work: () => T): T {
     return result;
   } catch (error) {
     getDb().exec("ROLLBACK");
+    log("error", "database.rollback", errorFields(error));
     throw error;
   }
 }

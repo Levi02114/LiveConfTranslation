@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { availableParallelism, constants, setPriority } from "node:os";
+import { log, errorFields } from "./diagnostics";
 
 import {
   localAiUseGpu,
@@ -65,6 +66,9 @@ async function waitFor(url: string, child: ChildProcess, timeoutMs: number): Pro
 }
 
 function logChild(name: string, child: ChildProcess) {
+  log("info", "local-runtime.start", { provider: name });
+  child.once("exit", (exitCode) => log("info", "local-runtime.exit", { provider: name, exitCode }));
+  child.once("error", (error) => log("error", "local-runtime.failed", { provider: name, ...errorFields(error) }));
   child.stdout?.on("data", (chunk) => console.log(`[${name}] ${String(chunk).trimEnd()}`));
   child.stderr?.on("data", (chunk) => console.warn(`[${name}] ${String(chunk).trimEnd()}`));
 }

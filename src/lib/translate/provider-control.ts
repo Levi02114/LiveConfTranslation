@@ -1,4 +1,5 @@
 import { getSecurityLimits } from "@/lib/repo";
+import { log, errorFields } from "../diagnostics";
 import { TranslationError, isTransientTranslationError, type EngineId } from "./types";
 
 type ProviderState = { active: number; failures: number; blockedUntil: number; probe: boolean };
@@ -7,6 +8,7 @@ function states() { return globalThis.__translationProviders ??= new Map<EngineI
 export function providerStatus() { return Object.fromEntries(states()); }
 
 export async function callProvider<T>(engine: EngineId, signal: AbortSignal | undefined, run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const started = performance.now();
   const state = states().get(engine) ?? { active: 0, failures: 0, blockedUntil: 0, probe: false };
   states().set(engine, state);
   const limits = getSecurityLimits();
@@ -26,8 +28,10 @@ export async function callProvider<T>(engine: EngineId, signal: AbortSignal | un
     bounded.throwIfAborted();
     state.failures = 0;
     state.blockedUntil = 0;
+    log("info", "provider.complete", { provider: engine, durationMs: Math.round(performance.now() - started) });
     return result;
   } catch (error) {
+    log("warn", "provider.failed", { provider: engine, durationMs: Math.round(performance.now() - started), ...errorFields(error) });
     if (!signal?.aborted && isTransientTranslationError(error)) {
       state.failures++;
       if (state.failures >= 5 || probe) state.blockedUntil = Date.now() + 30000;

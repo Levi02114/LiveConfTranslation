@@ -7,9 +7,10 @@ const os = require("node:os");
 const path = require("node:path");
 const { z } = require("zod");
 const { microphoneAllowed } = require("./permissions.cjs");
+const { initializeDiagnostics, log, errorFields } = require("./diagnostics.cjs");
 const { createTelegramBot } = require("./telegram-bot.cjs");
 
-const { app, BrowserWindow, clipboard, dialog, Menu, safeStorage, session, shell } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, Menu, net, safeStorage, session, shell } = require("electron");
 
 const {
   extractQuickTunnelUrl,
@@ -53,6 +54,8 @@ let tunnelStopReason = null;
 let tunnelUrl = null;
 let pendingTunnelUrl = null;
 let tunnelStartError = null;
+let tunnelFailure = null;
+let tunnelProbeDetail = "";
 let tunnelState = "off";
 let tunnelHealthTimer = null;
 let tunnelRestartTimer = null;
@@ -75,6 +78,7 @@ function telegramStrings() {
 }
 
 function telegramStateChanged() {
+  log("info", "telegram.state", { state: telegramBot.status() });
   globalThis.__liveConfSettingsChanged?.();
 }
 
@@ -90,9 +94,9 @@ const telegramBot = createTelegramBot({
   openMeetings: async () => { const health = await probeServer(); return health.state === "ours" ? health.openMeetings : null; },
   tunnel: () => {
     const current = globalThis.__liveConfDesktopControl?.snapshot();
-    if (current?.connection) return { state: current.tunnel, url: current.tunnel === "connected" ? current.origin : null,
+    if (current?.connection) return { state: current.tunnel, url: current.tunnel === "connected" ? current.tunnelOrigin ?? current.origin : null,
       origin: current.origin, auto: current.connection.auto, busy: current.connection.busy,
-      identity: current.connection.mode === "named" ? current.origin : tunnelProcess?.pid ?? null };
+      identity: current.connection.mode === "named" ? current.tunnelOrigin ?? current.origin : tunnelProcess?.pid ?? null };
     return ({
     state: tunnelState, url: tunnelState === "connected" ? tunnelUrl : null,
     origin: tunnelState === "connected" && tunnelUrl ? tunnelUrl : shareOrigin,
@@ -236,15 +240,15 @@ function desktopAllowedOrigins() {
 
 function desktopControlState() {
   const telegram = telegramSetupState();
-  return { origin: tunnelUrl || shareOrigin,
+  return { origin: tunnelUrl || shareOrigin, tunnelOrigin: tunnelState === "connected" ? tunnelUrl : null,
     addresses: lanAddresses.length ? lanAddresses.map((item) => ({ origin: lanOrigin(item.address), label: `${item.name} · ${item.address}` }))
       : [{ origin: LOOPBACK_ORIGIN, label: "127.0.0.1" }],
-    tunnel: tunnelState, ca: Boolean(desktopSettings?.localHttps),
+    tunnel: tunnelState, tunnelBusy: tunnelStarting || desktopStopPending || Boolean(tunnelProcess && tunnelState === "off"), tunnelFailure, ca: Boolean(desktopSettings?.localHttps),
     telegram: { bot: telegram.bot, chats: telegram.chats, autoTunnel: telegram.autoTunnel, receiver: telegram.receiver } };
 }
 
 async function runDesktopControl(command) {
-  if (desktopStopPending) return { error: "genericError" };
+  if (desktopStopPending && command.action !== "share") return { error: "genericError" };
   const settings = telegramSettings();
   switch (command.action) {
     case "share":
@@ -258,7 +262,16 @@ async function runDesktopControl(command) {
       if (command.confirmed !== true) return { error: "genericError" };
       // Acknowledge the request before severing the requesting public connection.
       desktopStopPending = true;
-      setTimeout(() => { try { stopQuickTunnel("manual"); } finally { desktopStopPending = false; } }, 750);
+      settings.autoTunnel = false;
+      writeDesktopSettings();
+      clearTunnelTimers();
+      pendingTunnelUrl = tunnelUrl; // Keep the current HTTP transport allowed until it drains.
+      tunnelUrl = null;
+      tunnelState = "off";
+      tunnelFailure = null;
+      shareOrigin = selectedLanOrigin();
+      syncPublicOrigin();
+      setTimeout(() => { try { stopQuickTunnel("manual"); } finally { desktopStopPending = false; updateTunnelMenu(); } }, 750);
       break;
     case "auto": return { error: setAutoTunnelEnabled(command.enabled) || undefined };
     case "verify": {
@@ -282,7 +295,6 @@ async function runDesktopControl(command) {
     }
     case "remove":
       settings.chats = settings.chats.filter((chat) => chat.id !== command.chatId);
-      if (!settings.chats.length) { settings.autoTunnel = false; clearTunnelTimers(); }
       writeDesktopSettings(); break;
     case "management": {
       const chat = settings.chats.find((item) => item.id === command.chatId && item.type === "private");
@@ -335,7 +347,6 @@ async function verifyTelegramBot(token) {
     settings.botUsername = bot.username;
     if (changedBot) {
       settings.chats = [];
-      settings.autoTunnel = false;
     }
     writeDesktopSettings();
     installApplicationMenu();
@@ -365,11 +376,13 @@ function sendTelegramNotification(chat, key, text, isCurrent, attempt = 0) {
     return;
   }
   void sendTelegramMessage(chat.id, text).then(() => {
+    log("info", "telegram.notification-sent");
     sentTelegramNotifications.add(key);
     const timer = telegramNotificationTimers.get(key);
     if (timer) clearTimeout(timer);
     telegramNotificationTimers.delete(key);
   }).catch((error) => {
+    log("warn", "telegram.notification-failed", { attempt, ...errorFields(error) });
     if (!isCurrent()) return;
     const delayMs = Number.isFinite(error.retryAfter) ? error.retryAfter * 1_000 : retryDelay(attempt);
     const timer = setTimeout(() => sendTelegramNotification(chat, key, text, isCurrent, attempt + 1), delayMs);
@@ -382,7 +395,7 @@ function sendTelegramUrl(chat, url, changed) {
     chat,
     notificationKey(chat.id, url),
     telegramNotificationText(url, changed),
-    () => shouldSendTelegramUrl(Boolean(telegramToken()), telegramSettings().chats.length, globalThis.__liveConfDesktopControl?.snapshot().origin ?? tunnelUrl, url),
+    () => shouldSendTelegramUrl(Boolean(telegramToken()), telegramSettings().chats.length, globalThis.__liveConfDesktopControl?.snapshot().tunnelOrigin ?? tunnelUrl, url),
   );
 }
 
@@ -527,8 +540,10 @@ function clearTunnelTimers() {
 }
 
 function stopQuickTunnel(reason = "manual") {
+  log("info", "tunnel.stop", { reason });
   pendingTunnelUrl = null;
   if (reason === "manual") {
+    tunnelFailure = null;
     telegramSettings().autoTunnel = false;
     writeDesktopSettings();
     clearTunnelTimers();
@@ -543,12 +558,21 @@ function stopQuickTunnel(reason = "manual") {
 
 async function probePublicServer(origin) {
   try {
-    const response = await fetch(`${origin}/api/health`, {
+    // Electron's network stack honors Windows system proxy/PAC and certificate settings.
+    const response = await net.fetch(`${origin}/api/health`, {
       cache: "no-store",
+      credentials: "omit",
+      redirect: "error",
       signal: AbortSignal.timeout(8_000),
     });
-    return response.ok && Boolean(parseHealth(await response.text()));
-  } catch {
+    const okay = response.ok && Boolean(parseHealth(await response.text()));
+    log(okay ? "info" : "warn", "tunnel.health", { okay, status: response.status });
+    tunnelProbeDetail = okay ? "" : `HTTP ${response.status}`;
+    return okay;
+  } catch (error) {
+    // Only a bounded technical code is exposed; never URLs, proxy credentials or raw logs.
+    log("warn", "tunnel.health-failed", errorFields(error));
+    tunnelProbeDetail = /\b(?:ERR_[A-Z_]+|ENOTFOUND|ECONNREFUSED|ETIMEDOUT)\b/.exec(String(error?.message))?.[0] || "NETWORK_ERROR";
     return false;
   }
 }
@@ -578,7 +602,9 @@ function startTunnelHealthMonitor() {
   if (tunnelHealthTimer || !telegramSettings().autoTunnel) return;
   tunnelHealthTimer = setInterval(() => {
     if (!tunnelUrl || !tunnelProcess) return;
+    const child = tunnelProcess, origin = tunnelUrl;
     void Promise.all([probeServer(), probePublicServer(tunnelUrl)]).then(([local, publicOkay]) => {
+      if (tunnelProcess !== child || tunnelUrl !== origin) return;
       if (publicOkay) {
         publicHealthFailures = 0;
         return;
@@ -590,8 +616,8 @@ function startTunnelHealthMonitor() {
 }
 
 function setAutoTunnelEnabled(enabled, startNow = true) {
+  log("info", "tunnel.auto", { enabled });
   const settings = telegramSettings();
-  if (enabled && (!telegramToken() || settings.chats.length === 0)) return "recipientRequired";
   settings.autoTunnel = enabled;
   writeDesktopSettings();
   if (enabled) {
@@ -599,7 +625,10 @@ function setAutoTunnelEnabled(enabled, startNow = true) {
       startTunnelHealthMonitor();
       notifyTelegramUrl(tunnelUrl, Boolean(settings.lastNotifiedUrl && settings.lastNotifiedUrl !== tunnelUrl));
     } else if (startNow) void probeServer().then(({ state }) => state === "ours" && startQuickTunnel({ interactive: false }));
-  } else clearTunnelTimers();
+  } else {
+    clearTunnelTimers();
+    if (tunnelState === "recovering" && !tunnelProcess && !tunnelStarting) tunnelState = "off";
+  }
   installApplicationMenu();
   telegramStateChanged();
   return null;
@@ -637,7 +666,13 @@ async function requestQuit() {
 }
 
 async function startQuickTunnel({ interactive = true, recovering = false } = {}) {
+  log("info", "tunnel.start", { mode: "quick", state: tunnelState, attempt: tunnelRetryAttempt });
   if (tunnelProcess || tunnelStarting) return;
+  if (!recovering) {
+    if (tunnelRestartTimer) clearTimeout(tunnelRestartTimer);
+    tunnelRestartTimer = null; tunnelRetryAttempt = 0; tunnelFailure = null;
+  }
+  tunnelProbeDetail = "";
   tunnelStarting = true;
   tunnelInteractive = interactive;
   tunnelState = recovering ? "recovering" : "connecting";
@@ -739,9 +774,11 @@ async function startQuickTunnel({ interactive = true, recovering = false } = {})
     tunnelUrl = candidateUrl;
     pendingTunnelUrl = null;
     tunnelStartError = null;
+    tunnelFailure = null;
     unavailableTunnelUrl = null;
     shareOrigin = candidateUrl;
     tunnelState = "connected";
+    log("info", "tunnel.connected", { mode: "quick" });
     tunnelRetryAttempt = 0;
     publicHealthFailures = 0;
     syncPublicOrigin();
@@ -765,6 +802,8 @@ async function startQuickTunnel({ interactive = true, recovering = false } = {})
       if (result.response === 1) openInBrowser(tunnelUrl);
     }
   } catch (error) {
+    tunnelFailure = { error: tunnelStartError || "tunnelExited", detail: tunnelStartError === "tunnelHealthFailed" ? tunnelProbeDetail : "" };
+    log("warn", "tunnel.start-failed", { ...errorFields(error), code: tunnelFailure.error });
     if (tunnelProcess) {
       tunnelStopReason = telegramSettings().autoTunnel ? "recovery" : "failed";
       tunnelProcess.kill();
@@ -847,6 +886,11 @@ function createWindow(loadAdmin = true) {
     webPreferences: secureWebPreferences,
   });
   observeUiLanguage(window);
+  for (const event of ["focus", "blur", "unresponsive", "responsive"]) {
+    window.on(event, () => log("info", `electron.window-${event}`, { focused: window.isFocused(), visible: window.isVisible() }));
+  }
+  window.webContents.on("did-fail-load", (_event, status) => log("error", "electron.load-failed", { status }));
+  window.webContents.on("render-process-gone", (_event, details) => log("error", "electron.renderer-gone", { reason: details.reason, exitCode: details.exitCode }));
   if (loadAdmin) window.once("ready-to-show", () => window.show());
   window.webContents.on("did-finish-load", () => {
     if (isInternalAdminUrl(window.webContents.getURL())) syncPublicOrigin();
@@ -872,6 +916,10 @@ async function start() {
       microphoneAllowed(details.requestingUrl || origin, ["audio"], contents?.getURL(), adminOrigin);
   });
   const appRoot = app.getAppPath();
+  initializeDiagnostics(path.join(app.getPath("userData"), "logs"));
+  let buildId = "unknown";
+  try { buildId = readFileSync(path.join(appRoot, ".next", "BUILD_ID"), "utf8").trim(); } catch { /* Development may not have a production build. */ }
+  log("info", "electron.start", { version: app.getVersion(), buildId, packaged: app.isPackaged, runtime: process.version });
   process.env.CLOUDFLARED_PATH = cloudflaredPath();
   globalThis.__liveConfTranslationAppRoot = appRoot;
   globalThis.__liveConfAllowedOrigins = desktopAllowedOrigins;
@@ -908,7 +956,8 @@ async function start() {
     }
   }
 
-  const { state } = await probeServer();
+  const { state, buildId: serverBuildId } = await probeServer();
+  log("info", "electron.server-probe", { state, buildId, serverBuildId: serverBuildId ?? "legacy", reused: state === "ours" });
   if (state === "occupied") throw new Error(`포트 ${PORT}을 다른 프로그램이 사용하고 있습니다.`);
   if (state === "free") {
     globalThis.__liveConfDesktopControl = { snapshot: desktopControlState, run: runDesktopControl,
@@ -920,6 +969,7 @@ async function start() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   await mainWindow.loadURL(`${adminOrigin}/admin`);
   void telegramBot.start();
+  log("info", "tunnel.startup-auto", { enabled: Boolean(telegramSettings().autoTunnel), reused: state === "ours" });
   if (telegramSettings().autoTunnel) void startQuickTunnel({ interactive: false });
 
   if (localHttpsError) {
@@ -962,12 +1012,14 @@ if (localAiInstallIndex >= 0) {
   app.quit();
 } else {
   app.on("second-instance", () => {
+    log("warn", "electron.existing-instance", { reused: true });
     if (!mainWindow) createWindow();
     if (mainWindow?.isMinimized()) mainWindow.restore();
     mainWindow?.focus();
   });
   app.on("web-contents-created", (_event, contents) => applyNavigationPolicy(contents));
   app.whenReady().then(start).catch((error) => {
+    log("error", "electron.start-failed", errorFields(error));
     dialog.showErrorBox("실행 실패", error instanceof Error ? error.message : String(error));
     app.quit();
   });

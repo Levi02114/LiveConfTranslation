@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import childProcess, { ChildProcess } from "node:child_process";
+import { PassThrough } from "node:stream";
 import { startServerControl } from "./server-control";
 import { getDb } from "./db";
 import { getServerControlSettings, listMeetings } from "./repo";
@@ -37,6 +39,62 @@ test("standalone settings support encrypted Telegram credentials and sharing wit
     assert.equal(listMeetings().length, 0);
   } finally {
     runtime?.close(); getDb().close(); globalThis.__meetingDb = undefined;
+    for (const [key, value] of Object.entries(previous)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("standalone auto recovery needs no Telegram recipients and only publishes a healthy URL", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "lct-auto-control-"));
+  const previous = { DATABASE_PATH: process.env.DATABASE_PATH, SESSION_SECRET: process.env.SESSION_SECRET, SERVER_PUBLIC_ORIGIN: process.env.SERVER_PUBLIC_ORIGIN };
+  Object.assign(process.env, { DATABASE_PATH: join(directory, "test.db"), SESSION_SECRET: "test-only-auto-secret", SERVER_PUBLIC_ORIGIN: "" });
+  let publicOrigin = "https://fake-auto-test.trycloudflare.com";
+  let releaseHealth: () => void = () => {};
+  const healthGate = new Promise<void>((resolve) => { releaseHealth = resolve; });
+  t.mock.method(childProcess, "spawn", () => {
+    const child = new ChildProcess();
+    child.stdout = new PassThrough();
+    const stderr = new PassThrough();
+    child.stderr = stderr;
+    child.kill = () => { child.emit("exit", 0, null); return true; };
+    setImmediate(() => stderr.write(publicOrigin));
+    return child;
+  });
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
+    assert.equal(String(input), `${publicOrigin}/api/health`, "no Telegram or paid provider request");
+    await healthGate;
+    return Response.json({ service: "live-conf-translation" });
+  });
+  let runtime = startServerControl()!;
+  try {
+    assert.deepEqual(await runtime.run({ action: "auto", enabled: true }), {});
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(runtime.snapshot().telegram.autoTunnel, true);
+    assert.equal(runtime.snapshot().tunnel, "connecting");
+    assert.notEqual(runtime.snapshot().origin, publicOrigin);
+    assert.equal(runtime.snapshot().tunnelOrigin, null);
+    releaseHealth();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(runtime.snapshot().tunnelOrigin, publicOrigin);
+    await runtime.run({ action: "remove", chatId: "absent" });
+    assert.equal(runtime.snapshot().telegram.autoTunnel, true);
+    runtime.close();
+    publicOrigin = "https://regenerated-auto-test.trycloudflare.com";
+    runtime = startServerControl()!;
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(runtime.snapshot().tunnel, "connected", "auto setting survives restart without Telegram");
+    assert.equal(runtime.snapshot().tunnelOrigin, publicOrigin, "restart publishes the newly generated URL, not the previous address");
+    await runtime.run({ action: "auto", enabled: false });
+    assert.equal(runtime.snapshot().tunnel, "connected", "auto-off keeps the current tunnel");
+    await runtime.run({ action: "stop", confirmed: true });
+    assert.equal(runtime.snapshot().tunnelOrigin, null);
+    assert.equal(runtime.snapshot().tunnel, "off");
+    const local = runtime.snapshot().addresses[0].origin;
+    assert.deepEqual(await runtime.run({ action: "share", origin: local }), {});
+    assert.equal(runtime.snapshot().origin, local);
+    await new Promise((resolve) => setTimeout(resolve, 800));
+  } finally {
+    releaseHealth(); runtime.close(); getDb().close(); globalThis.__meetingDb = undefined;
     for (const [key, value] of Object.entries(previous)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
     rmSync(directory, { recursive: true, force: true });
   }

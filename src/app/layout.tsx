@@ -71,7 +71,7 @@ export default function RootLayout({
         */}
         <script dangerouslySetInnerHTML={{ __html: APPEARANCE_INIT_SCRIPT }} />
       </head>
-      <body className="min-h-full antialiased">{children}</body>
+      <body className="min-h-full antialiased"><script src="/diagnostics.js" defer />{children}</body>
     </html>
   );
 }

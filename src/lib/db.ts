@@ -14,6 +14,7 @@ import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 
 import { databasePath } from "@/lib/env";
+import { log, errorFields } from "./diagnostics";
 import { migrateSecurity, migrateAppManagementTitle } from "@/lib/repo";
 import { newId, newPageToken } from "@/lib/ids";
 import { BUILTIN_LANGUAGES } from "@/lib/languages";
@@ -266,5 +267,10 @@ function open(): DatabaseSync {
 
 /** 연결을 얻는다. 첫 호출에서 파일을 열고 스키마를 만든다. */
 export function getDb(): DatabaseSync {
-  return (globalThis.__meetingDb ??= open());
+  if (globalThis.__meetingDb) return globalThis.__meetingDb;
+  try {
+    globalThis.__meetingDb = open();
+    log("info", "database.open");
+    return globalThis.__meetingDb;
+  } catch (error) { log("error", "database.open-failed", errorFields(error)); throw error; }
 }

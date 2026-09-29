@@ -31,6 +31,6 @@ export function SiteManagementView({ lang, languages, strings, ui, initial, meet
         {meetings.map((meeting) => <option key={meeting.id} value={meeting.id}>{meeting.title}</option>)}
       </select>
     </label>
-    {meetingId ? <TranslationJobs key={meetingId} meetingId={meetingId} strings={strings.security} /> : null}
+    {meetingId ? <TranslationJobs key={meetingId} meetingId={meetingId} strings={strings.security} closeLabel={strings.keys.close} /> : null}
   </main>;
 }

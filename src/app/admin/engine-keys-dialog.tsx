@@ -46,13 +46,15 @@ export function EngineKeysDialog({
   const [drafts, setDrafts] = useState<Partial<Record<EngineId, string>>>({});
   const [busy, setBusy] = useState<EngineId | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const changed = useRef(new Set<EngineId>());
   useEffect(() => {
     if (!inline) return;
     const abort = new AbortController();
     void fetch("/api/admin/engine-keys", { signal: abort.signal }).then(async (response) => {
       const parsed = z.object({ keys: z.array(engineKeyStatusSchema) }).safeParse(await response.json());
       if (!response.ok || !parsed.success) throw new Error();
-      setKeys(parsed.data.keys);
+      if (!abort.signal.aborted) setKeys((current) => parsed.data.keys.map((key) =>
+        changed.current.has(key.engine) ? current.find((item) => item.engine === key.engine) ?? key : key));
     }).catch(() => { if (!abort.signal.aborted) setError(strings.saveFailed); });
     return () => abort.abort();
   }, [inline, strings.saveFailed]);
@@ -67,7 +69,7 @@ export function EngineKeysDialog({
   const save = async (engine: EngineId) => {
     const key = (drafts[engine] ?? "").trim();
     if (!key || busy) return;
-
+    changed.current.add(engine);
     setBusy(engine);
     setError(null);
     try {
@@ -94,7 +96,7 @@ export function EngineKeysDialog({
 
   const remove = async (engine: EngineId) => {
     if (busy) return;
-
+    changed.current.add(engine);
     setBusy(engine);
     setError(null);
     try {

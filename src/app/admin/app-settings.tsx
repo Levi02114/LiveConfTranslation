@@ -17,6 +17,7 @@ import { PasswordChangeDialog } from "./password-change-dialog";
 import { SecuritySettings } from "./security-settings";
 import { TranslationJobs } from "./translation-jobs";
 import { VoiceSettingsForm } from "./voice-settings";
+import { useConfirmation } from "@/components/confirm-dialog";
 
 const desktopResponse = z.object({ desktop: desktopStateSchema.nullable().optional(), writable: z.boolean().optional(), error: z.string().optional(), link: z.string().url().optional() });
 type Section = "connection" | "api" | "telegram" | "security" | "voice" | "help";
@@ -36,6 +37,8 @@ export function AppSettings(props: Props) {
   const [desktop, setDesktop] = useState<DesktopState | null>(null);
   const [writable, setWritable] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  const desktopRevision = useRef(0);
+  const [keyChanges, setKeyChanges] = useState<Partial<Record<EngineId, boolean>>>({});
 
   useEffect(() => {
     if (!visible) return;
@@ -51,24 +54,25 @@ export function AppSettings(props: Props) {
     let disposed = false;
     const controller = new AbortController();
     const refresh = async () => {
+      const revision = ++desktopRevision.current;
       try {
         const response = await fetch("/api/admin/desktop", { cache: "no-store", signal: controller.signal });
         if (response.status === 401) { dialog.current?.close(); router.replace("/admin/login"); return; }
         const parsed = desktopResponse.safeParse(await response.json());
         if (!response.ok || !parsed.success) throw new Error();
-        if (disposed) return;
+        if (disposed || revision !== desktopRevision.current) return;
         setDesktop(parsed.data.desktop ?? null); setWritable(parsed.data.writable === true); setLoadFailed(false);
         if (parsed.data.desktop) {
           localStorage.setItem("lct_public_origin", parsed.data.desktop.origin);
           window.dispatchEvent(new Event("lct-public-origin"));
         }
-      } catch { if (!disposed) setLoadFailed(true); }
+      } catch { if (!disposed && revision === desktopRevision.current) setLoadFailed(true); }
     };
     void refresh();
     window.addEventListener("lct-app-settings", refresh);
     window.addEventListener("focus", refresh);
     return () => { disposed = true; controller.abort(); window.removeEventListener("lct-app-settings", refresh); window.removeEventListener("focus", refresh); };
-  }, [router, visible]);
+  }, [router, visible, open]);
   useEffect(() => {
     if (!visible || !open) return;
     dialog.current?.showModal();
@@ -88,22 +92,28 @@ export function AppSettings(props: Props) {
     { id: "voice", label: s.voice }, { id: "help", label: strings.operations.appGuide },
   ];
   return <>
-    <dialog ref={dialog} onClose={() => { setOpen(false); router.refresh(); }} aria-labelledby="app-settings-title"
+    <dialog ref={dialog} onClose={(event) => { if (event.target === event.currentTarget) { setOpen(false); router.refresh(); } }} aria-labelledby="app-settings-title"
       className="app-settings-panel fixed inset-y-0 left-0 m-0 h-dvh max-h-dvh w-full max-w-full overflow-y-auto border-r border-line bg-bg p-4 text-fg backdrop:bg-black/45 sm:w-[min(48rem,90vw)] sm:p-6">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
         <h1 id="app-settings-title">{s.title}</h1><button onClick={() => dialog.current?.close()}>{strings.keys.close}</button>
       </header>
       <nav aria-label={s.title} className="my-4 flex flex-wrap gap-2">{tabs.map((tab) => <button key={tab.id}
         aria-pressed={section === tab.id} onClick={() => setSection(tab.id)}>{tab.label}</button>)}</nav>
-      {open ? <SettingsBody key={section} {...props} section={section} desktop={desktop} writable={writable}
-        loadFailed={loadFailed} onDesktop={setDesktop} onClose={() => dialog.current?.close()} /> : null}
+      {open ? <SettingsBody key={section} {...props}
+        engines={props.engines.map((engine) => ({ ...engine, configured: keyChanges[engine.id] ?? engine.configured }))}
+        onKeyChange={(status) => {
+          setKeyChanges((previous) => ({ ...previous, [status.engine]: status.configured }));
+          window.dispatchEvent(new CustomEvent("lct-engine-keys", { detail: status }));
+        }} section={section} desktop={desktop} writable={writable}
+        loadFailed={loadFailed} onDesktop={(value) => { desktopRevision.current++; setDesktop(value); }} onClose={() => dialog.current?.close()} /> : null}
     </dialog>
   </>;
 }
 
-function SettingsBody({ section, desktop, writable, loadFailed, onDesktop, onClose, ...props }: Props & {
+function SettingsBody({ section, desktop, writable, loadFailed, onDesktop, onClose, onKeyChange, ...props }: Props & {
   section: Section; desktop: DesktopState | null; writable: boolean; loadFailed: boolean;
   onDesktop: (state: DesktopState) => void; onClose: () => void;
+  onKeyChange: (status: EngineKeyStatus) => void;
 }) {
   const { strings, ui } = props;
   const s = strings.appSettings;
@@ -115,26 +125,28 @@ function SettingsBody({ section, desktop, writable, loadFailed, onDesktop, onClo
   const [link, setLink] = useState("");
   const [meetingId, setMeetingId] = useState("");
   const [draftTunnelMode, setTunnelMode] = useState<"base" | "named" | "external" | null>(null);
-  const tunnelMode = draftTunnelMode ?? (desktop?.connection?.mode === "named" ? "named" : "base");
-  const [tunnelOrigin, setTunnelOrigin] = useState(desktop?.connection?.configuredOrigin ?? "");
+  const tunnelMode = draftTunnelMode ?? (desktop?.connection?.mode === "named" ? "named" : desktop?.connection?.mode === "external" ? "external" : "base");
+  const [draftTunnelOrigin, setTunnelOrigin] = useState<string | null>(null);
+  const tunnelOrigin = draftTunnelOrigin ?? (desktop?.connection?.configuredOrigin || desktop?.tunnelOrigin || "");
   const [tunnelToken, setTunnelToken] = useState("");
   const n = strings.tunnel;
+  const { confirm, confirmation } = useConfirmation({ confirm: ui.speaker.confirm, cancel: ui.message.cancel });
   const run = async (action: DesktopAction) => {
     if (busyRef.current || !writable) return;
-    if (action.action === "stop" && !window.confirm(s.stopWarning)) return;
-    if (action.action === "tunnel-apply" && !window.confirm(n.confirm)) return;
-    if (action.action === "tunnel-base" && !window.confirm(s.stopWarning)) return;
+    if ((action.action === "stop" || action.action === "tunnel-base") && !await confirm(s.stopWarning)) return;
+    if (action.action === "tunnel-apply" && !await confirm(n.confirm)) return;
+    if (busyRef.current) return;
     busyRef.current = true; setBusy(true); setNotice(""); setLink("");
     try {
       const response = await fetch("/api/admin/desktop", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(action) });
       const parsed = desktopResponse.safeParse(await response.json());
+      if (parsed.success && parsed.data.desktop) onDesktop(parsed.data.desktop);
       if (!response.ok || !parsed.success || parsed.data.error) {
         const error = parsed.success ? parsed.data.error : undefined;
         setNotice(Object.entries({ ...t, ...n }).find(([key]) => key === error)?.[1] ?? t.genericError);
         return;
       }
       if (parsed.data.desktop) {
-        onDesktop(parsed.data.desktop);
         localStorage.setItem("lct_public_origin", parsed.data.desktop.origin);
         window.dispatchEvent(new Event("lct-public-origin"));
       }
@@ -148,7 +160,7 @@ function SettingsBody({ section, desktop, writable, loadFailed, onDesktop, onClo
   if (section === "voice") return <VoiceSettingsForm initial={props.voice} {...props} />;
   if (section === "api") return <>
     <EngineKeysDialog inline strings={strings.keys} initial={props.keys} engines={props.engines.filter((engine) => engine.id !== "local")}
-      onChange={(status) => window.dispatchEvent(new CustomEvent("lct-engine-keys", { detail: status }))} />
+      onChange={onKeyChange} />
     <GoogleSpeechDialog inline strings={strings.speechCredentials} initial={props.google} />
     <OpenaiUsageDialog inline strings={strings.openaiUsage} initial={props.usage} />
   </>;
@@ -157,29 +169,42 @@ function SettingsBody({ section, desktop, writable, loadFailed, onDesktop, onClo
     <SecuritySettings initial={props.limits} strings={strings.security} />
     <label>{strings.security.jobSession}<select value={meetingId} onChange={(event) => setMeetingId(event.target.value)}>
       <option value="">{strings.security.chooseSession}</option>{props.meetings.map((meeting) => <option key={meeting.id} value={meeting.id}>{meeting.title}</option>)}
-    </select></label>{meetingId ? <TranslationJobs key={meetingId} meetingId={meetingId} strings={strings.security} /> : null}
+    </select></label>{meetingId ? <TranslationJobs key={meetingId} meetingId={meetingId} strings={strings.security} closeLabel={strings.keys.close} /> : null}
   </>;
   if (section === "help") return <button onClick={() => { onClose(); window.dispatchEvent(new Event("lct-app-guide")); }}>{t.appGuide}</button>;
-  if (loadFailed) return <p role="alert">{strings.security.failed}</p>;
+  if (loadFailed && !desktop) return <p role="alert">{strings.security.failed}</p>;
   if (!desktop) return <p>{s.unavailable}</p>;
   const telegram = desktop.telegram;
   return <section className="grid gap-4">
+    {confirmation}
+    {loadFailed ? <p role="alert">{strings.security.failed}</p> : null}
     {!writable ? <p>{s.insecure}</p> : null}
     {section === "connection" ? <>
       <div className="grid min-w-0 gap-3 border border-line bg-panel p-4">
         <h2>{n.current}</h2>
         {desktop.connection ? <p>{n.mode}: {n[desktop.connection.mode]}</p> : null}
         <p className="break-all">{desktop.origin}</p>
+        <label>{s.share}<select disabled={!writable || busy || (desktop.connection?.busy && desktop.tunnel !== "off")} value={desktop.origin}
+          onChange={(event) => void run({ action: "share", origin: event.target.value })}>
+          {desktop.tunnelOrigin ? <option value={desktop.tunnelOrigin}>{n.origin}: {desktop.tunnelOrigin}</option> : null}
+          {!desktop.tunnelOrigin && !desktop.addresses.some((item) => item.origin === desktop.origin) ? <option value={desktop.origin} disabled>{desktop.origin}</option> : null}
+          {desktop.addresses.map((address) => <option key={address.origin} value={address.origin}>{address.label}</option>)}
+        </select></label>
+        <p>{n.shareHelp}</p>
+        {desktop.tunnelOrigin && desktop.tunnelOrigin !== desktop.origin ? <p className="break-all">{n.origin}: {desktop.tunnelOrigin}</p> : null}
         <p>{desktop.tunnel === "connected" ? t.tunnelStatusConnected : desktop.tunnel === "connecting" ? t.tunnelStatusConnecting : desktop.tunnel === "recovering" ? t.tunnelStatusRecovering : t.tunnelStatusOff}</p>
         <div className="flex flex-wrap gap-2">
           <button onClick={async () => setNotice(await copyText(desktop.origin) ? t.copied : t.genericError)}>{strings.dashboard.copy}</button>
           <a href={desktop.origin} target="_blank" rel="noreferrer">{n.open}</a>
-          <button disabled={!writable || busy || desktop.externalTunnel || desktop.tunnel !== "off"} onClick={() => void run({ action: "start" })}>{t.tunnelStart}</button>
-          <button disabled={!writable || busy || desktop.externalTunnel || desktop.tunnel === "off"} onClick={() => void run({ action: "stop", confirmed: true })}>{t.tunnelStop}</button>
+          {!desktop.externalTunnel ? <>
+            <button disabled={!writable || busy || desktop.connection?.busy || desktop.tunnelBusy || desktop.tunnel === "connected" || desktop.tunnel === "connecting"} onClick={() => void run({ action: "start" })}>{desktop.tunnel === "recovering" ? n.retry : desktop.connection?.mode === "named" ? n.startNamed : t.tunnelStart}</button>
+            <button disabled={!writable || busy || desktop.tunnel === "off"} onClick={() => void run({ action: "stop", confirmed: true })}>{desktop.connection?.mode === "named" ? n.stopNamed : t.tunnelStop}</button>
+          </> : null}
         </div>
         {desktop.connection?.mode === "quick" ? <p>{t.quickTunnelNotice}</p> : null}
         {desktop.externalTunnel ? <p>{s.externalTunnel}</p> : null}
-        <p role="status">{busy ? ui.capture.starting : notice}</p>
+        {desktop.tunnelFailure ? <p role="alert">{Object.entries({ ...t, ...n }).find(([key]) => key === desktop.tunnelFailure?.error)?.[1] ?? t.genericError}{desktop.tunnelFailure.detail ? ` (${desktop.tunnelFailure.detail})` : ""}</p> : null}
+        <p role="status">{busy ? ui.capture.starting : desktop.tunnelFailure && notice === strings.security.saved ? "" : notice}</p>
       </div>
       {desktop.connection ? <fieldset disabled={!writable || busy || desktop.connection.busy} className="grid min-w-0 gap-3 border border-line p-3">
         <legend>{n.change}</legend>
@@ -208,16 +233,7 @@ function SettingsBody({ section, desktop, writable, loadFailed, onDesktop, onClo
           </div>
         </div> : null}
       </fieldset> : null}
-      <details className="border border-line p-3">
-      <summary className="cursor-pointer">{n.local}</summary>
-      <div className="mt-3 grid gap-3">
-      <label>{s.share}<select disabled={!writable || busy} value={desktop.addresses.some((item) => item.origin === desktop.origin) ? desktop.origin : ""}
-        onChange={(event) => void run({ action: "share", origin: event.target.value })}>
-        <option value="" disabled>{desktop.origin}</option>
-        {desktop.addresses.map((address) => <option key={address.origin} value={address.origin}>{address.label}</option>)}
-      </select></label>
       {desktop.ca ? <a href="/local-ca.cer" download>{s.ca}</a> : null}
-      </div></details>
     </> : <>
       <p>{t.botFatherHelp}</p><a href="https://t.me/BotFather" target="_blank" rel="noreferrer">{t.openBotFather}</a>
       <label>{t.tokenLabel}<input type="password" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} disabled={!writable || busy} /></label>
@@ -240,6 +256,6 @@ function SettingsBody({ section, desktop, writable, loadFailed, onDesktop, onClo
       </div>)}
     </>}
     <label><input type="checkbox" checked={desktop.connection?.auto ?? telegram.autoTunnel} disabled={!writable || busy || desktop.connection?.busy || desktop.externalTunnel} onChange={(event) => void run({ action: "auto", enabled: event.target.checked })} /> {t.autoLabel}</label>
-    <p>{desktop.connection?.mode === "named" ? n.autoHelp : t.autoHelp}</p>{section !== "connection" ? <p role="status">{busy ? ui.capture.starting : notice}</p> : null}
+    <p>{desktop.externalTunnel ? s.externalTunnel : n.autoHelp}</p>{section !== "connection" ? <p role="status">{busy ? ui.capture.starting : notice}</p> : null}
   </section>;
 }

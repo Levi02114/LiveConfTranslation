@@ -49,3 +49,14 @@ test("최대 길이 커밋 직후 무음으로 끝나면 빈 턴을 다시 커�
   detector.handleSpeechEnd();
   assert.equal(commits, 1);
 });
+
+test("destroyed VAD ignores queued model callbacks and cannot rearm its timer", (context) => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  let commits = 0;
+  const detector = new SpeechTurnCommitter(() => { commits++; });
+  detector.handleSpeechStart(); detector.destroy();
+  detector.handleSpeechStart(); detector.handleSpeechFrame(0.9); detector.handleSpeechEnd();
+  context.mock.timers.tick(MAX_TURN_MS * 2);
+  assert.equal(commits, 0);
+  assert.equal(detector.hasSpeech(), false);
+});

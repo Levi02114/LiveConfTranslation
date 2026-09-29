@@ -89,6 +89,11 @@ test("voice settings persist without sessions; changes notify and phrases suppor
     for (const lang of ["ko", "vi", "th", "si"]) assert.ok(i18n.getAdminStrings(lang).appSettings.paidWarning);
     assert.ok(i18n.sourceEntries().some((row) => row.key === "admin.appSettings.delay"));
     assert.ok(i18n.sourceEntries().some((row) => row.key === "admin.appSettings.perLanguage"));
+    assert.ok(i18n.sourceEntries().some((row) => row.key === "ui.status.scrollToLatest"));
+    assert.ok(i18n.sourceEntries().some((row) => row.key === "ui.capture.stopping"));
+    for (const lang of ["ko", "vi", "th", "si"]) assert.ok(i18n.getStrings(lang).capture.stopping);
+    assert.ok(i18n.sourceEntries().some((row) => row.key === "admin.tunnel.retry"));
+    for (const lang of ["ko", "vi", "th", "si"]) assert.ok(i18n.getStrings(lang).status.scrollToLatest);
     repo.upsertUiStrings("vi", [{ key: "admin.appSettings.title", text: "Manual settings", origin: "manual" }]);
     assert.equal(i18n.getAdminStrings("vi").appSettings.title, "Manual settings");
   } finally {

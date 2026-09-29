@@ -8,6 +8,7 @@ import type { Language } from "@/lib/languages";
 import { DEFAULT_VOICE_SETTINGS, silenceMsFor, voiceSettingsSchema, type VoiceSettings } from "@/lib/voice-settings";
 import { engineIdSchema, type EngineId } from "@/lib/translate/types";
 import { transcriptionProviderSchema } from "@/lib/repo-schema";
+import { useConfirmation } from "@/components/confirm-dialog";
 
 const translationSchema = z.object({ text: z.string(), elapsedMs: z.number() });
 type Result = { id: number; body: string; elapsedMs: number; silenceMs: number; text?: string; translationMs?: number; error?: boolean };
@@ -18,17 +19,20 @@ export function VoiceSettingsForm({ initial, strings, ui, languages, engines }: 
 }) {
   const s = strings.appSettings;
   const [settings, setSettings] = useState(initial);
+  const edited = useRef(new Set<string>());
+  const { confirm, confirmation } = useConfirmation({ confirm: ui.speaker.confirm, cancel: ui.message.cancel });
   const [source, setSource] = useState(languages[0]?.code ?? "ko");
   const selected = settings.languages?.[source] ?? settings;
-  const changeSelected = (value: { mode: "auto" | "manual"; silenceMs: number }) => setSettings({
+  const changeSelected = (value: { mode: "auto" | "manual"; silenceMs: number }) => { edited.current.add(source); setSettings({
     ...settings, languages: { ...settings.languages, [source]: value },
-  });
+  }); };
   const [target, setTarget] = useState(languages[1]?.code ?? "vi");
   const [provider, setProvider] = useState<"openai" | "google" | "local">("openai");
   const [engine, setEngine] = useState<EngineId>(engines.find((item) => item.configured)?.id ?? "openai");
   const [dry, setDry] = useState(true);
   const [results, setResults] = useState<Result[]>([]);
   const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [notice, setNotice] = useState("");
   const abort = useRef<AbortController | null>(null);
   const sequence = useRef(0);
@@ -37,7 +41,11 @@ export function VoiceSettingsForm({ initial, strings, ui, languages, engines }: 
     void fetch("/api/admin/voice-settings", { signal: controller.signal }).then(async (response) => {
       const parsed = voiceSettingsSchema.safeParse(await response.json());
       if (!response.ok || !parsed.success) throw new Error();
-      setSettings(parsed.data);
+      if (!controller.signal.aborted) setSettings((current) => ({ ...parsed.data, languages: {
+        ...parsed.data.languages,
+        ...Object.fromEntries(Object.entries(current.languages ?? {}).filter(([code]) => edited.current.has(code))),
+      } }));
+      if (!controller.signal.aborted) setLoaded(true);
     }).catch(() => { if (!controller.signal.aborted) setNotice(strings.security.failed); });
     return () => controller.abort();
   }, [strings.security.failed]);
@@ -62,6 +70,7 @@ export function VoiceSettingsForm({ initial, strings, ui, languages, engines }: 
     } },
   });
   return <section className="grid gap-4">
+    {confirmation}
     <h2>{s.voice}</h2>
     <label>{s.source}<select disabled={voice.state !== "idle"} value={source} onChange={(event) => setSource(event.target.value)}>{languages.map((lang) => <option key={lang.code} value={lang.code}>{lang.label}</option>)}</select></label>
     <p className="text-muted">{s.perLanguage}</p>
@@ -78,8 +87,8 @@ export function VoiceSettingsForm({ initial, strings, ui, languages, engines }: 
     </label>
     <p className="text-muted">{s.note}</p><p className="text-muted">{s.nextTurn}</p>
     <div className="flex flex-wrap gap-2">
-      <button disabled={saving || !voiceSettingsSchema.safeParse(settings).success} onClick={async () => {
-        if (saving) return;
+      <button disabled={!loaded || saving || !voiceSettingsSchema.safeParse(settings).success} onClick={async () => {
+        if (!loaded || saving) return;
         setSaving(true); setNotice("");
         try {
           const response = await fetch("/api/admin/voice-settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });
@@ -104,18 +113,18 @@ export function VoiceSettingsForm({ initial, strings, ui, languages, engines }: 
           <option value="openai">{strings.list.transcriptionOpenai}</option><option value="google">{strings.list.transcriptionGoogle}</option><option value="local">{strings.list.transcriptionLocal}</option>
         </select></label>
         <label>{s.target}<select value={target} onChange={(event) => setTarget(event.target.value)}>{languages.map((lang) => <option key={lang.code} value={lang.code}>{lang.label}</option>)}</select></label>
-        <label>{strings.list.engine}<select value={engine} onChange={(event) => setEngine(engineIdSchema.parse(event.target.value))}>{engines.map((item) => <option key={item.id} value={item.id} disabled={!item.configured}>{item.label}</option>)}</select></label>
+        <label>{strings.list.engine}<select value={engine} onChange={(event) => setEngine(engineIdSchema.parse(event.target.value))}>{engines.map((item) => <option key={item.id} value={item.id} disabled={!item.configured}>{item.label}{!item.configured ? ` · ${item.id === "local" ? strings.list.notInstalled : strings.list.engineNoKey}` : ""}</option>)}</select></label>
       </> : null}
     </fieldset>
     <div className="flex flex-wrap gap-2">
-      <button disabled={voice.state !== "idle" || !voiceSettingsSchema.safeParse(settings).success} onClick={() => {
-        if (!dry && !window.confirm(s.paidWarning)) return;
+      <button disabled={voice.state !== "idle" || !voiceSettingsSchema.safeParse(settings).success || (!dry && !engines.some((item) => item.id === engine && item.configured))} onClick={async () => {
+        if (!dry && !await confirm(s.paidWarning)) return;
         abort.current?.abort(); abort.current = new AbortController(); setResults([]); void voice.start();
       }}>{voice.state === "starting" ? ui.capture.starting : ui.capture.start}</button>
-      <button disabled={voice.state === "idle"} onClick={() => { abort.current?.abort(); voice.stop(false); }}>{ui.capture.stop}</button>
+      <button disabled={voice.state === "idle" || voice.state === "stopping"} onClick={() => { abort.current?.abort(); voice.stop(false); }}>{voice.state === "stopping" ? ui.capture.stopping : ui.capture.stop}</button>
     </div>
     <meter min={0} max={1} value={voice.meter?.level ?? 0} aria-label={ui.capture.level} className="w-full" />
-    <p role="status">{voice.phase === "idle" ? ui.capture.standby : s[voice.phase]}</p>
+    <p role="status">{voice.state === "stopping" ? ui.capture.stopping : voice.phase === "idle" ? ui.capture.standby : s[voice.phase]}</p>
     {voice.meter?.noSignal ? <p>{ui.capture.noSignal}</p> : voice.meter?.clipping ? <p>{ui.capture.levelClipping}</p> : voice.meter?.tooQuiet ? <p>{ui.capture.levelTooQuiet}</p> : null}
     {voice.error ? <p role="alert">{voice.error}</p> : null}
     {voice.partial ? <p>{voice.partial}</p> : null}

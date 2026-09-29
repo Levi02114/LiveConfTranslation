@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppearanceControls } from "@/components/appearance-controls";
+import { ScrollToLatest } from "@/components/scroll-to-latest";
 import { FailedSubmissions, type FailedSubmission } from "@/components/failed-submissions";
 import { TranslationEntry } from "@/components/translation-entry";
 import { VoiceLevelMeter } from "@/components/voice-level-meter";
@@ -167,52 +168,10 @@ export function InputView({
     send({ t: "name", name });
   }, [send, speakerLabels, speakerName, state]);
 
-  const flowSize = useMemo(
-    () => entries.reduce(
-      (count, entry) =>
-        count +
-        1 +
-        (entry.sourceLang !== language.code &&
-        entry.translations.some((translation) => translation.lang === language.code)
-          ? 1
-          : 0),
-      0,
-    ),
+  const scrollItems = useMemo(
+    () => entries.map((entry) => ({ ...entry, translations: entry.sourceLang === language.code ? [] : entry.translations.filter((line) => line.lang === language.code) })),
     [entries, language.code],
   );
-
-  // 새 원문이나 이 페이지 언어의 번역이 들어오면 따라 내려간다.
-  useEffect(() => {
-    const container = scrollRef.current;
-    if (container) container.scrollTop = container.scrollHeight;
-  }, [flowSize, voice.partial]);
-
-  useEffect(() => {
-    const follow = () => {
-      requestAnimationFrame(() => {
-        const container = scrollRef.current;
-        if (container) container.scrollTop = container.scrollHeight;
-      });
-    };
-    window.addEventListener("resize", follow, { passive: true });
-    window.visualViewport?.addEventListener("resize", follow, { passive: true });
-    return () => {
-      window.removeEventListener("resize", follow);
-      window.visualViewport?.removeEventListener("resize", follow);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!contentRef.current || !("ResizeObserver" in globalThis)) return;
-    const observer = new ResizeObserver(() => {
-      requestAnimationFrame(() => {
-        const container = scrollRef.current;
-        if (container) container.scrollTop = container.scrollHeight;
-      });
-    });
-    observer.observe(contentRef.current);
-    return () => observer.disconnect();
-  }, []);
 
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -227,10 +186,6 @@ export function InputView({
     // 자동 높이. 먼저 줄여야 내용이 짧아졌을 때도 따라 줄어든다.
     area.style.height = "auto";
     area.style.height = `${Math.min(area.scrollHeight, 220)}px`;
-    requestAnimationFrame(() => {
-      const container = scrollRef.current;
-      if (container) container.scrollTop = container.scrollHeight;
-    });
   }, [text, voice.partial]);
 
   const onChange = (value: string) => {
@@ -312,7 +267,7 @@ export function InputView({
         ? strings.connection.reconnecting
         : strings.connection.disconnected;
   const voiceActionText =
-    voice.state === "starting"
+    voice.state === "stopping" ? strings.capture.stopping : voice.state === "starting"
       ? strings.capture.starting
       : voice.state === "active"
         ? strings.capture.stop
@@ -405,7 +360,8 @@ export function InputView({
         </div>
       ) : null}
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-8">
+      <div className="relative min-h-0 flex-1">
+      <div ref={scrollRef} tabIndex={0} className="h-full overflow-y-auto px-4 sm:px-8">
         <div className="mx-auto flex min-h-full max-w-[920px] flex-col pt-14">
           <header className="border-b border-line pb-5">
             <div className="text-[27px] font-medium">{language.nativeName}</div>
@@ -444,11 +400,13 @@ export function InputView({
               </div>
             ))}
 
-            <div className="h-12" aria-hidden />
+            <div className="h-24" aria-hidden />
           </div>
         </div>
       </div>
 
+      <ScrollToLatest scrollRef={scrollRef} contentRef={contentRef} items={scrollItems} strings={strings.status} />
+      </div>
       <div className="shrink-0 border-t border-line bg-bg">
         <div className="mx-auto max-w-[920px] px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-8 sm:py-4">
           <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line pb-3 font-mono text-[11px]">
@@ -511,7 +469,7 @@ export function InputView({
 
             {voice.state !== "idle" ? (
               <span className="text-muted">
-                {voice.state === "active" ? strings.capture.listening : strings.capture.starting}
+                {voice.state === "stopping" ? strings.capture.stopping : voice.state === "active" ? strings.capture.listening : strings.capture.starting}
               </span>
             ) : null}
             {voice.state === "active" ? (
@@ -556,7 +514,7 @@ export function InputView({
                   onClick={() =>
                     voice.state === "active" ? voice.stop() : void voice.start()
                   }
-                  disabled={closed || !speakerReady || voice.state === "starting"}
+                  disabled={closed || !speakerReady || voice.state === "starting" || voice.state === "stopping"}
                   className={`flex min-h-11 min-w-11 cursor-pointer items-center justify-center border border-fg transition-colors disabled:cursor-default disabled:opacity-30 ${
                     voice.state === "active"
                       ? "bg-fg text-bg"
@@ -588,7 +546,7 @@ export function InputView({
                   closed ||
                   !speakerReady ||
                   (voiceMode
-                    ? voice.state === "starting"
+                    ? voice.state === "starting" || voice.state === "stopping"
                     : voice.state !== "idle" || !text.trim())
                 }
                 className="min-h-11 min-w-0 flex-1 cursor-pointer border border-fg px-4 py-2.5 font-mono text-[14px] transition-colors hover:bg-fg hover:text-bg disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fg sm:flex-none sm:px-6"

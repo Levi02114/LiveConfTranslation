@@ -19,6 +19,9 @@ import type { IncomingMessage, Server as HttpServer } from "node:http";
 import type { Server as HttpsServer } from "node:https";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { dirname, join as joinPath } from "node:path";
+import { initializeDiagnostics } from "./electron/diagnostics.cjs";
+import { log, errorFields, safeRoute, withContext, flushDiagnostics } from "@/lib/diagnostics";
 
 import next from "next";
 import { WebSocket as WsSocket, WebSocketServer, type WebSocket } from "ws";
@@ -41,6 +44,8 @@ import {
   localHttpsPort,
   openaiRealtimeTranscribeUrl,
   serverEnvironment,
+  databasePath,
+  diagnosticsDirectory,
 } from "@/lib/env";
 import {
   hasCleanSinhalaScript,
@@ -97,6 +102,9 @@ declare global {
 const { dev, port, hostname } = serverEnvironment();
 // 0.0.0.0 으로 열어야 같은 네트워크의 참석자 기기에서 접속할 수 있다.
 const appRoot = globalThis.__liveConfTranslationAppRoot ?? process.cwd();
+initializeDiagnostics(diagnosticsDirectory() ?? joinPath(dirname(databasePath()), "logs"));
+const buildId = (() => { try { return readFileSync(joinPath(appRoot, ".next", "BUILD_ID"), "utf8").trim(); } catch { return "development"; } })();
+log("info", "server.start", { buildId, port, runtime: process.version });
 globalThis.__liveConfDesktopOperations = desktopOperations;
 globalThis.__liveConfSettingsChanged = notifyAppSettings;
 
@@ -107,11 +115,19 @@ const handle = app.getRequestHandler();
 let anonymousCounter = 0;
 
 const requestHandler = (req: Parameters<typeof handle>[0], res: Parameters<typeof handle>[1]) => {
+  const requestId = randomUUID();
+  const started = performance.now();
+  const route = safeRoute(req.url ?? "/");
+  res.setHeader("x-lct-request-id", requestId);
+  res.setHeader("x-lct-build-id", buildId);
+  res.once("close", () => log(res.statusCode >= 500 ? "error" : res.statusCode >= 400 || !res.writableFinished ? "warn" : "info", "http.complete",
+    { requestId, route, method: req.method, status: res.statusCode, okay: res.writableFinished, durationMs: Math.round(performance.now() - started) }));
   if (!validateRequest(req, !["GET", "HEAD", "OPTIONS"].includes(req.method ?? "GET"))) {
     res.writeHead(403, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: "invalid-origin" }));
     return;
   }
+  req.headers["x-lct-request-id"] = requestId;
   if (!limitRequestBody(req, res)) return;
   if (req.method === "GET" && req.url === "/api/tunnel-probe") {
     const answer = tunnelProbeAnswer(req.headers.host, req.headers["x-tunnel-probe"]);
@@ -126,6 +142,7 @@ const requestHandler = (req: Parameters<typeof handle>[0], res: Parameters<typeo
     res.end(
       JSON.stringify({
         service: "live-conf-translation",
+        buildId,
         openMeetings: listMeetings().filter((meeting) => meeting.status === "open").length,
       }),
     );
@@ -143,7 +160,8 @@ const requestHandler = (req: Parameters<typeof handle>[0], res: Parameters<typeo
     return;
   }
 
-  handle(req, res).catch((error) => {
+  withContext({ requestId, route }, () => handle(req, res)).catch((error) => {
+    log("error", "http.exception", { requestId, route, ...errorFields(error) });
     console.error("[http] 요청 처리 실패", error instanceof Error ? error.name : "Error");
     if (res.writableEnded) return;
     res.statusCode = 500;
@@ -157,6 +175,11 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 });
 const transcriptionWss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
 const connectionsByIp = new Map<string, number>();
 function admitConnection(ws: WebSocket, ip: string): void {
+  const connectionId = randomUUID();
+  const started = performance.now();
+  log("info", "websocket.open", { connectionId });
+  ws.once("error", (error) => log("warn", "websocket.error", { connectionId, ...errorFields(error) }));
+  ws.once("close", (status) => log("info", "websocket.close", { connectionId, status, durationMs: Math.round(performance.now() - started) }));
   connectionsByIp.set(ip, (connectionsByIp.get(ip) ?? 0) + 1);
   ws.once("close", () => {
     const count = (connectionsByIp.get(ip) ?? 1) - 1;
@@ -179,6 +202,7 @@ function attachUpgrade(serverInstance: HttpServer | HttpsServer) {
 serverInstance.on("upgrade", (request, socket, head) => {
   try {
   if (!validateRequest(request, true)) {
+    log("warn", "websocket.rejected", { route: request.url, status: 403 });
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     socket.destroy();
     return;
@@ -194,6 +218,7 @@ serverInstance.on("upgrade", (request, socket, head) => {
   const limits = getSecurityLimits();
   if (wss.clients.size + transcriptionWss.clients.size >= limits.connectionsTotal ||
     (connectionsByIp.get(ip) ?? 0) >= limits.connectionsPerIp) {
+    log("warn", "websocket.rejected", { route: request.url, status: 429 });
     socket.write("HTTP/1.1 429 Too Many Requests\r\nRetry-After: 30\r\n\r\n");
     socket.destroy();
     return;
@@ -203,6 +228,7 @@ serverInstance.on("upgrade", (request, socket, head) => {
     const target = url.searchParams.get("test") === "1"
       ? resolveTestTarget(url, request) : resolveTranscriptionTarget(url);
     if (!target) {
+      log("warn", "websocket.rejected", { route: request.url, status: 401 });
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;
@@ -221,6 +247,7 @@ serverInstance.on("upgrade", (request, socket, head) => {
 
   if (url.searchParams.get("stats") === "1") {
     if (!isAdminFromCookieHeader(request.headers.cookie)) {
+      log("warn", "websocket.rejected", { route: request.url, status: 401 });
       socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
       socket.destroy();
       return;
@@ -253,6 +280,7 @@ serverInstance.on("upgrade", (request, socket, head) => {
 
   const resolved = resolveConnectionTarget(url, request.headers.cookie);
   if (!resolved) {
+    log("warn", "websocket.rejected", { route: request.url, status: 401 });
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
@@ -264,7 +292,8 @@ serverInstance.on("upgrade", (request, socket, head) => {
     ws.on("pong", () => liveSockets.add(ws));
     attach(ws, resolved, connectionIp(request));
   });
-  } catch {
+  } catch (error) {
+    log("error", "websocket.upgrade-failed", { route: request.url, ...errorFields(error) });
     socket.destroy();
   }
 });
@@ -430,6 +459,8 @@ const PARTIAL_INTERVAL_MS = 50;
 const MAX_VIEWER_BUFFERED_BYTES = 512 * 1024;
 
 function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
+  const connectionId = randomUUID();
+  log("info", "transcription.open", { connectionId, meetingId: target.meeting.id, provider: target.meeting.transcriptionProvider });
   const local = target.meeting.transcriptionProvider === "local";
   const google = target.meeting.transcriptionProvider === "google";
   let upstream: WsSocket | null = null;
@@ -471,6 +502,9 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   let rescueAudio: RescueAudioTurns | null = null;
 
   const send = (message: TranscriptionServerMessage) => {
+    if (message.t === "ready" || message.t === "error" || message.t === "transcript") log(message.t === "error" ? "warn" : "info", `transcription.${message.t}`,
+      { connectionId, meetingId: target.meeting.id, provider: target.meeting.transcriptionProvider,
+        reason: message.t === "error" ? message.reason : undefined, bytes: message.t === "transcript" ? Buffer.byteLength(message.body) : undefined });
     if (!closed && ws.readyState === ws.OPEN) ws.send(JSON.stringify(message));
   };
   const sendVoiceSettings = () => send({ t: "voice-settings", settings: getVoiceSettings() });
@@ -487,6 +521,7 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   };
   const cleanup = () => {
     if (closed) return;
+    log("info", "transcription.close", { connectionId, meetingId: target.meeting.id });
     closed = true;
     unsubscribeSettings();
     clearInterval(watchdog);
@@ -1014,6 +1049,7 @@ async function main() {
   server.listen(port, hostname, () => {
     startServerControl();
     startNamedTunnelControl();
+    log("info", "server.ready", { port, buildId });
     console.log(`▲ 실시간 세션 번역 서버: http://${hostname}:${port}`);
     if (dev) console.log("  개발 모드");
   });
@@ -1028,11 +1064,14 @@ async function main() {
     attachUpgrade(httpsServer);
     httpsServer.listen(localHttpsPort(), hostname, () => {
       console.log(`▲ 로컬 HTTPS: https://${hostname}:${localHttpsPort()}`);
+      log("info", "server.https-ready", { port: localHttpsPort(), buildId });
     });
   }
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
+  log("error", "server.start-failed", errorFields(error));
+  await flushDiagnostics();
   console.error("[server] 기동 실패", error);
   process.exit(1);
 });

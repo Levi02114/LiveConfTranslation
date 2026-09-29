@@ -14,10 +14,12 @@ import { type DesktopAction, type DesktopState } from "./desktop-control";
 import { serverControlEnvironment } from "./env";
 import { getNamedTunnelSettings, setNamedTunnelSettings } from "./repo";
 import { notifyAppSettings } from "./voice-settings";
+import { log, errorFields } from "./diagnostics";
 
 const settingsSchema = z.object({
   mode: z.enum(["base", "named", "external"]).default("base"),
   origin: z.string().default(""), token: z.string().default(""), auto: z.boolean().default(false),
+  shareOrigin: z.string().default(""), // Empty follows the public URL; a LAN choice survives tunnel recovery.
 });
 type Settings = z.infer<typeof settingsSchema>;
 type Connector = { process: ChildProcess; ready: () => boolean; stop: () => void };
@@ -131,6 +133,7 @@ export function startNamedTunnelControl(verify = verifyTunnel, launch = launchNa
   const schedule = () => {
     if (disposed || !settings.auto || settings.mode !== "named" || recovery || active) return;
     state = "recovering";
+    log("warn", "tunnel.recovery", { mode: settings.mode });
     recovery = setTimeout(() => { recovery = undefined; void restart(); }, 10_000);
     notifyAppSettings();
   };
@@ -143,6 +146,7 @@ export function startNamedTunnelControl(verify = verifyTunnel, launch = launchNa
     connector.process.once("exit", gone); connector.process.once("error", gone);
   }
   async function check(next: Settings): Promise<Candidate> {
+    log("info", "tunnel.check", { mode: next.mode });
     const connector = next.mode === "named" ? launch(next.token) : null;
     checking = connector;
     let exited = false;
@@ -161,13 +165,14 @@ export function startNamedTunnelControl(verify = verifyTunnel, launch = launchNa
         if (disposed || exited) throw new Error("tunnelCheckFailed");
         try {
           await verify(next.origin);
+          log("info", "tunnel.verified", { mode: next.mode, attempt });
           if (disposed || exited) throw new Error("tunnelCheckFailed");
           return { id: randomUUID(), settings: next, connector, expires: Date.now() + 120_000 };
         } catch { if (attempt === 4) throw new Error("tunnelCheckFailed"); }
         await delay(1000);
       }
       throw new Error("tunnelCheckFailed");
-    } catch { connector?.stop(); throw new Error("tunnelCheckFailed"); }
+    } catch (error) { log("warn", "tunnel.check-failed", { mode: next.mode, ...errorFields(error) }); connector?.stop(); throw new Error("tunnelCheckFailed"); }
     finally { checking = null; connector?.process.removeListener("exit", gone); connector?.process.removeListener("error", gone); }
   }
   async function restart() {
@@ -178,17 +183,22 @@ export function startNamedTunnelControl(verify = verifyTunnel, launch = launchNa
     finally { busy = false; notifyAppSettings(); }
   }
   async function run(action: DesktopAction): Promise<{ error?: string; link?: string }> {
-    if (busy || stopPending) return { error: "busy" };
+    log("info", "tunnel.action", { action: action.action, mode: settings.mode, state });
+    if (busy || (stopPending && action.action !== "share")) return { error: "busy" };
     busy = true;
     try {
-      if (action.action === "tunnel-check") {
+      if (action.action === "share") {
+        const current = snapshot();
+        if (action.origin !== current.tunnelOrigin && !current.addresses.some((item) => item.origin === action.origin)) return { error: "genericError" };
+        save({ ...settings, shareOrigin: action.origin === current.tunnelOrigin ? "" : action.origin });
+      } else if (action.action === "tunnel-check") {
         cancel();
         const origin = tunnelOrigin(action.origin);
         const token = action.token || (origin === settings.origin ? settings.token : "");
         if (action.mode === "named" && !/^[A-Za-z0-9+/_=-]{40,4096}$/.test(token)) return { error: "tunnelInvalid" };
         // A second connector for the same tunnel is unnecessary and can race its existing instance.
         if (active && origin === settings.origin) return { error: "tunnelStopFirst" };
-        pending = await check({ mode: action.mode, origin, token: action.mode === "named" ? token : "", auto: false });
+        pending = await check({ ...settings, mode: action.mode, origin, token: action.mode === "named" ? token : "", auto: false });
         if (pending.connector) watch(pending.connector);
         pendingTimer = setTimeout(cancel, 120_000);
       } else if (action.action === "tunnel-apply") {
@@ -196,7 +206,7 @@ export function startNamedTunnelControl(verify = verifyTunnel, launch = launchNa
         const candidate = pending;
         await verify(candidate.settings.origin);
         if (pending !== candidate || candidate.expires <= Date.now()) return { error: "tunnelCheckFailed" };
-        save(candidate.settings); // Persist before touching either current connection.
+        save({ ...candidate.settings, shareOrigin: "" }); // Applying a checked URL explicitly selects public sharing.
         const old = active; active = candidate.connector; pending = null; clearTimeout(pendingTimer); clearTimeout(recovery); recovery = undefined;
         state = "connected";
         if (old) setTimeout(() => old.stop(), 750);
@@ -217,6 +227,7 @@ export function startNamedTunnelControl(verify = verifyTunnel, launch = launchNa
           save({ ...settings, auto: false }); clearTimeout(recovery); recovery = undefined;
           // Let the public HTTP response finish before ending this connector.
           stopPending = true;
+          state = "off";
           setTimeout(() => { const old = active; active = null; old?.stop(); state = "off"; stopPending = false; notifyAppSettings(); }, 750);
         } else if (!active && (action.action === "start" || settings.auto)) {
           const candidate = await check(settings); active = candidate.connector; if (active) watch(active); state = "connected";
@@ -238,7 +249,11 @@ export function startNamedTunnelControl(verify = verifyTunnel, launch = launchNa
         hasToken: Boolean(settings.token), auto: custom ? settings.auto : original.telegram.autoTunnel, busy: busy || stopPending,
         pending: pending ? { id: pending.id, origin: pending.settings.origin, mode: pending.settings.mode === "named" ? "named" : "external", expires: pending.expires } : null },
     };
-    if (custom) { result.origin = state === "connected" ? settings.origin : original.origin; result.tunnel = state; result.externalTunnel = settings.mode === "external"; }
+    if (custom) { result.origin = state === "connected" ? settings.origin : original.origin; result.tunnel = state; result.externalTunnel = settings.mode === "external"; result.tunnelBusy = busy || stopPending; result.tunnelFailure = null; }
+    result.tunnelOrigin = custom ? (state === "connected" ? settings.origin : null)
+      : original.tunnelOrigin ?? (original.tunnel === "connected" ? original.origin : null);
+    if (settings.shareOrigin) result.origin = original.addresses.find((item) => item.origin === settings.shareOrigin)?.origin
+      ?? original.addresses[0]?.origin ?? original.origin;
     return result;
   };
   const control = { run, snapshot };

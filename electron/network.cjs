@@ -49,10 +49,14 @@ function parseHealth(text) {
   try {
     const health = JSON.parse(text);
     if (health.service !== "live-conf-translation") return null;
-    return {
+    const result = {
       openMeetings:
         Number.isInteger(health.openMeetings) && health.openMeetings >= 0 ? health.openMeetings : 0,
     };
+    // Parse the untrusted health response before using it as a build identifier.
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof
+    if (typeof health.buildId === "string" && /^[\w-]{1,80}$/.test(health.buildId)) result.buildId = health.buildId;
+    return result;
   } catch {
     return null;
   }

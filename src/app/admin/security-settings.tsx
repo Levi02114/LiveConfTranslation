@@ -1,19 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AdminStrings } from "@/lib/i18n-builtin";
 import { securityLimitsSchema, type SecurityLimits } from "@/lib/security-limits";
 
 export function SecuritySettings({ initial, strings }: { initial: SecurityLimits; strings: AdminStrings["security"] }) {
   const [limits, setLimits] = useState(initial);
+  const edited = useRef(new Set<keyof SecurityLimits>());
   const [pending, setPending] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [notice, setNotice] = useState("");
   useEffect(() => {
     const abort = new AbortController();
     void fetch("/api/admin/security", { signal: abort.signal }).then(async (response) => {
       const parsed = securityLimitsSchema.safeParse((await response.json()).limits);
       if (!response.ok || !parsed.success) throw new Error();
-      setLimits(parsed.data);
+      if (!abort.signal.aborted) setLimits((current) => ({ ...parsed.data,
+        ...Object.fromEntries([...edited.current].map((key) => [key, current[key]])),
+      }));
+      if (!abort.signal.aborted) setLoaded(true);
     }).catch(() => { if (!abort.signal.aborted) setNotice(strings.failed); });
     return () => abort.abort();
   }, [strings.failed]);
@@ -24,7 +29,7 @@ export function SecuritySettings({ initial, strings }: { initial: SecurityLimits
     <p className="my-3 text-muted">{strings.description}</p>
     <form onSubmit={async (event) => {
       event.preventDefault();
-      if (pending) return;
+      if (!loaded || pending) return;
       setPending(true);
       setNotice("");
       try {
@@ -39,11 +44,11 @@ export function SecuritySettings({ initial, strings }: { initial: SecurityLimits
           <span>{strings[key]}</span>
           {/* oxlint-disable-next-line anti-slop/no-shape-in-symbol-names -- Zod's public schema inspection API is named shape. */}
           <input type="number" min={1} max={securityLimitsSchema.shape[key].unwrap().maxValue ?? undefined} step={1} required
-            value={Number.isNaN(limits[key]) ? "" : limits[key]} onChange={(event) => setLimits({ ...limits, [key]: event.currentTarget.valueAsNumber })}
+            value={Number.isNaN(limits[key]) ? "" : limits[key]} onChange={(event) => { edited.current.add(key); setLimits({ ...limits, [key]: event.currentTarget.valueAsNumber }); }}
             className="min-w-0 w-full border border-line bg-bg px-3 py-2 text-fg" />
         </label>)}
       </fieldset>
-      <button type="submit" disabled={pending} className="mt-4 cursor-pointer border border-line px-4 py-2 disabled:opacity-50">{pending ? strings.saving : strings.save}</button>
+      <button type="submit" disabled={!loaded || pending} className="mt-4 cursor-pointer border border-line px-4 py-2 disabled:opacity-50">{pending ? strings.saving : strings.save}</button>
       <p role="status" className="mt-2 break-words">{notice}</p>
     </form>
   </details>;

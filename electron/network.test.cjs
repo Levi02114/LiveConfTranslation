@@ -21,7 +21,7 @@ test("Electron allows the candidate Host during health checks without publishing
   let checked = 0;
   let child;
   const context = vm.createContext({ require: (name) => {
-    if (name === "electron") return { app: { requestSingleInstanceLock: () => false, quit() {} } };
+    if (name === "electron") return { app: { requestSingleInstanceLock: () => false, quit() {} }, net: { fetch: (...args) => context.nativeFetch(...args) } };
     if (name === "node:child_process") return { spawn: () => {
       child = new EventEmitter();
       child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
@@ -31,12 +31,15 @@ test("Electron allows the candidate Host during health checks without publishing
     } };
     return require(name);
   }, process: { argv: [] }, __dirname, URL, console, setTimeout, clearTimeout, clearInterval, AbortSignal,
-  fetch: async (url) => {
+  fetch: () => { throw new Error("Node fetch must not be used for Electron tunnel health"); },
+  nativeFetch: async (url, options) => {
     checked++;
     assert.equal(url, `${candidate}/api/health`);
+    assert.equal(options.credentials, "omit");
+    assert.equal(options.redirect, "error");
     assert.ok(context.desktopAllowedOrigins().includes(candidate));
     assert.equal(context.desktopControlState().origin, "http://127.0.0.1:3000");
-    return { ok: healthy, text: async () => JSON.stringify({ service: "live-conf-translation", openMeetings: 0 }) };
+    return { ok: healthy, status: healthy ? 200 : 403, text: async () => JSON.stringify({ service: "live-conf-translation", openMeetings: 0 }) };
   } });
   vm.runInContext(readFileSync(path.join(__dirname, "main.cjs"), "utf8"), context);
   vm.runInContext(`
@@ -49,19 +52,77 @@ test("Electron allows the candidate Host during health checks without publishing
   await context.startQuickTunnel({ interactive: false });
   assert.equal(checked, 1);
   assert.equal(context.desktopControlState().origin, candidate);
-  vm.runInContext("tunnelStopReason = 'failed'", context);
-  child.kill();
+  vm.runInContext("telegramSettings().autoTunnel = true", context);
+  context.stopQuickTunnel("quit");
+  assert.equal(context.desktopControlState().telegram.autoTunnel, true, "app exit preserves the next-start recovery preference");
+  vm.runInContext("telegramSettings().autoTunnel = false", context);
   assert.ok(!context.desktopAllowedOrigins().includes(candidate));
   healthy = false;
   const result = await context.runDesktopControl({ action: "start" });
   assert.equal(result.error, "tunnelHealthFailed");
+  assert.equal(context.desktopControlState().tunnelFailure.detail, "HTTP 403");
   assert.equal(context.desktopControlState().origin, "http://127.0.0.1:3000");
   assert.ok(!context.desktopAllowedOrigins().includes(candidate));
   missingBinary = true;
   assert.equal((await context.runDesktopControl({ action: "start" })).error, "tunnelBinaryMissing");
   missingBinary = false; healthy = true;
+  vm.runInContext("tunnelRestartTimer = setTimeout(() => {}, 60000); tunnelRestartTimer.unref(); tunnelRetryAttempt = 4;", context);
   assert.equal((await context.runDesktopControl({ action: "start" })).error, undefined);
+  assert.equal(vm.runInContext("tunnelRestartTimer", context), null, "manual retry clears the pending backoff");
+  assert.equal(vm.runInContext("tunnelRetryAttempt", context), 0);
   assert.equal(context.desktopControlState().origin, candidate);
+  assert.equal(context.desktopControlState().tunnelFailure, null);
+  context.nativeFetch = async () => { throw new Error("net::ERR_PROXY_CONNECTION_FAILED secret-must-not-leak"); };
+  assert.equal(await context.probePublicServer(candidate), false);
+  assert.equal(vm.runInContext("tunnelProbeDetail", context), "ERR_PROXY_CONNECTION_FAILED");
+  vm.runInContext("telegramSettings().autoTunnel = true", context);
+  await context.runDesktopControl({ action: "stop", confirmed: true });
+  assert.equal(context.desktopControlState().tunnel, "off");
+  assert.equal(context.desktopControlState().tunnelOrigin, null);
+  assert.equal(context.desktopControlState().origin, "http://127.0.0.1:3000");
+  assert.equal(context.desktopControlState().telegram.autoTunnel, false);
+  assert.equal((await context.runDesktopControl({ action: "share", origin: "http://127.0.0.1:3000" })).error, undefined);
+  assert.equal((await context.runDesktopControl({ action: "start" })).error, "genericError");
+  await new Promise(resolve => setTimeout(resolve, 800));
+  assert.equal(context.desktopControlState().tunnelBusy, false);
+});
+
+test("Telegram announces a regenerated public URL even when LAN sharing was saved", async () => {
+  const sent = [];
+  const context = vm.createContext({ require: name => name === "electron" ? { app: { requestSingleInstanceLock: () => false, quit() {} } } : require(name),
+    process: { argv: [] }, __dirname, URL, console, setTimeout, clearTimeout, sent, Intl });
+  vm.runInContext(readFileSync(path.join(__dirname, "main.cjs"), "utf8"), context);
+  vm.runInContext(`desktopSettings = {telegram: {autoTunnel: true, chats: [{id:'test-recipient'}]}};
+    telegramToken = () => 'fake-test-only'; sendTelegramMessage = async (_id, text) => sent.push(text);
+    globalThis.__liveConfDesktopControl = {snapshot: () => ({origin:'http://192.0.2.1:3000', tunnelOrigin:'https://new-address.trycloudflare.com'})};
+    notifyTelegramUrl('https://new-address.trycloudflare.com', true);`, context);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(sent.length, 1);
+  assert.ok(sent[0].includes('https://new-address.trycloudflare.com'));
+  context.notifyTelegramUrl('https://new-address.trycloudflare.com', true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(sent.length, 1, 'same recipient and URL are not notified twice');
+});
+
+test("an old public health response cannot stop a replacement tunnel", async () => {
+  let monitor, finishProbe;
+  const context = vm.createContext({ require: (name) => name === "electron"
+    ? { app: { requestSingleInstanceLock: () => false, quit() {} } } : require(name),
+    process: { argv: [] }, __dirname, URL, console,
+    setInterval: (callback) => { monitor = callback; return 1; },
+    publicProbe: new Promise((resolve) => { finishProbe = resolve; }),
+  });
+  vm.runInContext(readFileSync(path.join(__dirname, "main.cjs"), "utf8"), context);
+  vm.runInContext(`desktopSettings = { telegram: { autoTunnel: true, chats: [] } };
+    tunnelUrl = 'https://old.trycloudflare.com'; tunnelProcess = {};
+    probeServer = async () => ({ state: 'ours' }); probePublicServer = () => publicProbe;
+    stopQuickTunnel = () => { throw new Error('stale probe stopped the new tunnel'); };
+    publicHealthFailures = 99;`, context);
+  context.startTunnelHealthMonitor(); monitor();
+  vm.runInContext("tunnelUrl = 'https://new.trycloudflare.com'; tunnelProcess = {}; publicHealthFailures = 0;", context);
+  finishProbe(false);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(vm.runInContext("publicHealthFailures", context), 0);
 });
 
 test("LAN 주소를 우선하고 없으면 loopback 으로 돌아간다", () => {
@@ -168,8 +229,8 @@ test("Telegram desktop controls preserve an active tunnel on auto-off and fail c
   }, process: { argv: [] }, __dirname, URL, console, setTimeout, clearTimeout });
   vm.runInContext(readFileSync(path.join(__dirname, "main.cjs"), "utf8"), context);
   vm.runInContext(`
-    desktopSettings = { telegram: { chats: [{ id: '1', type: 'private' }] } };
-    telegramToken = () => 'fake-only';
+    desktopSettings = { telegram: { chats: [] } };
+    telegramToken = () => null;
     installApplicationMenu = () => {};
     telegramStateChanged = () => {};
     notifyTelegramUrl = () => {};
@@ -180,9 +241,14 @@ test("Telegram desktop controls preserve an active tunnel on auto-off and fail c
   await operations.perform("auto-on");
   assert.equal(operations.tunnel().auto, true);
   assert.equal(operations.tunnel().state, "connected");
+  await context.runDesktopControl({ action: "remove", chatId: "last-recipient" });
+  assert.equal(operations.tunnel().auto, true, "removing Telegram recipients does not disable recovery");
   await operations.perform("auto-off");
   assert.equal(operations.tunnel().auto, false);
   assert.equal(operations.tunnel().url, "https://test.trycloudflare.com");
+  vm.runInContext("tunnelUrl = null; tunnelState = 'recovering';", context);
+  await operations.perform("auto-off");
+  assert.equal(operations.tunnel().state, "off", "disabling idle recovery must not leave a stuck recovering status");
   vm.runInContext("startQuickTunnel = async () => { tunnelUrl = null; tunnelState = 'off'; };", context);
   await assert.rejects(operations.perform("start-tunnel"), /tunnel_unavailable/);
   vm.runInContext("probeServer = async () => ({ state: 'offline' });", context);

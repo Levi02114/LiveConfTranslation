@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/auth";
 import { desktopActionSchema, desktopTransportAllowed } from "@/lib/desktop-control";
 import { notifyAppSettings } from "@/lib/voice-settings";
+import { log, errorFields } from "@/lib/diagnostics";
 
 export async function GET(request: Request) {
   const denied = await requireAdmin();
@@ -18,10 +19,15 @@ export async function POST(request: Request) {
   if (!bridge) return Response.json({ error: "unavailable" }, { status: 503 });
   if (globalThis.__liveConfDesktopBusy) return Response.json({ error: "busy" }, { status: 409 });
   globalThis.__liveConfDesktopBusy = true;
+  const started = performance.now();
+  log("info", "admin.desktop-start", { action: parsed.data.action });
   try {
     const result = await bridge.run(parsed.data);
+    log(result.error ? "warn" : "info", "admin.desktop-complete", { action: parsed.data.action, code: result.error,
+      state: bridge.snapshot().tunnel, durationMs: Math.round(performance.now() - started) });
     return Response.json({ ...result, desktop: bridge.snapshot() }, { status: result.error ? 400 : 200 });
-  } catch {
+  } catch (error) {
+    log("error", "admin.desktop-failed", { action: parsed.data.action, ...errorFields(error) });
     return Response.json({ error: "genericError" }, { status: 500 });
   } finally {
     globalThis.__liveConfDesktopBusy = false;

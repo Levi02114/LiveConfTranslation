@@ -1,4 +1,5 @@
 import "server-only";
+import { log, errorFields } from "../diagnostics";
 
 import type { LanguageCode } from "@/lib/languages";
 import { listGlossaryPairs } from "@/lib/repo";
@@ -98,6 +99,7 @@ export async function translateText(
     return { text: await attempt(preferred), engine: preferred };
   } catch (error) {
     if (!fallback || fallback === preferred || input.signal?.aborted) throw error;
+    log("warn", "translation.fallback", { provider: preferred, to: fallback, ...errorFields(error) });
     return { text: await attempt(fallback), engine: fallback,
       fallbackReason: error instanceof TranslationError ? error.code ?? "translation-failed" : "translation-failed" };
   }
@@ -116,19 +118,28 @@ export async function translateBatch(
   if (input.texts.length === 0) return [];
 
   const engine = ENGINES[preferred];
-  const reason = await engineProblem(engine, input);
-  if (reason) throw new TranslationError(reason, preferred);
+  const started = performance.now();
+  log("info", "translation.batch-start", { provider: preferred, count: input.texts.length });
+  try {
+    const reason = await engineProblem(engine, input);
+    if (reason) throw new TranslationError(reason, preferred);
 
-  if (engine.translateBatch) return engine.translateBatch(input);
+    if (engine.translateBatch) return await engine.translateBatch(input);
 
-  // 배치를 지원하지 않는 엔진. 순서를 지켜야 하므로 순차로 돈다.
-  const out: string[] = [];
-  for (const text of input.texts) {
-    out.push(
-      await engine.translate({ text, from: input.from, to: input.to, signal: input.signal }),
-    );
+    // 배치를 지원하지 않는 엔진. 순서를 지켜야 하므로 순차로 돈다.
+    const out: string[] = [];
+    for (const text of input.texts) {
+      out.push(
+        await engine.translate({ text, from: input.from, to: input.to, signal: input.signal }),
+      );
+    }
+    return out;
+  } catch (error) {
+    log("error", "translation.batch-failed", { provider: preferred, ...errorFields(error) });
+    throw error;
+  } finally {
+    log("info", "translation.batch-finished", { provider: preferred, durationMs: Math.round(performance.now() - started) });
   }
-  return out;
 }
 
 /** 관리자 화면에서 "이 언어 조합을 이 엔진으로 돌릴 수 있는가"를 보여주기 위한 헬퍼 */

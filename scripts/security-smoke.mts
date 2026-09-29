@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { createServer, request as rawRequest } from "node:http";
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
@@ -129,6 +129,16 @@ try {
   const login = await request("/api/admin/login", { password: process.env.ADMIN_PASSWORD });
   assert.equal(login.status, 200);
   const cookie = login.headers.get("set-cookie")!.split(";")[0];
+  assert.match(login.headers.get("x-lct-request-id")!, /^[a-f0-9-]{36}$/);
+  assert.ok(login.headers.get("x-lct-build-id"));
+  assert.equal((await request("/api/diagnostics/client", { event: "error", route: "/admin" })).status, 401);
+  assert.equal((await request("/api/diagnostics/client", { event: "error", route: "/admin", body: "PRIVATE_DIAGNOSTIC_TEXT" }, cookie)).status, 400);
+  assert.equal((await request("/api/diagnostics/client", { event: "error", route: `/in/${input.token}`, token: input.token })).status, 204);
+  assert.equal((await request("/api/diagnostics/client", { event: "rejection", route: "/admin" }, cookie)).status, 204);
+  assert.equal((await request("/api/diagnostics/client", { event: "voice", route: "/admin", voiceRun: 2,
+    phase: "context-close-done", durationMs: 12, focused: true, activeTag: "BUTTON", dialogCount: 1 }, cookie)).status, 204);
+  assert.equal((await request("/api/diagnostics/client", { event: "select-pointer", route: "/admin", disabled: false,
+    focused: false, targetTag: "SELECT", controlIndex: 2, sequence: 10 }, cookie)).status, 204);
   const statsMessages: Array<{ t: string; snapshot: boolean; sessions: Array<{ meetingId: string; total: number; languages: Array<{ lang: string; output: number }> }> }> = [];
   const statsSocket = new WebSocket(`${origin.replace("http", "ws")}/ws?stats=1`, { origin, headers: { cookie } });
   allSockets.add(statsSocket);
@@ -163,6 +173,58 @@ try {
   assert.equal(await oversizedClosed, 1009);
   assert.equal(await health(), true);
   console.log("PASS HTTP/WS malformed input, origin, host, size and cookie boundaries");
+
+  // Admin audit: exercise real routes and persistence using only this throwaway DB/provider.
+  const adminRoutes = {
+    desktop: ["GET", "POST"], "engine-keys": ["GET", "POST", "DELETE"],
+    "engine-settings": ["GET", "PUT"], glossary: ["GET", "PUT"],
+    "google-speech": ["GET", "POST", "DELETE"], languages: ["GET", "POST", "DELETE"],
+    "openai-models": ["GET"], "openai-usage": ["GET", "POST", "DELETE"], password: ["POST"],
+    security: ["GET", "PUT"], "session-presets": ["GET", "POST", "DELETE"],
+    "ui-strings": ["GET", "PUT", "POST", "DELETE"], "voice-settings": ["GET", "PUT"], "voice-test": ["POST"],
+  };
+  let protectedMethods = 0;
+  for (const [route, methods] of Object.entries(adminRoutes)) for (const method of methods) {
+    const response = await fetch(`${origin}/api/admin/${route}`, { method, headers: { origin } });
+    assert.equal(response.status, 401, `${method} ${route} requires an admin session`);
+    protectedMethods++;
+  }
+  type AdminAuditBody = { [key: string]: string | number | boolean | null | AdminAuditBody | AdminAuditBody[] };
+  async function admin(path: string, method = "GET", body?: AdminAuditBody) {
+    const options: RequestInit = { method, headers: { origin, cookie, "content-type": "application/json" } };
+    if (body !== undefined) options.body = JSON.stringify(body);
+    return fetch(`${origin}${path}`, options);
+  }
+  const delaySettings = { mode: "auto", silenceMs: 1100, languages: { ko: { mode: "manual", silenceMs: 900 }, vi: { mode: "manual", silenceMs: 1800 } } };
+  assert.equal((await admin("/api/admin/voice-settings", "PUT", delaySettings)).status, 200);
+  assert.deepEqual(await (await admin("/api/admin/voice-settings")).json(), delaySettings);
+  assert.deepEqual(repo.getVoiceSettings(), delaySettings);
+  assert.equal((await admin("/api/admin/voice-settings", "PUT", { ...delaySettings, silenceMs: 0 })).status, 400);
+  const entry = { key: "admin.tunnel.shareHelp", text: "Audit manual overlay" };
+  assert.equal((await admin("/api/admin/ui-strings", "PUT", { lang: "ko", entries: [entry] })).status, 200);
+  let strings = await (await admin("/api/admin/ui-strings?lang=ko")).json();
+  assert.ok(strings.entries.some((row: { key: string; text: string; origin: string }) => row.key === entry.key && row.text === entry.text && row.origin === "manual"));
+  assert.equal((await admin(`/api/admin/ui-strings?lang=ko&key=${entry.key}`, "DELETE")).status, 200);
+  strings = await (await admin("/api/admin/ui-strings?lang=ko")).json();
+  assert.ok(strings.entries.some((row: { key: string; origin: string }) => row.key === entry.key && row.origin === "builtin"));
+  const config = { languages: [{ lang: "ko", inputEnabled: true, outputEnabled: false }, { lang: "vi", inputEnabled: false, outputEnabled: true }], speakerLabels: false };
+  const presetResponse = await admin("/api/admin/session-presets", "POST", { name: "Audit preset", config });
+  assert.equal(presetResponse.status, 201);
+  const preset = (await presetResponse.json()).preset;
+  assert.ok(repo.listSessionPresets().some((row) => row.id === preset.id));
+  assert.equal((await admin("/api/admin/session-presets", "POST", { name: "Audit preset", config })).status, 409);
+  assert.equal((await admin(`/api/admin/session-presets?id=${preset.id}`, "DELETE")).status, 200);
+  const created = await admin("/api/meetings", "POST", { title: "Audit disposable session", engine: "openai", config });
+  assert.equal(created.status, 201);
+  const disposable = (await created.json()).meeting;
+  assert.equal((await admin(`/api/meetings/${disposable.id}`, "DELETE")).status, 409);
+  assert.equal((await admin(`/api/meetings/${disposable.id}/transcription-context`, "PUT", { context: "Test context" })).status, 200);
+  assert.equal((await admin(`/api/meetings/${disposable.id}/config`, "PUT", config)).status, 409);
+  assert.equal((await admin(`/api/meetings/${disposable.id}`, "POST")).status, 200);
+  assert.equal((await admin(`/api/meetings/${disposable.id}`, "DELETE")).status, 200);
+  assert.equal(repo.getMeeting(disposable.id), null);
+  assert.equal(repo.getMeetingPages(disposable.id).length, 0);
+  console.log(`PASS ${protectedMethods} protected admin methods, per-language delay persistence, manual strings/reset, presets, session lifecycle`);
 
   const first = await startVoice("participant-one");
   assert.equal(first.ready.t, "ready");
@@ -248,6 +310,12 @@ try {
   assert.equal(await health(), true);
   assert.equal((await request("/api/admin/login", { password: "wrong-test-password" })).status, 429);
   console.log("PASS bounded login attempts; server health remains available");
+  await delay(1500);
+  const logDirectory = join(directory, "logs");
+  const diagnostics = readdirSync(logDirectory).map(file => readFileSync(join(logDirectory, file), "utf8")).join("");
+  for (const event of ["http.complete", "client.error", "client.rejection", "client.voice", "context-close-done", "client.select-pointer", "websocket.open", "translation.job-start"]) assert.ok(diagnostics.includes(event), event);
+  for (const secret of [input.token, output.token, "fake-security-test-key", "PRIVATE_DIAGNOSTIC_TEXT", "안녕하세요", "xin chào"]) assert.equal(diagnostics.includes(secret), false, "Diagnostic metadata must not include private content");
+  console.log("PASS correlated file diagnostics, authenticated client events and private-content exclusion");
 } catch (error) {
   console.error(serverLog.replace(/fake-security-test-key/g, "[test-key]"));
   throw error;

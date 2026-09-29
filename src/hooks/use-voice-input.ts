@@ -4,7 +4,7 @@ import { useServerVoiceInput } from "@/hooks/use-combined-voice-input";
 import type { UiStrings } from "@/lib/i18n-builtin";
 import type { LanguageCode } from "@/lib/languages";
 
-export type VoiceInputState = "idle" | "starting" | "active";
+export type VoiceInputState = "idle" | "starting" | "active" | "stopping";
 
 /** All providers use the server-owned socket; review mode still only returns a draft. */
 export function useVoiceInput({

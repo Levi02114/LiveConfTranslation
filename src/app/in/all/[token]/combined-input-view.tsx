@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AppearanceControls } from "@/components/appearance-controls";
+import { ScrollToLatest } from "@/components/scroll-to-latest";
 import { FailedSubmissions, type FailedSubmission } from "@/components/failed-submissions";
 import { TranslationEntry } from "@/components/translation-entry";
 import { VoiceLevelMeter } from "@/components/voice-level-meter";
@@ -172,35 +173,6 @@ export function CombinedInputView({
     if (speakerLabels && state === "open" && name) send({ t: "name", name });
   }, [send, speakerLabels, speakerName, state]);
 
-  const flowSize = useMemo(
-    () => entries.reduce((count, entry) => count + 1 + entry.translations.length, 0),
-    [entries],
-  );
-  useEffect(() => {
-    const container = scrollRef.current;
-    if (container) container.scrollTop = container.scrollHeight;
-  }, [flowSize, voice.partial]);
-  useEffect(() => {
-    const follow = () => requestAnimationFrame(() => {
-      const container = scrollRef.current;
-      if (container) container.scrollTop = container.scrollHeight;
-    });
-    window.addEventListener("resize", follow, { passive: true });
-    window.visualViewport?.addEventListener("resize", follow, { passive: true });
-    return () => {
-      window.removeEventListener("resize", follow);
-      window.visualViewport?.removeEventListener("resize", follow);
-    };
-  }, []);
-  useEffect(() => {
-    if (!contentRef.current || !("ResizeObserver" in globalThis)) return;
-    const observer = new ResizeObserver(() => {
-      const container = scrollRef.current;
-      if (container) requestAnimationFrame(() => { container.scrollTop = container.scrollHeight; });
-    });
-    observer.observe(contentRef.current);
-    return () => observer.disconnect();
-  }, []);
   useEffect(() => () => {
     if (draftTimer.current) clearTimeout(draftTimer.current);
   }, []);
@@ -302,7 +274,7 @@ export function CombinedInputView({
         ? strings.connection.reconnecting
         : strings.connection.disconnected;
   const voiceAction =
-    voice.state === "starting"
+    voice.state === "stopping" ? strings.capture.stopping : voice.state === "starting"
       ? strings.capture.starting
       : voice.state === "active"
         ? strings.capture.stop
@@ -402,7 +374,8 @@ export function CombinedInputView({
         </div>
       ) : null}
 
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-8">
+      <div className="relative min-h-0 flex-1">
+      <div ref={scrollRef} tabIndex={0} className="h-full overflow-y-auto px-4 sm:px-8">
         <div className="mx-auto flex min-h-full max-w-[1100px] flex-col pt-14">
           <header className="border-b border-line pb-5">
             <h1 className="text-[27px] font-medium">{strings.role.combinedInput}</h1>
@@ -419,11 +392,13 @@ export function CombinedInputView({
                 <p className="app-text whitespace-pre-wrap italic [text-wrap:pretty]">{peer.draft}<span aria-hidden>▍</span></p>
               </div>
             ))}
-            <div className="h-12" aria-hidden />
+            <div className="h-24" aria-hidden />
           </div>
         </div>
       </div>
 
+      <ScrollToLatest scrollRef={scrollRef} contentRef={contentRef} items={entries} strings={strings.status} />
+      </div>
       <div className="shrink-0 border-t border-line bg-bg">
         <div className="mx-auto max-w-[1100px] px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-8 sm:py-4">
           <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line pb-3 font-mono text-[11px]">
@@ -492,7 +467,7 @@ export function CombinedInputView({
             {voiceAvailable && !voiceLanguageReady ? <span className="text-muted">{strings.input.chooseLanguage}</span> : null}
             {voice.state !== "idle" ? (
               <span className="text-muted">
-                {voice.state === "active" ? strings.capture.listening : strings.capture.starting}
+                {voice.state === "stopping" ? strings.capture.stopping : voice.state === "active" ? strings.capture.listening : strings.capture.starting}
               </span>
             ) : null}
             {voice.state === "active" ? <VoiceLevelMeter meter={voice.meter} strings={strings.capture} /> : null}
@@ -521,7 +496,7 @@ export function CombinedInputView({
             />
             <div className="flex shrink-0 gap-2 sm:w-auto">
               {!voiceMode && voiceAvailable && voiceLanguageReady ? (
-                <button type="button" aria-label={voiceAction} title={voiceAction} onClick={() => voice.state === "active" ? voice.stop() : void voice.start()} disabled={closed || !speakerReady || voice.state === "starting"} className={`flex min-h-11 min-w-11 cursor-pointer items-center justify-center border border-fg transition-colors disabled:cursor-default disabled:opacity-30 ${voice.state === "active" ? "bg-fg text-bg" : "hover:bg-fg hover:text-bg"}`}>
+                <button type="button" aria-label={voiceAction} title={voiceAction} onClick={() => voice.state === "active" ? voice.stop() : void voice.start()} disabled={closed || !speakerReady || voice.state === "starting" || voice.state === "stopping"} className={`flex min-h-11 min-w-11 cursor-pointer items-center justify-center border border-fg transition-colors disabled:cursor-default disabled:opacity-30 ${voice.state === "active" ? "bg-fg text-bg" : "hover:bg-fg hover:text-bg"}`}>
                   <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M9 21h6" /></svg>
                 </button>
               ) : null}
@@ -533,7 +508,7 @@ export function CombinedInputView({
                   else if (voice.state === "idle") void voice.start();
                   else if (voice.state === "active") voice.stop();
                 }}
-                disabled={closed || !speakerReady || (voiceMode ? voice.state === "starting" : voice.state !== "idle" || (!inputLang && sending) || !text.trim())}
+                disabled={closed || !speakerReady || (voiceMode ? voice.state === "starting" || voice.state === "stopping" : voice.state !== "idle" || (!inputLang && sending) || !text.trim())}
                 className="min-h-11 min-w-0 flex-1 cursor-pointer border border-fg px-4 py-2.5 font-mono text-[14px] transition-colors hover:bg-fg hover:text-bg disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fg sm:flex-none sm:px-6"
               >
                 {voiceMode ? voiceAction : sending && !text.trim() ? strings.input.sending : strings.input.send}

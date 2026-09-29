@@ -36,22 +36,26 @@ export class SpeechTurnCommitter {
   private maxTurnTimer: ReturnType<typeof setTimeout> | null = null;
   private speechActive = false;
   private speechSinceCommit = false;
+  private destroyed = false;
 
   constructor(private readonly onCommit: () => void) {}
 
   hasSpeech(): boolean { return this.speechActive || this.speechSinceCommit; }
 
   handleSpeechStart(): void {
+    if (this.destroyed) return;
     this.speechActive = true;
     this.speechSinceCommit = true;
     this.scheduleMaxTurn();
   }
 
   handleSpeechFrame(probability: number): void {
+    if (this.destroyed) return;
     if (this.speechActive && probability >= 0.35) this.speechSinceCommit = true;
   }
 
   handleSpeechEnd(): void {
+    if (this.destroyed) return;
     if (this.maxTurnTimer) clearTimeout(this.maxTurnTimer);
     this.maxTurnTimer = null;
     this.speechActive = false;
@@ -64,6 +68,7 @@ export class SpeechTurnCommitter {
   }
 
   destroy(): void {
+    this.destroyed = true;
     this.reset();
   }
 

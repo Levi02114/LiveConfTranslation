@@ -50,6 +50,7 @@ export function renderGuidePage({
     `<!doctype html>
 <html lang="${html(displayLang)}" dir="${textDirection(displayLang)}">
 <head>
+<script src="/diagnostics.js" defer></script>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>${html(meetingTitle)} · ${html(roleTitle)}</title>
 <script>(function(){try{var r=document.documentElement,t=localStorage.getItem('lct.theme'),s=localStorage.getItem('lct.fontSize');if(t)r.dataset.theme=t;r.dataset.size=s||'md'}catch(e){}})()</script>

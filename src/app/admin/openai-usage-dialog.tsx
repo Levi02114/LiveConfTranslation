@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
 import type { AdminStrings } from "@/lib/i18n-builtin";
@@ -35,6 +35,17 @@ export function OpenaiUsageDialog({ strings, inline = false, initial = null }: {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState<"load" | "save" | "delete" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const changed = useRef(false);
+  useEffect(() => {
+    if (!inline) return;
+    const abort = new AbortController();
+    void fetch("/api/admin/openai-usage", { signal: abort.signal }).then(async (response) => {
+      const payload = await parseJsonResponse(response, responseSchema);
+      if (!response.ok || !payload?.status) throw new Error();
+      if (!abort.signal.aborted && !changed.current) setStatus(payload.status);
+    }).catch(() => { if (!abort.signal.aborted) setError(strings.loadFailed); });
+    return () => abort.abort();
+  }, [inline, strings.loadFailed]);
 
   const errorText = (code: string | undefined) => {
     if (code === "key-required") return strings.keyRequired;
@@ -45,6 +56,7 @@ export function OpenaiUsageDialog({ strings, inline = false, initial = null }: {
   };
 
   const load = async (nextPeriod: UsagePeriod) => {
+    changed.current = true;
     setPeriod(nextPeriod);
     setBusy("load");
     setError(null);
@@ -68,6 +80,7 @@ export function OpenaiUsageDialog({ strings, inline = false, initial = null }: {
   const save = async () => {
     const key = draft.trim();
     if (!key || busy) return;
+    changed.current = true;
     setBusy("save");
     setError(null);
     try {
@@ -93,6 +106,7 @@ export function OpenaiUsageDialog({ strings, inline = false, initial = null }: {
 
   const remove = async () => {
     if (busy) return;
+    changed.current = true;
     setBusy("delete");
     setError(null);
     try {

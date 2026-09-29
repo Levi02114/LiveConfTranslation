@@ -24,8 +24,11 @@ export const desktopStateSchema = z.object({
   }).optional(),
   externalTunnel: z.boolean().optional(),
   origin: z.string(),
+  tunnelOrigin: z.string().nullable().optional(),
   addresses: z.array(z.object({ origin: z.string(), label: z.string() })),
   tunnel: z.enum(["off", "connecting", "connected", "recovering"]),
+  tunnelBusy: z.boolean().optional(),
+  tunnelFailure: z.object({ error: z.string(), detail: z.string() }).nullable().optional(),
   ca: z.boolean(),
   telegram: z.object({
     bot: z.object({ name: z.string(), username: z.string() }).nullable(),

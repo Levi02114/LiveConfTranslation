@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioTurnDetector } from "@/lib/audio-turn-detector";
 import { newBrowserId } from "@/lib/browser-id";
 import { parseVoiceEvent, type VoiceEventPayload } from "@/lib/client-json";
+import { voiceDiagnostic, voiceErrorType } from "@/lib/client-diagnostics";
+import { releaseVoiceAudio } from "@/lib/voice-cleanup";
 import type { UiStrings } from "@/lib/i18n-builtin";
 import type { LanguageCode } from "@/lib/languages";
 import { NeuralTurnDetector } from "@/lib/neural-turn-detector";
@@ -15,7 +17,7 @@ import {
   type VoiceMeter,
 } from "@/lib/voice-level";
 
-type VoiceState = "idle" | "starting" | "active";
+type VoiceState = "idle" | "starting" | "active" | "stopping";
 
 type ServerVoiceInputOptions = {
   test?: { dry: boolean; provider: "openai" | "google" | "local"; settings: VoiceSettings;
@@ -70,6 +72,12 @@ export function useServerVoiceInput({
   const stream = useRef<MediaStream | null>(null);
   const context = useRef<AudioContext | null>(null);
   const neuralVad = useRef<NeuralTurnDetector | null>(null);
+  const vadLoading = useRef<Promise<NeuralTurnDetector | null> | null>(null);
+  const processorRef = useRef<AudioWorkletNode | null>(null);
+  const audioNodes = useRef<AudioNode[]>([]);
+  const audioCleanup = useRef<Promise<void> | null>(null);
+  const disconnecting = useRef<Promise<void> | null>(null);
+  const running = useRef(false);
   const heartbeat = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopping = useRef(false);
@@ -92,26 +100,47 @@ export function useServerVoiceInput({
 
   const refreshDevices = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
+    const run = generation.current;
+    try {
     const rows = (await navigator.mediaDevices.enumerateDevices()).filter(
       (device) => device.kind === "audioinput",
     );
+    if (generation.current !== run) return;
     setDevices(rows);
     setDeviceId((current) =>
       current && rows.some((device) => device.deviceId === current)
         ? current
         : (rows[0]?.deviceId ?? ""),
     );
+    } catch (error) { voiceDiagnostic("devices-failed", run, { errorType: voiceErrorType(error) }); }
+  }, []);
+
+  const releaseAudio = useCallback((run = generation.current) => {
+    if (audioCleanup.current) return audioCleanup.current;
+    const resources = { stream: stream.current, processor: processorRef.current, nodes: audioNodes.current,
+      vad: vadLoading.current, context: context.current };
+    stream.current = null; processorRef.current = null; audioNodes.current = [];
+    neuralVad.current = null; vadLoading.current = null; context.current = null;
+    const slow = setTimeout(() => voiceDiagnostic("cleanup-slow", run), 5000);
+    const work = releaseVoiceAudio(resources, (phase, fields) => voiceDiagnostic(phase, run, fields))
+      .finally(() => { clearTimeout(slow); if (audioCleanup.current === work) audioCleanup.current = null; });
+    audioCleanup.current = work;
+    return work;
   }, []);
 
   const disconnect = useCallback(() => {
-    generation.current++;
+    if (disconnecting.current) return disconnecting.current;
+    const run = generation.current;
+    const fence = ++generation.current;
+    stopping.current = true;
+    setState("stopping");
+    voiceDiagnostic("disconnect", run, { state: "stopping" });
     commits.current = [];
     setPhase("idle");
     if (heartbeat.current) clearInterval(heartbeat.current);
     if (stopTimer.current) clearTimeout(stopTimer.current);
     heartbeat.current = null;
     stopTimer.current = null;
-    stopping.current = false;
     speechSinceCommit.current = false;
     pendingTranscripts.current = 0;
     expectedClose.current = true;
@@ -122,24 +151,28 @@ export function useServerVoiceInput({
       previousSocket.onopen = null;
       previousSocket.onerror = null;
       previousSocket.onmessage = null;
-      previousSocket.close();
+      try { previousSocket.close(); }
+      catch (error) { voiceDiagnostic("socket-close-failed", run, { errorType: voiceErrorType(error) }); }
     }
     socket.current = null;
-    stream.current?.getTracks().forEach((track) => track.stop());
-    stream.current = null;
-    void neuralVad.current?.destroy();
-    neuralVad.current = null;
-    void context.current?.close();
-    context.current = null;
     setMeter(null);
     setPartial("");
-    setState("idle");
-  }, []);
+    const work = releaseAudio(run).finally(() => {
+      if (disconnecting.current === work) disconnecting.current = null;
+      if (generation.current !== fence) return;
+      stopping.current = false;
+      running.current = false;
+      setState("idle");
+      voiceDiagnostic("stopped", run, { state: "idle" });
+    });
+    disconnecting.current = work;
+    return work;
+  }, [releaseAudio]);
 
   useEffect(() => {
     if (!enabled) return;
     clientId.current = participantId || newBrowserId();
-    return disconnect;
+    return () => { void disconnect(); };
   }, [disconnect, enabled, participantId]);
 
   useEffect(() => {
@@ -197,37 +230,38 @@ export function useServerVoiceInput({
   );
 
   const stop = useCallback((flush = true) => {
-    if (!flush) { disconnect(); return; }
+    voiceDiagnostic(flush ? "stop-flush" : "stop-immediate", generation.current);
+    if (!flush) { void disconnect(); return; }
     if (state !== "active" || stopping.current) return;
     stopping.current = true;
-    stream.current?.getTracks().forEach((track) => track.stop());
-    stream.current = null;
+    setState("stopping");
     if (speechSinceCommit.current && socket.current?.readyState === WebSocket.OPEN) {
       socket.current.send(JSON.stringify({ t: "commit" }));
       pendingTranscripts.current += 1;
       speechSinceCommit.current = false;
     }
-    void neuralVad.current?.destroy();
-    neuralVad.current = null;
-    void context.current?.close();
-    context.current = null;
+    void releaseAudio();
     setMeter(null);
     if (pendingTranscripts.current) {
       // 로컬 Whisper는 저사양 CPU에서 마지막 턴 확정에 수십 초가 걸릴 수 있다.
       stopTimer.current = setTimeout(disconnect, 60_000);
     } else {
-      disconnect();
+      void disconnect();
     }
-  }, [disconnect, state]);
+  }, [disconnect, releaseAudio, state]);
 
   const start = useCallback(async () => {
-    if (!enabled || state !== "idle" || closed) return;
+    // A synchronous latch also covers double clicks before React commits the starting state.
+    if (!enabled || state !== "idle" || closed || running.current || disconnecting.current) return;
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       setError(strings.insecure);
       return;
     }
     setState("starting");
+    running.current = true;
     const run = ++generation.current;
+    voiceDiagnostic("start", run, { state: "starting", mode: testRef.current ? testRef.current.dry ? "dry" : "test" : "session" });
+    let stage = "microphone";
     setError(null);
     expectedClose.current = false;
 
@@ -242,6 +276,7 @@ export function useServerVoiceInput({
       const media = await navigator.mediaDevices.getUserMedia({ audio });
       if (generation.current !== run) { media.getTracks().forEach((track) => track.stop()); return; }
       stream.current = media;
+      voiceDiagnostic("microphone-ready", run);
       void refreshDevices();
 
       // 네이티브 리샘플러를 우선 쓴다. 지원하지 않는 구형 WebView만 워크렛의
@@ -253,13 +288,17 @@ export function useServerVoiceInput({
         audioContext = new AudioContext();
       }
       context.current = audioContext;
+      stage = "worklet";
       await audioContext.audioWorklet.addModule("/pcm-capture-worklet.js");
       if (generation.current !== run) return;
       if (audioContext.state !== "running") await audioContext.resume();
       if (generation.current !== run) return;
       const source = audioContext.createMediaStreamSource(media);
+      audioNodes.current.push(source);
       const processor = new AudioWorkletNode(audioContext, "pcm-capture");
+      processorRef.current = processor;
       const silent = audioContext.createGain();
+      audioNodes.current.push(silent);
       silent.gain.value = 0;
       source.connect(processor).connect(silent).connect(audioContext.destination);
 
@@ -275,7 +314,7 @@ export function useServerVoiceInput({
       const nextSilenceMs = () => (turnSilenceMs = silenceMsFor(testRef.current?.settings ?? settingsRef.current, langs));
       const detector = new AudioTurnDetector(nextSilenceMs);
       let ready = dry;
-      if (dry) setState("active");
+      if (dry) { setState("active"); voiceDiagnostic("ready", run, { state: "active" }); }
       let lastTurnAt = performance.now();
 
       const commitTurn = () => {
@@ -294,20 +333,23 @@ export function useServerVoiceInput({
 
       // 신경망 VAD 를 백그라운드에서 단다. 로드되는 동안은 worklet RMS 경로가
       // 커밋을 맡고, 로드가 끝나면 신경망이 이어받는다.
-      void NeuralTurnDetector.create(media, commitTurn, {
+      vadLoading.current = NeuralTurnDetector.create(media, commitTurn, {
         redemptionMs: turnSilenceMs,
         nextSilenceMs,
         audioContext,
       }).then((vad) => {
         // 로드가 끝나기 전에 세션이 닫혔으면 붙이지 않고 바로 버린다.
-        if (vad && stream.current === media) neuralVad.current = vad;
-        else void vad?.destroy();
+        if (vad && generation.current === run && !stopping.current) neuralVad.current = vad;
+        voiceDiagnostic(vad ? "vad-ready" : "vad-fallback", run);
+        // releaseAudio owns this promise and destroys late results before closing the context.
+        return vad;
       });
 
       const meterTracker = new VoiceMeterTracker();
       processor.port.onmessage = (
         message: MessageEvent<{ pcm: ArrayBuffer; rms: number; peak: number }>,
       ) => {
+        if (generation.current !== run || stopping.current) return;
         const { pcm, rms, peak } = message.data;
         if (!ready || (!dry && ws?.readyState !== WebSocket.OPEN)) {
           detector.calibrate(rms);
@@ -339,6 +381,7 @@ export function useServerVoiceInput({
         autoSubmit,
       }));
       ws.onmessage = (message) => {
+        if (generation.current !== run) return;
         const event = parseVoiceEvent(String(message.data));
         if (!event) return;
         if (event.t === "voice-settings") {
@@ -346,6 +389,7 @@ export function useServerVoiceInput({
         } else if (event.t === "ready") {
           ready = true;
           setState("active");
+          voiceDiagnostic("ready", run, { state: "active" });
           heartbeat.current = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: "heartbeat" }));
           }, 5_000);
@@ -391,13 +435,17 @@ export function useServerVoiceInput({
         }
       };
       ws.onclose = () => {
+        if (generation.current !== run) return;
         if (!expectedClose.current && !stopping.current) setError(strings.lost);
         disconnect();
       };
       ws.onerror = () => ws.close();
-    } catch {
-      setError(strings.permission);
-      disconnect();
+    } catch (error) {
+      const stale = generation.current !== run;
+      voiceDiagnostic(stale ? "start-error-stale" : `${stage}-failed`, run, { errorType: voiceErrorType(error) });
+      if (stale) return;
+      setError(stage === "microphone" ? strings.permission : strings.startFailed);
+      void disconnect();
     }
   }, [autoSubmit, closed, deviceId, disconnect, enabled, lang, langs, refreshDevices, speakerName, state, strings, submitTranscript, token, updateMeter]);
 

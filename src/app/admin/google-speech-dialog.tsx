@@ -34,19 +34,21 @@ export function GoogleSpeechDialog({
   const [fileName, setFileName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const changed = useRef(false);
   useEffect(() => {
     if (!inline) return;
     const abort = new AbortController();
     void fetch("/api/admin/google-speech", { signal: abort.signal }).then(async (response) => {
       const parsed = responseSchema.safeParse(await response.json());
       if (!response.ok || !parsed.success || !parsed.data.credentials) throw new Error();
-      setStatus(parsed.data.credentials);
+      if (!abort.signal.aborted && !changed.current) setStatus(parsed.data.credentials);
     }).catch(() => { if (!abort.signal.aborted) setError(strings.saveFailed); });
     return () => abort.abort();
   }, [inline, strings.saveFailed]);
 
   const save = async () => {
     if (!draft || busy) return;
+    changed.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -72,6 +74,7 @@ export function GoogleSpeechDialog({
 
   const remove = async () => {
     if (busy) return;
+    changed.current = true;
     setBusy(true);
     setError(null);
     try {

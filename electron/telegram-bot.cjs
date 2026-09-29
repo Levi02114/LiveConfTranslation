@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { randomBytes } = require("node:crypto");
 const { pairingChat, retryDelay } = require("./telegram.cjs");
+const { log, errorFields } = require("./diagnostics.cjs");
 
 const COMMANDS = ["start", "menu", "help"];
 
@@ -18,7 +19,7 @@ function createTelegramBot(deps) {
   const buttons = new Map();
   const lastRequests = new Map();
 
-  function state(value) { receiverState = value; deps.changed?.(); }
+  function state(value) { if (receiverState !== value) log("info", "telegram.receiver-state", { state: value }); receiverState = value; deps.changed?.(); }
   function stop() {
     const current = receiver;
     receiver = null;
@@ -236,6 +237,7 @@ function createTelegramBot(deps) {
           }
         } catch (error) {
           if (current.controller.signal.aborted || receiver !== current) return;
+          log("warn", "telegram.receiver-failed", { attempt, ...errorFields(error) });
           if (error.code === 409 || error.code === 401) { state(error.code === 401 ? "invalid-token" : "conflict"); ready(false); return; }
           state("waiting");
           const wait = Math.min(60_000, error.retryAfter ? error.retryAfter * 1_000 : retryDelay(attempt++));

@@ -1,4 +1,5 @@
 import "server-only";
+import { log, errorFields } from "./diagnostics";
 
 import { publish } from "@/lib/realtime/hub";
 import { providerStatus } from "@/lib/translate/provider-control";
@@ -30,6 +31,8 @@ export function cancelActiveTranslations(meetingId: string, messageId?: number):
 }
 
 async function execute(worker: Worker, job: TranslationJob, abort: AbortController): Promise<void> {
+  const started = performance.now();
+  log("info", "translation.job-start", { jobId: job.id, messageId: job.message_id, meetingId: job.meeting_id, provider: job.engine, to: job.target_lang, attempt: job.attempts });
   const heartbeat = setInterval(() => {
     if (!renewTranslationJob(job)) abort.abort();
   }, 30000);
@@ -56,11 +59,13 @@ async function execute(worker: Worker, job: TranslationJob, abort: AbortControll
         const delay = error instanceof TranslationError && error.retryAfterMs !== undefined ? error.retryAfterMs :
           (job.attempts === 1 ? 2000 : 10000) + Math.floor(Math.random() * 500);
         rescheduleTranslationJob(job, code, Math.max(100, delay), !waiting);
+        log("warn", "translation.job-retry", { jobId: job.id, code, attempt: job.attempts });
         return;
       }
       result = { body: "", engine: error instanceof TranslationError ? error.engine : job.engine, error: code };
     }
     const createdAt = finishTranslationJob(job, result);
+    log(result.error ? "warn" : "info", "translation.job-result", { jobId: job.id, provider: result.engine, code: result.error, okay: createdAt !== null, durationMs: Math.round(performance.now() - started) });
     if (createdAt === null) return;
     publish(meeting.id, {
       t: "translation", messageId: message.id, sourceLang: message.lang, lang: job.target_lang,
@@ -96,7 +101,8 @@ export function wakeTranslationWorker(): void {
       const abort = new AbortController();
       worker.active.set(job.id, { job, abort });
       publishJobCounts(job.meeting_id);
-      void execute(worker, job, abort).catch(() => {
+      void execute(worker, job, abort).catch((error) => {
+        log("error", "translation.worker-failed", { jobId: job.id, ...errorFields(error) });
         // Keep the durable lease for recovery; never leak provider data to the logs.
         console.error("[translation-worker] job-processing-failed");
       });

@@ -55,6 +55,15 @@ export async function registerTranslationWorker(): Promise<void> {
   }
 }
 
+// Framework error boundary; errorFields validates arbitrary thrown values.
+// oxlint-disable-next-line anti-slop/no-unknown-parameters
+export async function logNextRequestError(error: unknown, request: { path: string }) {
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { log, errorFields } = await import("./diagnostics");
+    log("error", "next.request-error", { route: request.path, ...errorFields(error) });
+  }
+}
+
 /** 관리자 로그인 비밀번호 */
 export function adminPassword(): string {
   return required("ADMIN_PASSWORD");
@@ -66,6 +75,10 @@ export function sessionSecret(): string {
 }
 
 /** SQLite 파일 경로. 기본값은 저장소 안의 `data/` 폴더. */
+export function diagnosticsDirectory(): string | undefined {
+  return process.env.DIAGNOSTICS_DIR?.trim() || undefined;
+}
+
 export function databasePath(): string {
   return process.env.DATABASE_PATH ?? "data/meetings.db";
 }

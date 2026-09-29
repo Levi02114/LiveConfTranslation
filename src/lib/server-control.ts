@@ -9,6 +9,7 @@ import { desktopOperations } from "./desktop-operations";
 import { serverControlEnvironment, serverEnvironment } from "./env";
 import { getServerControlSettings, setServerControlSettings } from "./repo";
 import { notifyAppSettings } from "./voice-settings";
+import { log, errorFields } from "./diagnostics";
 
 const storedSchema = z.object({
   origin: z.string().optional(), token: z.string().optional(),
@@ -46,7 +47,7 @@ export function startServerControl() {
   const addresses = () => [{ origin: loopback, label: "127.0.0.1" }, ...listLanAddresses(networkInterfaces()).map((item: { name: string; address: string }) => ({
     origin: `http://${item.address}:${serverEnvironment().port}`, label: `${item.name} · ${item.address}`,
   }))];
-  const origin = () => url ?? (addresses().some((item) => item.origin === settings.origin) ? settings.origin! : addresses()[1]?.origin ?? loopback);
+  const origin = () => (state === "connected" ? url : null) ?? (addresses().some((item) => item.origin === settings.origin) ? settings.origin! : addresses()[1]?.origin ?? loopback);
   const strings = () => desktopOperations("ko").strings;
   const previousOrigins = globalThis.__liveConfAllowedOrigins;
   globalThis.__liveConfLocalTunnelProxy = true;
@@ -65,6 +66,7 @@ export function startServerControl() {
     await Promise.allSettled(settings.chats.map((chat) => request(settings.token!, "sendMessage", { chat_id: chat.id, text, disable_web_page_preview: true })));
   }
   function scheduleRecovery() {
+    log("info", "tunnel.recovery-check", { mode: "quick", enabled: settings.autoTunnel, state });
     if (!disposed && settings.autoTunnel && !config.publicOrigin && !recovery) {
       state = "recovering";
       recovery = setTimeout(() => { recovery = undefined; void startTunnel().catch(() => {}); }, 10_000);
@@ -72,6 +74,7 @@ export function startServerControl() {
     notifyAppSettings();
   }
   function startTunnel(): Promise<void> {
+    log("info", "tunnel.start", { mode: "quick", state });
     if (config.publicOrigin || state === "connected") return Promise.resolve();
     if (starting) return starting;
     starting = (async () => {
@@ -111,8 +114,10 @@ export function startServerControl() {
         }
         if (!healthy || child !== process) throw new Error("tunnel_health_failed");
         connected = true; state = "connected"; notifyAppSettings();
+        log("info", "tunnel.connected", { mode: "quick" });
         void notify(`${strings().initialNotification}\n\n${candidate}`);
-      } catch {
+      } catch (error) {
+        log("warn", "tunnel.start-failed", errorFields(error));
         process.kill(); if (child === process) child = null;
         url = config.publicOrigin; state = "off";
         throw new Error("tunnel_failed");
@@ -124,6 +129,7 @@ export function startServerControl() {
     return starting;
   }
   function stopTunnel() {
+    log("info", "tunnel.stop", { mode: "quick" });
     if (config.publicOrigin) throw new Error("external_tunnel");
     settings.autoTunnel = false; save(); clearTimeout(recovery); recovery = undefined;
     child?.kill(); url = null; state = "off"; notifyAppSettings();
@@ -134,9 +140,9 @@ export function startServerControl() {
     openMeetings: async () => desktopOperations("ko").sessions.length,
     tunnel: () => {
       const current = globalThis.__liveConfDesktopControl?.snapshot();
-      return { state: current?.tunnel ?? state, url: current?.tunnel === "connected" ? current.origin : url,
+      return { state: current?.tunnel ?? state, url: current?.tunnel === "connected" ? current.tunnelOrigin ?? current.origin : url,
         origin: current?.origin ?? origin(), auto: current?.connection?.auto ?? settings.autoTunnel,
-        busy: Boolean(starting) || stopPending || Boolean(current?.connection?.busy), identity: current?.connection?.mode === "named" ? current.origin : child?.pid ?? null };
+        busy: Boolean(starting) || stopPending || Boolean(current?.connection?.busy), identity: current?.connection?.mode === "named" ? current.tunnelOrigin ?? current.origin : child?.pid ?? null };
     },
     perform: async (action: string) => {
       if (globalThis.__liveConfDesktopControl?.snapshot().connection) {
@@ -153,7 +159,7 @@ export function startServerControl() {
     },
   });
   async function run(action: DesktopAction): Promise<{ error?: string; link?: string }> {
-    if (stopPending) return { error: "busy" };
+    if (stopPending && action.action !== "share") return { error: "busy" };
     switch (action.action) {
       case "share":
         if (!addresses().some((item) => item.origin === action.origin)) return { error: "genericError" };
@@ -162,19 +168,21 @@ export function startServerControl() {
       case "stop":
         if (config.publicOrigin) return { error: "genericError" };
         stopPending = true;
-        setTimeout(() => { try { stopTunnel(); } finally { stopPending = false; } }, 750); break;
+        settings.autoTunnel = false; save(); clearTimeout(recovery); recovery = undefined;
+        state = "off";
+        notifyAppSettings();
+        setTimeout(() => { try { stopTunnel(); } finally { stopPending = false; notifyAppSettings(); } }, 750); break;
       case "auto":
         if (config.publicOrigin) return { error: "genericError" };
-        if (action.enabled && (!settings.token || !settings.chats.length)) return { error: "recipientRequired" };
         settings.autoTunnel = action.enabled; save();
         if (action.enabled) void startTunnel().catch(() => {});
-        else { clearTimeout(recovery); recovery = undefined; } break;
+        else { clearTimeout(recovery); recovery = undefined; if (state === "recovering" && !starting) state = "off"; } break;
       case "verify": {
         if (!/^\d{6,20}:[A-Za-z0-9_-]{20,}$/.test(action.token)) return { error: "invalidToken" };
         const verified = await request(action.token, "getMe", {}).catch(() => null);
         if (!verified?.id || !verified.username || !verified.is_bot) return { error: "invalidToken" };
         bot.stop();
-        if (settings.botId !== String(verified.id)) { settings.chats = []; settings.autoTunnel = false; clearTimeout(recovery); recovery = undefined; }
+        if (settings.botId !== String(verified.id)) settings.chats = [];
         settings.token = action.token; settings.botId = String(verified.id); settings.botName = verified.first_name; settings.botUsername = verified.username;
         save(); void bot.start(); break;
       }
@@ -188,7 +196,6 @@ export function startServerControl() {
         await request(settings.token, "sendMessage", { chat_id: action.chatId, text: strings().testNotification }); break;
       case "remove":
         settings.chats = settings.chats.filter((chat) => chat.id !== action.chatId);
-        if (!settings.chats.length) { settings.autoTunnel = false; clearTimeout(recovery); recovery = undefined; }
         save(); break;
       case "management": {
         const chat = settings.chats.find((chat) => chat.id === action.chatId && chat.type === "private");
@@ -200,7 +207,7 @@ export function startServerControl() {
     return {};
   }
   const control = { run, notifyOrigin: (value: string) => { void notify(`${strings().initialNotification}\n\n${value}`); }, snapshot: (): DesktopState => ({
-    origin: origin(), addresses: addresses(), tunnel: state, ca: false, externalTunnel: Boolean(config.publicOrigin),
+    origin: origin(), tunnelOrigin: state === "connected" ? url : null, addresses: addresses(), tunnel: state, ca: false, externalTunnel: Boolean(config.publicOrigin),
     telegram: { bot: settings.botUsername ? { name: settings.botName || settings.botUsername, username: settings.botUsername } : null, chats: settings.chats, autoTunnel: settings.autoTunnel, receiver: bot.status() },
   }) };
   globalThis.__liveConfDesktopControl = control;
