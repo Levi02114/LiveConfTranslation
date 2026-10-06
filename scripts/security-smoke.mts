@@ -22,7 +22,7 @@ let rewriteGate = Promise.resolve();
 let providerConnections = 0;
 let providerCalls = 0;
 const provider = createServer(async (request, response) => {
-  if (request.url === "/v1/models") { response.end(JSON.stringify({ data: [{ id: "gpt-5.6-luna" }] })); return; }
+  if (request.url === "/v1/models") { response.end(JSON.stringify({ data: [{ id: "gpt-6-luna" }] })); return; }
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(Buffer.from(chunk));
   const payload = JSON.parse(Buffer.concat(chunks).toString());
@@ -181,7 +181,7 @@ try {
     "google-speech": ["GET", "POST", "DELETE"], languages: ["GET", "POST", "DELETE"],
     "openai-models": ["GET"], "openai-usage": ["GET", "POST", "DELETE"], password: ["POST"],
     security: ["GET", "PUT"], "session-presets": ["GET", "POST", "DELETE"],
-    "ui-strings": ["GET", "PUT", "POST", "DELETE"], "voice-settings": ["GET", "PUT"], "voice-test": ["POST"],
+    "ui-strings": ["GET", "PUT", "POST", "DELETE"], "voice-settings": ["GET", "PUT"], "voice-test": ["POST"], zoom: ["GET", "PUT", "POST"],
   };
   let protectedMethods = 0;
   for (const [route, methods] of Object.entries(adminRoutes)) for (const method of methods) {
@@ -197,8 +197,13 @@ try {
   }
   const delaySettings = { mode: "auto", silenceMs: 1100, languages: { ko: { mode: "manual", silenceMs: 900 }, vi: { mode: "manual", silenceMs: 1800 } } };
   assert.equal((await admin("/api/admin/voice-settings", "PUT", delaySettings)).status, 200);
-  assert.deepEqual(await (await admin("/api/admin/voice-settings")).json(), delaySettings);
-  assert.deepEqual(repo.getVoiceSettings(), delaySettings);
+  const migratedSettings = { ...delaySettings, maxTurnMs: 15000, noiseGateLevel: 0, automaticLanguage: { mode: "auto", silenceMs: 1100 } };
+  assert.deepEqual(await (await admin("/api/admin/voice-settings")).json(), migratedSettings);
+  assert.deepEqual(repo.getVoiceSettings(), migratedSettings);
+  const voiceSettings = { ...delaySettings, maxTurnMs: 30000, noiseGateLevel: 25, automaticLanguage: { mode: "manual", silenceMs: 800 } };
+  assert.equal((await admin("/api/admin/voice-settings", "PUT", voiceSettings)).status, 200);
+  assert.deepEqual(await (await admin("/api/admin/voice-settings")).json(), voiceSettings);
+  assert.deepEqual(repo.getVoiceSettings(), voiceSettings);
   assert.equal((await admin("/api/admin/voice-settings", "PUT", { ...delaySettings, silenceMs: 0 })).status, 400);
   const entry = { key: "admin.tunnel.shareHelp", text: "Audit manual overlay" };
   assert.equal((await admin("/api/admin/ui-strings", "PUT", { lang: "ko", entries: [entry] })).status, 200);

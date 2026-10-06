@@ -1,6 +1,6 @@
 {
   "name": "live-conf-translation",
-  "version": "0.9.29-test.1",
+  "version": "0.9.29",
   "private": true,
   "main": "electron/main.cjs",
   "scripts": {

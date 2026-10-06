@@ -10,10 +10,10 @@
 
 ![세션 생성 화면](docs/images/app-admin-create-session.png)
 
-현재 작업 버전 **0.9.29-test.1**은 Zoom 자동 세션·기록 기능을 포함한 Windows 설치형
-테스트 빌드입니다. 공개 GitHub 릴리스가 아니므로 아래 정식 다운로드 링크는 유지합니다.
-테스트 설치 파일은 별도로 전달하며, 기존 앱을 종료하고 데이터 폴더를 백업한 뒤 설치하세요.
-실제 Windows의 Zoom 회의·권한·유료 API 동작은 테스트 계정에서 확인해야 합니다.
+**v0.9.29**에는 전사 구간·자동 감지 대기시간·잡음 무시 설정과 OpenAI 번역 모델 선택이
+포함됩니다. Zoom 자동 세션·기록·번역 채팅 연동은 **개발 검증 중인 선택 기능**이며,
+실제 Windows의 Zoom 회의·권한·유료 API 동작은 테스트 계정에서 별도로 확인해야 합니다.
+업데이트 전 기존 앱을 트레이까지 완전히 종료하고 데이터 폴더를 백업하세요.
 
 ## 진단 로그
 
@@ -119,17 +119,18 @@ Windows 설치본은 Node.js나 개발 도구를 따로 설치하지 않아도 �
 [최신 릴리스 페이지](https://github.com/Levi02114/LiveConfTranslation/releases/latest)에서 다음 중
 하나를 내려받습니다.
 
-현재 배포 버전: [v0.9.28](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.28)
+현재 배포 버전: [v0.9.29](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.29)
 
-v0.9.28은 전사 종료와 이전 실행의 비동기 콜백 처리를 보강하고, 최근 48시간의 진단 로그와
-포커스·드롭다운 상태 기록을 추가했습니다. 터널 종료·복구·공유 주소 선택, 앱 설정의 늦은 조회
-응답과 확인창, 과거 내용을 읽을 때의 스크롤 유지·새 메시지 버튼 개선도 함께 포함합니다.
+v0.9.29는 최대 연속 발화 시간(5~30초), 언어 자동 감지의 독립된 무음 대기시간,
+잡음 무시 수준(0~100%)을 앱 설정에 추가했습니다. OpenAI 모델 목록의 주기적 갱신과
+선택값 저장, 설정창의 주소 복사 수정, 개발 검증 중인 Zoom 연동도 포함합니다.
 
 v0.9.25에서 Electron 앱 설정에 HTTPS/localhost 안내가 뜨며 터널 설정이 비활성화되면
 v0.9.26 이상으로 업데이트하세요. 서버의 바인딩 주소와 실제 로컬 접속 주소를 구분하도록 수정했습니다.
 
-- `... Setup ... .exe`: Windows에 설치하는 버전
-- `... .exe`: 설치 없이 실행하는 포터블 버전(온라인 엔진 전용)
+- [Windows 설치형](https://github.com/Levi02114/LiveConfTranslation/releases/download/v0.9.29/Live.Conference.Translation.Setup.0.9.29.exe): 로컬 AI를 선택적으로 설치할 수 있는 버전
+- [Windows 포터블](https://github.com/Levi02114/LiveConfTranslation/releases/download/v0.9.29/Live.Conference.Translation.0.9.29.exe): 설치 없이 실행하는 온라인 엔진 전용 버전
+- [SHA-256 검증 파일](https://github.com/Levi02114/LiveConfTranslation/releases/download/v0.9.29/SHA256SUMS.txt)
 
 둘 중 하나만 사용하면 됩니다. 한 컴퓨터에서 두 버전을 동시에 실행하지 마세요.
 현재 배포본은 상용 코드 서명 인증서로 서명하지 않았으므로 Windows SmartScreen 경고가
