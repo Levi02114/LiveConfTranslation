@@ -82,6 +82,10 @@ export function migrateAppManagementTitle(db: DatabaseSync): void {
 export function migrateSecurity(db: DatabaseSync): void {
   db.exec("BEGIN");
   try {
+  if (!db.prepare("PRAGMA table_info(meetings)").all().some((row) => row.name === "zoom_meeting")) {
+    db.exec("ALTER TABLE meetings ADD COLUMN zoom_meeting TEXT");
+  }
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_meetings_zoom ON meetings(zoom_meeting) WHERE zoom_meeting IS NOT NULL");
   db.exec("CREATE TABLE IF NOT EXISTS security_settings (id INTEGER PRIMARY KEY CHECK(id = 1), value TEXT NOT NULL)");
   db.exec(`CREATE TABLE IF NOT EXISTS translation_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -130,6 +134,17 @@ export function getVoiceSettings(): import("./voice-settings").VoiceSettings {
 export function getServerControlSettings(): string | null {
   const row = getDb().prepare("SELECT model FROM engine_settings WHERE engine = 'server-control'").get();
   return row ? String(row.model) : null;
+}
+
+/** Zoom app credentials are encrypted before reaching this storage boundary. */
+export function getZoomSettings(): string | null {
+  const row = getDb().prepare("SELECT model FROM engine_settings WHERE engine = 'zoom'").get();
+  return row ? String(row.model) : null;
+}
+
+export function setZoomSettings(encrypted: string): void {
+  getDb().prepare("INSERT INTO engine_settings(engine, model, updated_at) VALUES('zoom', ?, ?) ON CONFLICT(engine) DO UPDATE SET model = excluded.model, updated_at = excluded.updated_at")
+    .run(encrypted, Date.now());
 }
 
 export function setServerControlSettings(encrypted: string): void {
@@ -302,17 +317,22 @@ export function createMeeting(input: {
   fallbackEngine?: EngineId | null;
   translationModel?: string | null;
   transcriptionProvider?: TranscriptionProvider;
+  zoomMeeting?: string;
 }): Meeting {
   if (input.config.languages.length > getSecurityLimits().languages) throw new InputError("language-limit");
   const now = Date.now();
   const id = newId();
 
   return transaction(() => {
+    if (input.zoomMeeting) {
+      const existing = getZoomMeeting(input.zoomMeeting);
+      if (existing) return existing;
+    }
     getDb().prepare(
       `INSERT INTO meetings
          (id, title, status, engine, fallback_engine, input_mode, speaker_labels,
-          translation_model, transcription_provider, created_at)
-       VALUES (?, ?, 'open', ?, ?, ?, ?, ?, ?, ?)`,
+          translation_model, transcription_provider, created_at, zoom_meeting)
+       VALUES (?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       input.title,
@@ -323,6 +343,7 @@ export function createMeeting(input: {
       input.translationModel ?? null,
       input.transcriptionProvider ?? "openai",
       now,
+      input.zoomMeeting ?? null,
     );
 
     const insertLang = getDb().prepare(
@@ -375,6 +396,12 @@ export function createMeeting(input: {
       closedAt: null,
     };
   });
+}
+
+/** A recurring numeric Zoom ID is not unique; bind the actual meeting instance UUID. */
+export function getZoomMeeting(zoomMeeting: string): Meeting | null {
+  const row = getDb().prepare("SELECT * FROM meetings WHERE zoom_meeting = ?").get(zoomMeeting);
+  return row ? toMeeting(parseRequiredSqlRow(meetingRowSchema, row, "Zoom session")) : null;
 }
 
 export function listMeetings(): Meeting[] {
@@ -932,6 +959,11 @@ export function getRecentMessages(meetingId: string, limit: number | null = 200)
  * 회의 중간에 들어온 참석자도 앞의 흐름을 볼 수 있어야 하므로, SSE 만으로
  * 두지 않고 초기 이력을 함께 내려 준다.
  */
+export function getMessageTranslations(messageId: number) {
+  return parseSqlRows(recentTranslationRowSchema.pick({ lang: true, body: true, status: true }),
+    getDb().prepare("SELECT lang, body, status FROM translations WHERE message_id = ?").all(messageId), "Message translations");
+}
+
 export function getRecentTranslations(
   meetingId: string,
   lang: LanguageCode,
@@ -1628,17 +1660,16 @@ export function touchEngineSetting(engine: EngineId): void {
     .run(engine, Date.now());
 }
 
-/** `model` 이 null 이면 내장 기본 모델을 쓴다는 뜻이다. */
+/** 모델 저장은 마지막 엔진 선택을 바꾸지 않는다. null이면 내장 기본 모델을 쓴다. */
 export function upsertEngineSetting(engine: EngineId, model: string | null): void {
   getDb()
     .prepare(
       `INSERT INTO engine_settings (engine, model, updated_at)
-       VALUES (?, ?, ?)
+       VALUES (?, ?, 0)
        ON CONFLICT (engine) DO UPDATE SET
-         model = excluded.model,
-         updated_at = excluded.updated_at`,
+         model = excluded.model`,
     )
-    .run(engine, model, Date.now());
+    .run(engine, model);
 }
 
 /** 관리자 화면에서 마지막으로 고른 음성 인식 엔진. */

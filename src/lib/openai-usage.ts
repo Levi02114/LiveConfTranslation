@@ -41,6 +41,8 @@ type ModelPricing = {
 
 /** OpenAI 공식 Standard 요금, 2026-08-25 확인. 단위는 USD / 100만 토큰. */
 const MODEL_PRICING: readonly ModelPricing[] = [
+  // GPT-6 Luna Standard 추가 확인: 2026-09-29, /api/docs/models/gpt-6-luna
+  { ids: ["gpt-6-luna"], input: 0.1, cached: 0.01, cacheWrite: 0.125, output: 0.5 },
   { ids: ["gpt-4o-transcribe-diarize"], input: 2.5, output: 10 },
   { ids: ["gpt-4o-mini-transcribe"], input: 1.25, output: 5 },
   { ids: ["gpt-4o-transcribe"], input: 2.5, output: 10 },

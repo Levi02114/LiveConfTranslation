@@ -6,6 +6,11 @@ import { configuredOrigins, localHttpsPort, serverEnvironment, trustedProxyIps }
 
 const normalizeIp = (ip: string) => ip.replace(/^::ffff:/, "");
 
+export function requestRequiresOrigin(method: string, path: string): boolean {
+  // Only this exact POST authenticates using Zoom's raw-body HMAC instead of Origin.
+  return !["GET", "HEAD", "OPTIONS"].includes(method) && !(method === "POST" && path === "/api/zoom/webhook");
+}
+
 /** The custom server is the only writer of trusted request metadata. */
 export function validateRequest(req: IncomingMessage, requireOrigin: boolean): boolean {
   const remote = normalizeIp(req.socket.remoteAddress ?? "");

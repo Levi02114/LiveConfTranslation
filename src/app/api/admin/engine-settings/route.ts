@@ -3,22 +3,23 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import {
   getEngineSetting,
+  listOpenaiModels,
   getTranscriptionProviderSetting,
   touchEngineSetting,
   upsertEngineSetting,
   upsertTranscriptionProviderSetting,
 } from "@/lib/repo";
 import { transcriptionProviderSchema } from "@/lib/repo-schema";
-import { OPENAI_TRANSLATION_MODEL } from "@/lib/secrets";
+import { resolveOpenaiModel } from "@/lib/secrets";
 import { ENGINE_IDS, isEngineId } from "@/lib/translate";
 
 /**
- * 번역 엔진과 음성 인식 엔진의 마지막 선택을 저장한다. OpenAI 번역 모델은 단일 고정값이다.
+ * 번역 엔진과 음성 인식 엔진의 마지막 선택, 새 세션의 기본 OpenAI 모델을 저장한다.
  *
  * API 키(`engine-keys`)와 나눠 둔 이유는 비밀이 아니기 때문이다. 키는 암호화해
  * 저장하고 절대 되돌려 주지 않지만, 모델 이름은 화면에 그대로 보여야 한다.
  *
- * **전역 설정이다.** 회의마다 다른 OpenAI 모델을 쓰지 않는다.
+ * 기존 세션은 생성 당시 저장한 모델을 유지한다.
  */
 
 const engineSaveSchema = z.object({
@@ -38,7 +39,7 @@ export async function GET() {
   return Response.json({
     settings: ENGINE_IDS.map((engine) => ({
       engine,
-      model: engine === "openai" ? OPENAI_TRANSLATION_MODEL : getEngineSetting(engine)?.model ?? null,
+      model: engine === "openai" ? resolveOpenaiModel() : getEngineSetting(engine)?.model ?? null,
     })),
     transcriptionProvider: getTranscriptionProviderSetting(),
   });
@@ -62,12 +63,14 @@ export async function PUT(request: Request) {
   }
 
   const { engine, model } = parsed.data;
-  if (engine === "openai") upsertEngineSetting(engine, OPENAI_TRANSLATION_MODEL);
-  else if (model === undefined) touchEngineSetting(engine);
+  if (engine === "openai" && model && model !== resolveOpenaiModel() && !listOpenaiModels().includes(model)) {
+    return Response.json({ error: "modelUnavailable" }, { status: 400 });
+  }
+  if (model === undefined) touchEngineSetting(engine);
   else upsertEngineSetting(engine, model || null);
 
   return Response.json({
     engine,
-    model: engine === "openai" ? OPENAI_TRANSLATION_MODEL : getEngineSetting(engine)?.model ?? null,
+    model: engine === "openai" ? resolveOpenaiModel() : getEngineSetting(engine)?.model ?? null,
   });
 }

@@ -1,10 +1,11 @@
 import { requireAdmin } from "@/lib/auth";
-import { resolveOpenaiModel } from "@/lib/secrets";
+import { getOpenaiModelCatalog } from "@/lib/openai-models";
 
-/** 호환 경로. OpenAI 번역 모델은 하나로 고정되어 목록 조회를 하지 않는다. */
-export async function GET() {
+export async function GET(request: Request) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
-  return Response.json({ models: [resolveOpenaiModel()], source: "fixed" as const });
+  return Response.json(await getOpenaiModelCatalog(new URL(request.url).searchParams.get("cache") !== "1"), {
+    headers: { "cache-control": "no-store" },
+  });
 }

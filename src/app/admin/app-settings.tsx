@@ -18,9 +18,10 @@ import { SecuritySettings } from "./security-settings";
 import { TranslationJobs } from "./translation-jobs";
 import { VoiceSettingsForm } from "./voice-settings";
 import { useConfirmation } from "@/components/confirm-dialog";
+import { ZoomSettings } from "./zoom-controls";
 
 const desktopResponse = z.object({ desktop: desktopStateSchema.nullable().optional(), writable: z.boolean().optional(), error: z.string().optional(), link: z.string().url().optional() });
-type Section = "connection" | "api" | "telegram" | "security" | "voice" | "help";
+type Section = "connection" | "api" | "telegram" | "security" | "voice" | "help" | "zoom";
 type Props = { strings: AdminStrings; ui: UiStrings; languages: Language[];
   engines: { id: EngineId; label: string; configured: boolean }[]; keys: EngineKeyStatus[];
   google: GoogleSpeechStatus; usage: GoogleSpeechStatus; limits: SecurityLimits; voice: VoiceSettings; meetings: { id: string; title: string }[] };
@@ -39,6 +40,13 @@ export function AppSettings(props: Props) {
   const [loadFailed, setLoadFailed] = useState(false);
   const desktopRevision = useRef(0);
   const [keyChanges, setKeyChanges] = useState<Partial<Record<EngineId, boolean>>>({});
+
+  useEffect(() => {
+    if (!visible) return;
+    const abort = new AbortController();
+    void fetch("/api/admin/openai-models", { cache: "no-store", signal: abort.signal }).catch(() => {});
+    return () => abort.abort();
+  }, [visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -90,6 +98,7 @@ export function AppSettings(props: Props) {
     { id: "connection", label: s.connection }, { id: "api", label: s.api },
     { id: "telegram", label: "Telegram" }, { id: "security", label: s.security },
     { id: "voice", label: s.voice }, { id: "help", label: strings.operations.appGuide },
+    { id: "zoom", label: strings.zoom.title },
   ];
   return <>
     <dialog ref={dialog} onClose={(event) => { if (event.target === event.currentTarget) { setOpen(false); router.refresh(); } }} aria-labelledby="app-settings-title"
@@ -158,6 +167,7 @@ function SettingsBody({ section, desktop, writable, loadFailed, onDesktop, onClo
     finally { busyRef.current = false; setBusy(false); }
   };
   if (section === "voice") return <VoiceSettingsForm initial={props.voice} {...props} />;
+  if (section === "zoom") return <ZoomSettings strings={strings} />;
   if (section === "api") return <>
     <EngineKeysDialog inline strings={strings.keys} initial={props.keys} engines={props.engines.filter((engine) => engine.id !== "local")}
       onChange={onKeyChange} />

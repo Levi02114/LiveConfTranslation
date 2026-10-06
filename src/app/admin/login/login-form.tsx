@@ -22,7 +22,7 @@ export function LoginForm({
   languages: readonly Language[];
   strings: AdminStrings;
   ui: UiStrings;
-  destination?: "/admin" | "/admin/site-management";
+  destination?: "/admin" | "/admin/site-management" | "/admin/zoom";
 }) {
   const router = useRouter();
   const setLang = useSetAdminLang();

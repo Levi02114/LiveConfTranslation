@@ -33,7 +33,7 @@ import { desktopTransportAllowed } from "@/lib/desktop-control";
 import { startServerControl } from "@/lib/server-control";
 import { startNamedTunnelControl, tunnelProbeAnswer } from "@/lib/named-tunnel";
 import { notifyAppSettings, subscribeAppSettings, type VoiceSettings } from "@/lib/voice-settings";
-import { validateRequest, limitRequestBody } from "@/lib/http-security";
+import { validateRequest, limitRequestBody, requestRequiresOrigin } from "@/lib/http-security";
 import { rateLimit } from "@/lib/security-limits";
 import { activeTranscriptions } from "@/lib/realtime/transcription-registry";
 import { matchDetectedLanguage } from "@/lib/detected-language";
@@ -122,7 +122,7 @@ const requestHandler = (req: Parameters<typeof handle>[0], res: Parameters<typeo
   res.setHeader("x-lct-build-id", buildId);
   res.once("close", () => log(res.statusCode >= 500 ? "error" : res.statusCode >= 400 || !res.writableFinished ? "warn" : "info", "http.complete",
     { requestId, route, method: req.method, status: res.statusCode, okay: res.writableFinished, durationMs: Math.round(performance.now() - started) }));
-  if (!validateRequest(req, !["GET", "HEAD", "OPTIONS"].includes(req.method ?? "GET"))) {
+  if (!validateRequest(req, requestRequiresOrigin(req.method ?? "GET", req.url ?? "/"))) {
     res.writeHead(403, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: "invalid-origin" }));
     return;

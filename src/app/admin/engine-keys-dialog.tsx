@@ -7,6 +7,7 @@ import type { AdminStrings } from "@/lib/i18n-builtin";
 import { parseJsonResponse } from "@/lib/json-response";
 import { formatTimestamp } from "@/lib/log-format";
 import { engineIdSchema, type EngineId } from "@/lib/translate/types";
+import { OpenaiModelSettings } from "./openai-model-select";
 
 const engineKeyStatusSchema = z.object({
   engine: engineIdSchema,
@@ -46,6 +47,7 @@ export function EngineKeysDialog({
   const [drafts, setDrafts] = useState<Partial<Record<EngineId, string>>>({});
   const [busy, setBusy] = useState<EngineId | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   const changed = useRef(new Set<EngineId>());
   useEffect(() => {
     if (!inline) return;
@@ -122,7 +124,7 @@ export function EngineKeysDialog({
       <button
         hidden={inline}
         type="button"
-        onClick={() => dialogRef.current?.showModal()}
+        onClick={() => { setOpen(true); dialogRef.current?.showModal(); }}
         className="cursor-pointer border border-line px-2.5 py-1.5 font-mono text-[12px] text-muted transition-colors hover:border-fg hover:bg-fg hover:text-bg"
       >
         {strings.button}
@@ -134,6 +136,7 @@ export function EngineKeysDialog({
           // 창을 닫으면 입력해 둔 값도 지운다. 화면에 키가 남아 있지 않게.
           setDrafts({});
           setError(null);
+          setOpen(false);
         }}
         className={inline ? "settings-inline" : "m-auto w-[min(560px,calc(100vw-32px))] border border-line bg-bg p-0 text-fg backdrop:bg-black/45"}
       >
@@ -211,6 +214,8 @@ export function EngineKeysDialog({
                       </button>
                     ) : null}
                   </div>
+                  {engine.id === "openai" && (inline || open) ? <OpenaiModelSettings strings={strings}
+                    configured={status?.configured === true} keyUpdatedAt={status?.updatedAt ?? null} disabled={busy !== null} /> : null}
                 </div>
               );
             })}

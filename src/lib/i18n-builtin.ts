@@ -631,7 +631,123 @@ const tunnelStrings = {
   },
 };
 
+const zoomStrings = {
+  ko: {
+    title: "Zoom 채팅 번역", open: "Zoom 연결 화면 열기", connect: "현재 Zoom 회의 확인",
+    sessionTitle: "세션 이름", untitled: "Zoom 세션", autoSession: "Zoom 제목으로 세션을 자동 생성합니다. 재연결하면 기존 기록과 번역 설정을 이어 씁니다.",
+    savedSession: "기록 세션", manageSession: "세션 관리 열기", viewSession: "통합 조회 열기", working: "처리 중…",
+    archiveStart: "번역·기록 시작",
+    archiveConsent: "참가자에게 전사·번역·기록 보관을 안내했습니다. 발언을 선택한 번역 서비스로 전송하고 원문·화자·수신 시간·번역을 이 앱에 저장하며 조회 링크와 Zoom 채팅으로 제공하는 데 동의합니다. 사용 요금이 발생할 수 있습니다.",
+    archivePrivacy: "Zoom 앱 창을 열어 두세요. 연결 이후 받은 원문과 번역은 세션 기록에 남습니다. 중지하거나 접근이 철회되면 새 발언 수신과 채팅 전송을 멈추며, 이미 저장한 원문의 번역은 계속됩니다. 기록은 세션 관리에서 종료 후 삭제할 수 있습니다. 미전송 채팅은 재연결해도 다시 보내지 않습니다.",
+    sessionSettingsMismatch: "기존 Zoom 세션의 번역 설정이 다릅니다. 현재 Zoom 회의 확인을 다시 눌러 저장된 설정을 불러오세요.",
+    storageFailed: "발언 저장에 실패해 중지했습니다. 디스크 공간과 서버 상태를 확인하세요. 이미 저장된 기록은 유지됩니다.",
+    clientId: "Zoom Client ID", clientSecret: "Zoom Client Secret", webhookSecret: "웹훅 Secret Token",
+    credentialsHelp: "Zoom Marketplace의 General App 값을 입력하세요. 비밀값은 암호화 저장하며 다시 표시하지 않습니다. 저장된 비밀값을 유지하려면 비워 두세요. 앱 ID를 바꿀 때는 두 비밀값도 새로 입력하세요.",
+    setup: "Zoom 앱 등록 안내", homeUrl: "Zoom App Home URL", webhookUrl: "이벤트 수신 주소",
+    setupHelp: "고정 HTTPS 주소를 사용하세요. Zoom 앱에서 RTMS 전사 권한과 meeting.rtms_started / meeting.rtms_stopped 이벤트를 활성화하고 이벤트 주소를 검증하세요. 이 화면을 Zoom 회의의 앱 메뉴에서 열어야 채팅 전송이 가능합니다.",
+    ready: "자격 증명 저장됨", missing: "자격 증명 설정 필요",
+    source: "첫 발언의 언어", sourceHelp: "초기 전사 언어입니다. 이후 Zoom이 언어를 감지합니다. 언어 전환 감지에는 약 10~30초가 걸릴 수 있으며 Zoom 전사 지원 언어만 선택할 수 있습니다.",
+    targets: "번역·조회·채팅 언어", targetsHelp: "선택한 언어만 번역하고 같은 결과를 기록·조회·Zoom 채팅에 사용합니다. 번역 엔진·모델·단어집·지정 폴백을 재사용합니다.",
+    stop: "중지", received: "수신 발언", sent: "전송 메시지", pending: "대기 중", meetingReady: "현재 회의 연결 준비됨",
+    waiting: "Zoom 전사 시작 대기", connecting: "전사 연결 중", live: "번역 채팅 중", paused: "Zoom 전사 일시 중지", stopped: "중지됨", error: "오류로 중지됨",
+    notConfigured: "먼저 Zoom 앱 자격 증명을 저장하세요.", busy: "다른 Zoom 중계가 실행 중입니다. 해당 창에서 중지하거나 연결 만료 후 다시 시도하세요.",
+    invalidSession: "종료되었거나 사용할 수 없는 세션입니다.", invalidLanguage: "세션 또는 Zoom에서 지원하는 언어를 선택하세요.",
+    insecure: "HTTPS 또는 이 컴퓨터의 localhost로 접속하세요.", requestFailed: "연결 요청에 실패했습니다. 서버와 로그인 상태를 확인하세요.",
+    transportFailed: "Zoom 전사 연결에 실패했습니다. 앱 권한·이벤트 설정·네트워크를 확인한 뒤 다시 시작하세요.",
+    webhookTimeout: "Zoom 시작 이벤트가 도착하지 않았습니다. RTMS 권한과 이벤트 수신 주소를 확인하세요.", leaseExpired: "앱 창과의 연결이 끊겨 중계를 중지했습니다.",
+    translationFailed: "번역에 실패해 중지했습니다. 선택한 엔진의 키·잔액·지원 언어를 확인하세요.", queueFull: "처리가 늦어 대기 한도에 도달했습니다. 전송 언어 수를 줄여 다시 시작하세요.",
+    sendUncertain: "채팅 전송 결과를 확인할 수 없어 중지했습니다. 중복 방지를 위해 자동 재전송하지 않습니다. Zoom 채팅을 확인하세요.",
+    revoked: "Zoom에서 전사 접근을 철회해 중지했습니다. 미전송 채팅은 폐기하며 저장된 세션 기록은 유지합니다.", streamStopped: "Zoom에서 전사를 종료했습니다.",
+    zoomRequired: "Zoom 데스크톱 6.5.5 이상에서 회의에 입장한 뒤, 설치한 Zoom 앱 안에서 이 화면을 여세요.", stopFailed: "앱 중계는 중지했습니다. Zoom 전사 중지 여부는 회의에서 직접 확인하세요.",
+  },
+  vi: {
+    title: "Dịch trò chuyện Zoom", open: "Mở kết nối Zoom", connect: "Kiểm tra cuộc họp Zoom hiện tại",
+    sessionTitle: "Tên phiên", untitled: "Phiên Zoom", autoSession: "Tự tạo phiên theo tiêu đề Zoom. Kết nối lại sẽ dùng tiếp lịch sử và thiết lập dịch đã lưu.",
+    savedSession: "Phiên lưu trữ", manageSession: "Mở quản lý phiên", viewSession: "Mở xem tổng hợp", working: "Đang xử lý…",
+    archiveStart: "Bắt đầu dịch và lưu",
+    archiveConsent: "Tôi đã thông báo cho người tham gia về chép, dịch và lưu trữ. Tôi đồng ý gửi lời nói tới dịch vụ dịch đã chọn, lưu bản gốc, người nói, thời gian nhận và bản dịch trong ứng dụng, đồng thời cung cấp qua liên kết xem và trò chuyện Zoom. Có thể phát sinh phí.",
+    archivePrivacy: "Giữ cửa sổ ứng dụng Zoom mở. Bản gốc và bản dịch nhận sau khi kết nối được lưu trong phiên. Dừng hoặc thu hồi quyền sẽ ngừng nhận lời nói mới và gửi chat; các bản gốc đã lưu vẫn tiếp tục được dịch. Có thể kết thúc rồi xóa phiên trong quản lý. Chat chưa gửi sẽ không được gửi lại khi kết nối lại.",
+    sessionSettingsMismatch: "Thiết lập dịch khác với phiên Zoom đã lưu. Kiểm tra lại cuộc họp hiện tại để tải thiết lập đã lưu.",
+    storageFailed: "Đã dừng vì không lưu được lời nói. Kiểm tra dung lượng đĩa và máy chủ. Lịch sử đã lưu vẫn được giữ.",
+    clientId: "Zoom Client ID", clientSecret: "Zoom Client Secret", webhookSecret: "Secret Token webhook",
+    credentialsHelp: "Nhập thông tin General App từ Zoom Marketplace. Bí mật được lưu mã hóa và không hiển thị lại. Để trống để giữ giá trị đã lưu. Khi đổi App ID, hãy nhập lại cả hai bí mật.",
+    setup: "Hướng dẫn đăng ký ứng dụng Zoom", homeUrl: "Zoom App Home URL", webhookUrl: "Địa chỉ nhận sự kiện",
+    setupHelp: "Dùng địa chỉ HTTPS cố định. Bật quyền bản chép RTMS và sự kiện meeting.rtms_started / meeting.rtms_stopped, rồi xác thực địa chỉ sự kiện. Mở màn hình này từ menu ứng dụng trong cuộc họp Zoom để gửi trò chuyện.",
+    ready: "Đã lưu thông tin xác thực", missing: "Cần thông tin xác thực",
+    source: "Ngôn ngữ phát biểu đầu tiên", sourceHelp: "Ngôn ngữ chép ban đầu. Sau đó Zoom tự nhận diện; đổi ngôn ngữ có thể mất 10–30 giây. Chỉ chọn được ngôn ngữ Zoom hỗ trợ.",
+    targets: "Ngôn ngữ dịch, xem và chat", targetsHelp: "Chỉ dịch các ngôn ngữ đã chọn và dùng cùng kết quả cho lưu trữ, xem và chat Zoom. Sử dụng bộ máy, mô hình, bảng thuật ngữ và dự phòng đã chọn.",
+    stop: "Dừng", received: "Phát biểu nhận được", sent: "Tin nhắn đã gửi", pending: "Đang chờ", meetingReady: "Sẵn sàng kết nối cuộc họp",
+    waiting: "Chờ Zoom bắt đầu chép", connecting: "Đang kết nối bản chép", live: "Đang dịch trò chuyện", paused: "Zoom tạm dừng chép", stopped: "Đã dừng", error: "Đã dừng do lỗi",
+    notConfigured: "Lưu thông tin xác thực Zoom trước.", busy: "Một chuyển tiếp Zoom khác đang chạy. Dừng ở cửa sổ đó hoặc chờ kết nối hết hạn.",
+    invalidSession: "Phiên đã đóng hoặc không khả dụng.", invalidLanguage: "Chọn ngôn ngữ được phiên hoặc Zoom hỗ trợ.",
+    insecure: "Dùng HTTPS hoặc localhost trên máy này.", requestFailed: "Yêu cầu thất bại. Kiểm tra máy chủ và đăng nhập.",
+    transportFailed: "Không kết nối được bản chép Zoom. Kiểm tra quyền, sự kiện và mạng rồi thử lại.",
+    webhookTimeout: "Không nhận được sự kiện bắt đầu. Kiểm tra quyền RTMS và địa chỉ sự kiện.", leaseExpired: "Mất kết nối cửa sổ ứng dụng; đã dừng chuyển tiếp.",
+    translationFailed: "Dịch thất bại. Kiểm tra khóa, số dư và ngôn ngữ của bộ máy đã chọn.", queueFull: "Hàng đợi đầy. Giảm số ngôn ngữ và bắt đầu lại.",
+    sendUncertain: "Không xác nhận được tin nhắn nên đã dừng. Không tự gửi lại để tránh trùng lặp. Kiểm tra trò chuyện Zoom.",
+    revoked: "Zoom đã thu hồi quyền chép nên đã dừng. Chat chưa gửi bị xóa; lịch sử phiên đã lưu được giữ lại.", streamStopped: "Zoom đã kết thúc chép.",
+    zoomRequired: "Vào cuộc họp bằng Zoom desktop 6.5.5 trở lên rồi mở màn hình này trong ứng dụng Zoom đã cài.", stopFailed: "Đã dừng chuyển tiếp. Kiểm tra trực tiếp trong Zoom xem bản chép đã dừng chưa.",
+  },
+  th: {
+    title: "แปลแชต Zoom", open: "เปิดการเชื่อมต่อ Zoom", connect: "ตรวจสอบการประชุม Zoom ปัจจุบัน",
+    sessionTitle: "ชื่อเซสชัน", untitled: "เซสชัน Zoom", autoSession: "สร้างเซสชันตามชื่อ Zoom อัตโนมัติ เมื่อเชื่อมต่อใหม่จะใช้ประวัติและการตั้งค่าการแปลเดิม",
+    savedSession: "เซสชันที่บันทึก", manageSession: "เปิดการจัดการเซสชัน", viewSession: "เปิดมุมมองรวม", working: "กำลังดำเนินการ…",
+    archiveStart: "เริ่มแปลและบันทึก",
+    archiveConsent: "ฉันแจ้งผู้เข้าร่วมเรื่องการถอดเสียง แปล และเก็บบันทึกแล้ว ยินยอมให้ส่งคำพูดไปยังบริการแปลที่เลือก เก็บต้นฉบับ ผู้พูด เวลารับและคำแปลในแอป และแสดงผ่านลิงก์ดูและแชต Zoom อาจมีค่าใช้จ่าย",
+    archivePrivacy: "เปิดหน้าต่างแอป Zoom ไว้ ต้นฉบับและคำแปลที่ได้รับหลังเชื่อมต่อจะเก็บในเซสชัน เมื่อหยุดหรือถอนสิทธิ์จะหยุดรับคำพูดใหม่และส่งแชต แต่ยังแปลต้นฉบับที่บันทึกแล้วต่อได้ ปิดเซสชันแล้วลบในหน้าจัดการได้ แชตที่ยังไม่ส่งจะไม่ส่งซ้ำเมื่อเชื่อมต่อใหม่",
+    sessionSettingsMismatch: "การตั้งค่าต่างจากเซสชัน Zoom ที่บันทึกไว้ โปรดตรวจสอบการประชุมปัจจุบันอีกครั้งเพื่อโหลดค่าเดิม",
+    storageFailed: "หยุดเพราะบันทึกคำพูดไม่ได้ ตรวจสอบพื้นที่ดิสก์และเซิร์ฟเวอร์ ประวัติที่บันทึกแล้วยังคงอยู่",
+    clientId: "Zoom Client ID", clientSecret: "Zoom Client Secret", webhookSecret: "Secret Token ของเว็บฮุก",
+    credentialsHelp: "กรอกข้อมูล General App จาก Zoom Marketplace ค่าลับจะเก็บแบบเข้ารหัสและไม่แสดงอีก เว้นว่างเพื่อใช้ค่าเดิม หากเปลี่ยน App ID ต้องกรอกค่าลับทั้งสองใหม่",
+    setup: "วิธีลงทะเบียนแอป Zoom", homeUrl: "Zoom App Home URL", webhookUrl: "ที่อยู่รับเหตุการณ์",
+    setupHelp: "ใช้ที่อยู่ HTTPS คงที่ เปิดสิทธิ์ถอดเสียง RTMS และเหตุการณ์ meeting.rtms_started / meeting.rtms_stopped แล้วตรวจสอบที่อยู่รับเหตุการณ์ เปิดหน้านี้จากเมนูแอปในการประชุม Zoom เพื่อส่งแชต",
+    ready: "บันทึกข้อมูลรับรองแล้ว", missing: "ต้องตั้งค่าข้อมูลรับรอง",
+    source: "ภาษาของคำพูดแรก", sourceHelp: "เป็นภาษาเริ่มต้นในการถอดเสียง หลังจากนั้น Zoom จะตรวจจับภาษา การเปลี่ยนภาษาอาจใช้เวลา 10–30 วินาที เลือกได้เฉพาะภาษาที่ Zoom รองรับ",
+    targets: "ภาษาสำหรับแปล ดู และแชต", targetsHelp: "แปลเฉพาะภาษาที่เลือกและใช้ผลเดียวกันในบันทึก หน้าดู และแชต Zoom โดยใช้เอนจิน โมเดล อภิธานศัพท์ และเอนจินสำรองที่เลือก",
+    stop: "หยุด", received: "คำพูดที่รับ", sent: "ข้อความที่ส่ง", pending: "รอดำเนินการ", meetingReady: "พร้อมเชื่อมต่อการประชุม",
+    waiting: "รอ Zoom เริ่มถอดเสียง", connecting: "กำลังเชื่อมต่อการถอดเสียง", live: "กำลังแปลแชต", paused: "Zoom พักการถอดเสียง", stopped: "หยุดแล้ว", error: "หยุดเนื่องจากข้อผิดพลาด",
+    notConfigured: "บันทึกข้อมูลรับรอง Zoom ก่อน", busy: "มีการส่งต่อ Zoom อื่นทำงานอยู่ หยุดจากหน้าต่างนั้นหรือรอให้การเชื่อมต่อหมดอายุ",
+    invalidSession: "เซสชันปิดแล้วหรือไม่พร้อมใช้งาน", invalidLanguage: "เลือกภาษาที่เซสชันหรือ Zoom รองรับ",
+    insecure: "ใช้ HTTPS หรือ localhost บนเครื่องนี้", requestFailed: "คำขอล้มเหลว ตรวจสอบเซิร์ฟเวอร์และการเข้าสู่ระบบ",
+    transportFailed: "เชื่อมต่อการถอดเสียง Zoom ไม่ได้ ตรวจสอบสิทธิ์ เหตุการณ์ และเครือข่าย แล้วเริ่มใหม่",
+    webhookTimeout: "ไม่ได้รับเหตุการณ์เริ่มต้น ตรวจสอบสิทธิ์ RTMS และที่อยู่รับเหตุการณ์", leaseExpired: "ขาดการเชื่อมต่อหน้าต่างแอป จึงหยุดส่งต่อ",
+    translationFailed: "แปลไม่สำเร็จ ตรวจสอบคีย์ ยอดเงิน และภาษาของเอนจินที่เลือก", queueFull: "คิวเต็ม ลดจำนวนภาษาแล้วเริ่มใหม่",
+    sendUncertain: "ยืนยันการส่งแชตไม่ได้จึงหยุด จะไม่ส่งซ้ำอัตโนมัติเพื่อป้องกันข้อความซ้ำ โปรดตรวจสอบแชต Zoom",
+    revoked: "หยุดเพราะ Zoom ถอนสิทธิ์ถอดเสียง ล้างแชตที่ยังไม่ส่ง แต่เก็บประวัติเซสชันที่บันทึกแล้ว", streamStopped: "Zoom จบการถอดเสียงแล้ว",
+    zoomRequired: "เข้าประชุมด้วย Zoom desktop 6.5.5 ขึ้นไป แล้วเปิดหน้านี้ในแอป Zoom ที่ติดตั้งไว้", stopFailed: "หยุดส่งต่อแล้ว โปรดตรวจสอบใน Zoom ว่าการถอดเสียงหยุดแล้วหรือไม่",
+  },
+  si: {
+    title: "Zoom කතාබස් පරිවර්තනය", open: "Zoom සම්බන්ධතාව විවෘත කරන්න", connect: "වත්මන් Zoom සැසිය පරීක්ෂා කරන්න",
+    sessionTitle: "සැසියේ නම", untitled: "Zoom සැසිය", autoSession: "Zoom මාතෘකාවෙන් සැසිය ස්වයංක්‍රීයව සාදයි. නැවත සම්බන්ධ වීමේදී පැරණි වාර්තා සහ පරිවර්තන සැකසුම් භාවිත කරයි.",
+    savedSession: "වාර්තා සැසිය", manageSession: "සැසි කළමනාකරණය විවෘත කරන්න", viewSession: "ඒකාබද්ධ දර්ශනය විවෘත කරන්න", working: "සකසමින්…",
+    archiveStart: "පරිවර්තනය සහ සුරැකීම අරඹන්න",
+    archiveConsent: "පිටපත් කිරීම, පරිවර්තනය සහ වාර්තා තබා ගැනීම ගැන සහභාගීවන්නන් දැනුවත් කළෙමි. තෝරාගත් සේවයට කථනය යැවීමටත් මුල් පෙළ, කථිකයා, ලැබුණු වේලාව සහ පරිවර්තනය මෙම යෙදුමේ සුරැකීමටත් දර්ශන සබැඳියෙන් සහ Zoom කතාබසෙන් පෙන්වීමටත් එකඟ වෙමි. ගාස්තු අය විය හැකිය.",
+    archivePrivacy: "Zoom යෙදුම් කවුළුව විවෘතව තබන්න. සම්බන්ධ වූ පසු ලැබෙන මුල් පෙළ හා පරිවර්තන සැසියේ සුරකියි. නවත්වන විට හෝ අවසර අවලංගු කළ විට අලුත් කථන හා කතාබස් යැවීම නවතී; සුරැකි පෙළ පරිවර්තනය දිගටම සිදුවේ. කළමනාකරණයෙන් සැසිය අවසන් කර මකා දැමිය හැකිය. නොයැවූ කතාබස් නැවත සම්බන්ධ වූ විට යළි නොයවයි.",
+    sessionSettingsMismatch: "සුරැකි Zoom සැසියේ පරිවර්තන සැකසුම් වෙනස්ය. ඒවා ලබා ගැනීමට වත්මන් සැසිය නැවත පරීක්ෂා කරන්න.",
+    storageFailed: "කථනය සුරැකීමට නොහැකි නිසා නවතා ඇත. තැටි ඉඩ සහ සේවාදායකය පරීක්ෂා කරන්න. සුරැකි වාර්තා පවතී.",
+    clientId: "Zoom Client ID", clientSecret: "Zoom Client Secret", webhookSecret: "වෙබ්හුක් Secret Token",
+    credentialsHelp: "Zoom Marketplace හි General App විස්තර ඇතුළත් කරන්න. රහස් අගයන් සංකේතනය කර සුරකින අතර නැවත නොපෙන්වයි. පැරණි අගයන් තබා ගැනීමට හිස්ව තබන්න. App ID වෙනස් කරන විට රහස් අගයන් දෙකම නැවත ඇතුළත් කරන්න.",
+    setup: "Zoom යෙදුම ලියාපදිංචි කිරීම", homeUrl: "Zoom App Home URL", webhookUrl: "සිදුවීම් ලැබෙන ලිපිනය",
+    setupHelp: "ස්ථාවර HTTPS ලිපිනයක් භාවිත කරන්න. RTMS පිටපත් අවසර සහ meeting.rtms_started / meeting.rtms_stopped සිදුවීම් සක්‍රිය කර ලිපිනය තහවුරු කරන්න. කතාබස් යැවීමට Zoom සැසියේ යෙදුම් මෙනුවෙන් මෙම තිරය විවෘත කරන්න.",
+    ready: "අක්තපත්‍ර සුරකින ලදී", missing: "අක්තපත්‍ර අවශ්‍යයි",
+    source: "මුල් කථනයේ භාෂාව", sourceHelp: "මෙය මුල් පිටපත් භාෂාවයි. පසුව Zoom භාෂාව හඳුනා ගනී. භාෂා මාරුව හඳුනා ගැනීමට තත්පර 10–30 ගත විය හැකිය. Zoom සහාය දක්වන භාෂා පමණක් තෝරාගත හැකිය.",
+    targets: "පරිවර්තන, දර්ශන සහ කතාබස් භාෂා", targetsHelp: "තෝරාගත් භාෂා පමණක් පරිවර්තනය කර එකම ප්‍රතිඵලය වාර්තා, දර්ශන සහ Zoom කතාබසට යොදයි. තෝරාගත් එන්ජිම, මාදිලිය, පදමාලාව හා විකල්ප එන්ජිම භාවිත කරයි.",
+    stop: "නවත්වන්න", received: "ලැබුණු කථන", sent: "යැවූ පණිවිඩ", pending: "පොරොත්තුවේ", meetingReady: "සැසි සම්බන්ධතාව සූදානම්",
+    waiting: "Zoom පිටපත් ආරම්භය බලා සිටී", connecting: "පිටපත සම්බන්ධ කරමින්", live: "කතාබස් පරිවර්තනය කරමින්", paused: "Zoom පිටපත විරාම කර ඇත", stopped: "නවතා ඇත", error: "දෝෂයක් නිසා නැවතුණි",
+    notConfigured: "පළමුව Zoom අක්තපත්‍ර සුරකින්න.", busy: "වෙනත් Zoom ප්‍රචාරණයක් ක්‍රියාත්මකයි. එම කවුළුවෙන් නවත්වන්න හෝ සම්බන්ධතාව කල් ඉකුත් වනතුරු රැඳෙන්න.",
+    invalidSession: "සැසිය වසා ඇත හෝ භාවිත කළ නොහැකිය.", invalidLanguage: "සැසිය හෝ Zoom සහාය දක්වන භාෂාවක් තෝරන්න.",
+    insecure: "HTTPS හෝ මෙම පරිගණකයේ localhost භාවිත කරන්න.", requestFailed: "ඉල්ලීම අසාර්ථකයි. සේවාදායකය සහ පිවිසුම පරීක්ෂා කරන්න.",
+    transportFailed: "Zoom පිටපත සම්බන්ධ කළ නොහැකිය. අවසර, සිදුවීම් සහ ජාලය පරීක්ෂා කර නැවත අරඹන්න.",
+    webhookTimeout: "ආරම්භක සිදුවීම නොලැබුණි. RTMS අවසර සහ සිදුවීම් ලිපිනය පරීක්ෂා කරන්න.", leaseExpired: "යෙදුම් කවුළුවේ සම්බන්ධතාව බිඳී ප්‍රචාරණය නැවතුණි.",
+    translationFailed: "පරිවර්තනය අසාර්ථකයි. තෝරාගත් එන්ජිමේ යතුර, ශේෂය සහ භාෂා පරීක්ෂා කරන්න.", queueFull: "පෝලිම පිරී ඇත. භාෂා ගණන අඩු කර නැවත අරඹන්න.",
+    sendUncertain: "පණිවිඩය යැවූ බව තහවුරු කළ නොහැකි නිසා නැවතුණි. අනුපිටපත් වැළැක්වීමට ස්වයංක්‍රීයව නැවත නොයවයි. Zoom කතාබස පරීක්ෂා කරන්න.",
+    revoked: "Zoom පිටපත් ප්‍රවේශය අවලංගු කළ නිසා නවතා ඇත. නොයැවූ කතාබස් ඉවත් කරයි; සුරැකි සැසි වාර්තා පවතී.", streamStopped: "Zoom පිටපත අවසන් කර ඇත.",
+    zoomRequired: "Zoom desktop 6.5.5 හෝ ඉහළ අනුවාදයකින් සැසියට පිවිස ස්ථාපිත Zoom යෙදුම තුළ මෙම තිරය විවෘත කරන්න.", stopFailed: "ප්‍රචාරණය නවතා ඇත. Zoom පිටපතත් නැවතී ඇත්දැයි සැසිය තුළ පරීක්ෂා කරන්න.",
+  },
+};
+
 export type AdminStrings = {
+  zoom: typeof zoomStrings.ko;
   tunnel: typeof tunnelStrings.ko;
   appSettings: {
     title: string; connection: string; api: string; voice: string; security: string;
@@ -731,7 +847,7 @@ export type AdminStrings = {
     fallbackEngine: string;
     noFallback: string;
     engineNoKey: string;
-    /** OpenAI 를 골랐을 때만 나오는 고정 언어모델 라벨 */
+    /** OpenAI를 골랐을 때 나오는 기본 언어모델 라벨 */
     model: string;
     transcriptionProvider: string;
     transcriptionOpenai: string;
@@ -843,6 +959,14 @@ export type AdminStrings = {
     empty: string;
   };
   keys: {
+    model: string;
+    modelHelp: string;
+    modelPolling: string;
+    modelsLoading: string;
+    modelsNoKey: string;
+    modelsFailed: string;
+    modelsCached: string;
+    modelSaveFailed: string;
     button: string;
     title: string;
     close: string;
@@ -965,6 +1089,7 @@ export type AdminStrings = {
 };
 
 const adminKo: AdminStrings = {
+  zoom: zoomStrings.ko,
   tunnel: tunnelStrings.ko,
   connectionSummary: { title: "전체 세션 접속 수", details: "모든 세션의 현재 연결을 합산합니다. 언어별·페이지별 내역은 각 세션을 열어 확인하세요." },
   appSettings: {
@@ -1207,6 +1332,14 @@ const adminKo: AdminStrings = {
     empty: "표시할 로그가 없습니다",
   },
   keys: {
+    model: "OpenAI 번역 모델",
+    modelHelp: "새 세션과 언어 감지·전사문 교정·UI 문구 번역에 적용됩니다. 기존 세션의 번역 모델과 음성 전사 모델은 바뀌지 않습니다. 계정의 전체 모델 목록이므로 Chat Completions와 JSON 출력을 지원하는 텍스트 모델을 선택하세요.",
+    modelPolling: "저장된 목록을 먼저 표시하고, 이 화면이 열려 있는 동안 60초마다 최신 목록을 조회합니다. 선택하면 자동 저장됩니다.",
+    modelsLoading: "모델 목록 불러오는 중",
+    modelsNoKey: "OpenAI API 키를 등록하면 최신 모델 목록을 조회할 수 있습니다.",
+    modelsFailed: "최신 모델 목록을 가져오지 못했습니다. 기존 목록과 선택값을 유지합니다. 키 권한과 연결을 확인하세요.",
+    modelsCached: "저장된 모델 목록을 표시하고 있습니다.",
+    modelSaveFailed: "모델을 저장하지 못했습니다. 목록을 확인한 뒤 다시 선택하세요.",
     button: "API 키 등록",
     title: "번역 엔진 API 키",
     close: "닫기",
@@ -1330,6 +1463,7 @@ const adminKo: AdminStrings = {
 };
 
 const adminVi: AdminStrings = {
+  zoom: zoomStrings.vi,
   tunnel: tunnelStrings.vi,
   connectionSummary: { title: "Tổng kết nối của tất cả phiên", details: "Tổng số kết nối hiện tại của mọi phiên. Mở từng phiên để xem chi tiết theo ngôn ngữ và trang." },
   appSettings: {
@@ -1572,6 +1706,14 @@ const adminVi: AdminStrings = {
     empty: "Không có nhật ký để hiển thị",
   },
   keys: {
+    model: "Mô hình dịch OpenAI",
+    modelHelp: "Áp dụng cho phiên mới, nhận diện ngôn ngữ, sửa bản chép và dịch giao diện. Không đổi mô hình dịch của phiên cũ hay mô hình chép giọng nói. Danh sách gồm mọi mô hình của tài khoản; hãy chọn mô hình văn bản hỗ trợ Chat Completions và đầu ra JSON.",
+    modelPolling: "Hiện danh sách đã lưu trước, rồi cập nhật mỗi 60 giây khi mở màn hình này. Lựa chọn được lưu tự động.",
+    modelsLoading: "Đang tải danh sách mô hình",
+    modelsNoKey: "Đăng ký khóa API OpenAI để lấy danh sách mô hình mới nhất.",
+    modelsFailed: "Không lấy được danh sách mới. Giữ nguyên danh sách và lựa chọn đã có. Hãy kiểm tra quyền của khóa và kết nối.",
+    modelsCached: "Đang hiển thị danh sách mô hình đã lưu.",
+    modelSaveFailed: "Không lưu được mô hình. Hãy kiểm tra danh sách rồi chọn lại.",
     button: "Đăng ký khóa API",
     title: "Khóa API của công cụ dịch",
     close: "Đóng",
@@ -1695,6 +1837,7 @@ const adminVi: AdminStrings = {
 };
 
 const adminTh: AdminStrings = {
+  zoom: zoomStrings.th,
   tunnel: tunnelStrings.th,
   connectionSummary: { title: "จำนวนการเชื่อมต่อทุกเซสชัน", details: "รวมการเชื่อมต่อปัจจุบันของทุกเซสชัน เปิดแต่ละเซสชันเพื่อดูรายละเอียดแยกตามภาษาและหน้า" },
   appSettings: {
@@ -1937,6 +2080,14 @@ const adminTh: AdminStrings = {
     empty: "ไม่มีบันทึกที่จะแสดง",
   },
   keys: {
+    model: "โมเดลแปล OpenAI",
+    modelHelp: "ใช้กับเซสชันใหม่ การตรวจจับภาษา การแก้ข้อความถอดเสียง และการแปล UI ไม่เปลี่ยนโมเดลแปลของเซสชันเดิมหรือโมเดลถอดเสียง รายการมีทุกโมเดลของบัญชี โปรดเลือกโมเดลข้อความที่รองรับ Chat Completions และผลลัพธ์ JSON",
+    modelPolling: "แสดงรายการที่บันทึกไว้ก่อน แล้วดึงรายการล่าสุดทุก 60 วินาทีขณะเปิดหน้านี้ บันทึกอัตโนมัติเมื่อเลือก",
+    modelsLoading: "กำลังโหลดรายการโมเดล",
+    modelsNoKey: "ลงทะเบียนคีย์ API OpenAI เพื่อดึงรายการโมเดลล่าสุด",
+    modelsFailed: "ดึงรายการล่าสุดไม่ได้ เก็บรายการและตัวเลือกเดิมไว้ โปรดตรวจสอบสิทธิ์คีย์และการเชื่อมต่อ",
+    modelsCached: "กำลังแสดงรายการโมเดลที่บันทึกไว้",
+    modelSaveFailed: "บันทึกโมเดลไม่ได้ โปรดตรวจสอบรายการแล้วเลือกอีกครั้ง",
     button: "ลงทะเบียนคีย์ API",
     title: "คีย์ API ของเครื่องมือแปล",
     close: "ปิด",
@@ -2060,6 +2211,7 @@ const adminTh: AdminStrings = {
 };
 
 const adminSi: AdminStrings = {
+  zoom: zoomStrings.si,
   tunnel: tunnelStrings.si,
   connectionSummary: { title: "සියලු සැසිවල සම්බන්ධතා එකතුව", details: "සියලු සැසිවල වත්මන් සම්බන්ධතා එකතු කරයි. භාෂාව සහ පිටුව අනුව විස්තර බැලීමට අදාළ සැසිය විවෘත කරන්න." },
   appSettings: {
@@ -2302,6 +2454,14 @@ const adminSi: AdminStrings = {
     empty: "පෙන්වීමට ලොග සටහන් නැත",
   },
   keys: {
+    model: "OpenAI පරිවර්තන මාදිලිය",
+    modelHelp: "නව සැසි, භාෂා හඳුනාගැනීම, පිටපත් නිවැරදි කිරීම සහ UI පරිවර්තනයට යෙදේ. පැරණි සැසිවල පරිවර්තන මාදිලිය හෝ හඬ පිටපත් මාදිලිය වෙනස් නොවේ. ගිණුමේ සියලු මාදිලි ලැයිස්තුවේ ඇත; Chat Completions සහ JSON ප්‍රතිදානයට සහාය දක්වන පෙළ මාදිලියක් තෝරන්න.",
+    modelPolling: "සුරැකි ලැයිස්තුව මුලින් පෙන්වා මෙම තිරය විවෘතව තිබෙන විට සෑම තත්පර 60කටම අලුත් ලැයිස්තුව ගනී. තේරීම ස්වයංක්‍රීයව සුරකියි.",
+    modelsLoading: "මාදිලි ලැයිස්තුව පූරණය කරමින්",
+    modelsNoKey: "නවතම මාදිලි ලැයිස්තුව ලබාගැනීමට OpenAI API යතුර ලියාපදිංචි කරන්න.",
+    modelsFailed: "නවතම ලැයිස්තුව ලබාගත නොහැකි විය. පැරණි ලැයිස්තුව සහ තේරීම රඳවා ගනී. යතුරු අවසර සහ සම්බන්ධතාව පරීක්ෂා කරන්න.",
+    modelsCached: "සුරැකි මාදිලි ලැයිස්තුව පෙන්වයි.",
+    modelSaveFailed: "මාදිලිය සුරැකිය නොහැකි විය. ලැයිස්තුව පරීක්ෂා කර නැවත තෝරන්න.",
     button: "API යතුර ලියාපදිංචිය",
     title: "පරිවර්තන එන්ජිමේ API යතුර",
     close: "වසන්න",

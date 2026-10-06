@@ -18,8 +18,9 @@ export async function copyText(text: string): Promise<boolean> {
     }
   }
 
+  const previousFocus = document.activeElement;
+  const area = document.createElement("textarea");
   try {
-    const area = document.createElement("textarea");
     area.value = text;
     area.setAttribute("readonly", "");
     // 화면 밖으로 밀면 iOS 가 선택을 무시한다. 보이지 않게만 둔다.
@@ -29,15 +30,23 @@ export async function copyText(text: string): Promise<boolean> {
     area.style.opacity = "0";
     area.style.pointerEvents = "none";
 
-    document.body.appendChild(area);
+    // showModal() 밖의 DOM은 inert다. body에 붙이면 주소 대신 기존 선택
+    // (예: "복사" 버튼 문구)이 복사될 수 있으므로 열린 설정창 안에 붙인다.
+    const host = previousFocus?.closest("dialog[open]") ?? document.querySelector("dialog[open]") ?? document.body;
+    host.appendChild(area);
+    area.focus({ preventScroll: true });
     area.select();
     area.setSelectionRange(0, text.length);
+    if (document.activeElement !== area || area.selectionStart !== 0 || area.selectionEnd !== text.length) return false;
 
     // 폐기 예정 API 지만, 비보안 컨텍스트에서 동작하는 유일한 수단이다.
-    const copied = document.execCommand("copy");
-    document.body.removeChild(area);
-    return copied;
+    return document.execCommand("copy");
   } catch {
     return false;
+  } finally {
+    area.remove();
+    if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+      previousFocus.focus({ preventScroll: true });
+    }
   }
 }

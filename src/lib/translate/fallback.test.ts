@@ -15,6 +15,7 @@ test("선택한 폴백만 미지원 언어 번역을 대신한다", async () => 
   let languageCalls = 0;
   let openaiCalls = 0;
   let openaiSystemPrompt = "";
+  const openaiModels: string[] = [];
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.includes("/v3/languages?resource=translate_text")) {
@@ -31,8 +32,10 @@ test("선택한 폴백만 미지원 언어 번역을 대신한다", async () => 
     if (url.includes("/chat/completions")) {
       openaiCalls += 1;
       const body = z.object({
+        model: z.string(),
         messages: z.array(z.object({ content: z.string() })).min(1),
       }).parse(JSON.parse(String(init?.body)));
+      openaiModels.push(body.model);
       openaiSystemPrompt = body.messages[0].content;
       return Response.json({
         choices: [{ message: { content: /Chinese/.test(openaiSystemPrompt) ? "你好" : "안녕하세요" } }],
@@ -49,6 +52,7 @@ test("선택한 폴백만 미지원 언어 번역을 대신한다", async () => 
       insertMessage,
       replaceGlossaryEntries,
       upsertEngineSecret,
+      upsertEngineSetting,
     } = await import("../repo");
     for (const [engine, key] of [
       ["deepl", "test-deepl-key"],
@@ -84,9 +88,14 @@ test("선택한 폴백만 미지원 언어 번역을 대신한다", async () => 
     assert.equal(result.text, "안녕하세요");
     assert.equal(languageCalls, 1);
     assert.equal(openaiCalls, 1);
+    assert.deepEqual(openaiModels, ["gpt-6-luna"]);
     assert.match(openaiSystemPrompt, /실시간 세션에서 원어민이 실제로 말하듯/);
     assert.match(openaiSystemPrompt, /සජීවී පරිවර්තනය/);
     assert.match(openaiSystemPrompt, /라이브 번역/);
+
+    upsertEngineSetting("openai", "gpt-4.1-mini");
+    await translateText("openai", { text: "ආයුබෝවන්", from: "si", to: "ko" });
+    assert.equal(openaiModels.at(-1), "gpt-4.1-mini");
 
     const meeting = createMeeting({
       title: "출력 전용 언어 테스트",
@@ -124,6 +133,8 @@ test("선택한 폴백만 미지원 언어 번역을 대신한다", async () => 
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     stopTranslationWorker();
+    // 이전 버전에서 생성한 세션은 저장된 모델을 유지한다.
+    assert.equal(openaiModels.at(-1), "gpt-5.6-luna");
     assert.deepEqual(
       getRecentCombined(meeting.id)[0]?.translations.map(({ lang, body, status }) => ({
         lang,

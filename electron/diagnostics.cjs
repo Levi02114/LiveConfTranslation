@@ -38,8 +38,8 @@ function safeRoute(value) {
   if (/^\/(?:in(?:\/all)?|out|all|capture|join(?:\/input)?)\/[^/]+\/?$/.test(pathname)) return pathname.replace(/\/[^/]+\/?$/, "/:token");
   const meeting = /^(\/(?:api|admin)\/meetings)\/[^/]+(\/(?:config|log|voice-status|translation-jobs|transcription-context))?$/.exec(pathname);
   if (meeting) return `${meeting[1]}/:id${meeting[2] || ""}`;
-  if (/^\/api\/admin\/(?:desktop|engine-keys|engine-settings|glossary|google-speech|languages|login|logout|openai-models|openai-usage|password|security|session-presets|ui-strings|voice-settings|voice-test)$/.test(pathname)) return pathname;
-  return ["/", "/admin", "/admin/login", "/admin/site-management", "/api/meetings", "/api/health", "/api/tunnel-probe", "/api/diagnostics/client", "/ws", "/ws/transcribe", "/ws/tunnel-probe", "/local-ca.cer"].includes(pathname) ? pathname : "/:other";
+  if (/^\/api\/admin\/(?:desktop|engine-keys|engine-settings|glossary|google-speech|languages|login|logout|openai-models|openai-usage|password|security|session-presets|ui-strings|voice-settings|voice-test|zoom)$/.test(pathname)) return pathname;
+  return ["/", "/admin", "/admin/login", "/admin/site-management", "/admin/zoom", "/api/zoom/webhook", "/api/meetings", "/api/health", "/api/tunnel-probe", "/api/diagnostics/client", "/ws", "/ws/transcribe", "/ws/tunnel-probe", "/local-ca.cer"].includes(pathname) ? pathname : "/:other";
 }
 
 function errorFields(error) {

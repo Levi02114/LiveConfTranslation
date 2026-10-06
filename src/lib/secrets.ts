@@ -1,5 +1,5 @@
 import { decryptSecret } from "@/lib/crypto";
-import { getEngineSecret } from "@/lib/repo";
+import { getEngineSecret, getEngineSetting } from "@/lib/repo";
 import type { TranscriptionProvider } from "@/lib/repo";
 import { localTranscriptionConfigured } from "@/lib/local-runtime";
 import type { EngineId } from "@/lib/translate/types";
@@ -35,8 +35,8 @@ export type EngineKeyStatus = {
   updatedAt: number | null;
 };
 
-/** OpenAI 번역은 검증된 단일 모델만 사용한다. */
-export const OPENAI_TRANSLATION_MODEL = "gpt-5.6-luna";
+/** 관리자가 모델을 선택하지 않았을 때의 기본값. */
+export const OPENAI_TRANSLATION_MODEL = "gpt-6-luna";
 const OPENAI_ADMIN_SECRET_ID = "openai-admin" as const;
 const GOOGLE_SPEECH_SECRET_ID = "google-speech" as const;
 
@@ -118,11 +118,11 @@ export function transcriptionProviderConfigured(provider: TranscriptionProvider)
 }
 
 /**
- * 번역에 쓸 OpenAI 언어모델.
+ * 새 세션과 모델 미지정 요청에 쓸 OpenAI 언어모델.
  *
- * 세션 생성 시점이나 이전 DB 설정과 관계없이 검증된 단일 모델을 반환한다.
- * 호출부가 모두 이 함수를 사용하므로 UI와 실제 요청이 어긋나지 않는다.
+ * 관리자 화면에서 저장한 전역 설정을 우선한다.
+ * 기존 세션 번역은 생성 당시 저장한 translationModel을 계속 사용한다.
  */
 export function resolveOpenaiModel(): string {
-  return OPENAI_TRANSLATION_MODEL;
+  return getEngineSetting("openai")?.model || OPENAI_TRANSLATION_MODEL;
 }

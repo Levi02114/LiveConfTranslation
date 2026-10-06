@@ -43,3 +43,12 @@ test("OpenAI 일별 버킷을 모델별 토큰과 예상 비용으로 합친다"
   assert.equal(costs.get("gpt-5.4-mini-2026-03-17"), 5.25);
   assert.equal(costs.get("gpt-4o-transcribe"), 12.5);
 });
+
+test("GPT-6 Luna Standard 비용은 기존 Luna 가격과 분리해서 계산한다", () => {
+  const [row] = aggregateOpenaiUsage({ data: [{ results: [{
+    model: "gpt-6-luna", input_tokens: 1_000_000,
+    input_cached_tokens: 200_000, input_cache_write_tokens: 100_000,
+    output_tokens: 100_000,
+  }] }] });
+  assert.ok(Math.abs(row.estimatedCostUsd! - 0.1345) < 1e-10);
+});
