@@ -26,9 +26,14 @@ test("WAV 헤더가 PCM 길이와 24kHz mono s16le 를 정확히 담는다", () 
   assert.ok(wav.subarray(44).equals(pcm));
 });
 
-test("구조 상한은 30초 분량이다", () => {
-  assert.equal(RESCUE_MAX_BYTES, 30 * 24_000 * 2);
+test("30초 발화와 앞선 무음을 허용하되 구조 상한은 60초 분량이다", () => {
+  assert.equal(RESCUE_MAX_BYTES, 60 * 24_000 * 2);
   assert.equal(RESCUE_BUFFER_MAX_BYTES, 60 * 24_000 * 2);
+  const turns = new RescueAudioTurns();
+  const pcm = Buffer.alloc((30 + 20) * 24_000 * 2, 1);
+  assert.ok(pcm.byteLength <= RESCUE_MAX_BYTES);
+  turns.append(pcm); turns.markCommit(); turns.bindCommit("long");
+  assert.ok(turns.take("long")?.equals(pcm));
 });
 
 test("완료 이벤트 순서가 달라도 item_id 에 커밋 당시 PCM 을 연결한다", () => {

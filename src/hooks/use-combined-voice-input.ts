@@ -14,6 +14,7 @@ import { DEFAULT_VOICE_SETTINGS, silenceMsFor, voiceSettingsSchema, type VoiceSe
 import {
   METER_INTERVAL_MS,
   VoiceMeterTracker,
+  noiseGateRms,
   type VoiceMeter,
 } from "@/lib/voice-level";
 
@@ -21,7 +22,7 @@ type VoiceState = "idle" | "starting" | "active" | "stopping";
 
 type ServerVoiceInputOptions = {
   test?: { dry: boolean; provider: "openai" | "google" | "local"; settings: VoiceSettings;
-    onSegment: (result: { body: string; elapsedMs: number; silenceMs: number }) => void | Promise<void> };
+    onSegment: (result: { body: string; lang?: LanguageCode; elapsedMs: number; silenceMs: number }) => void | Promise<void> };
   token: string;
   participantId?: string;
   strings: UiStrings["capture"];
@@ -29,6 +30,7 @@ type ServerVoiceInputOptions = {
   speakerName?: string | null;
   onFallback?: (lang: LanguageCode) => void;
   langs: readonly LanguageCode[];
+  automaticLanguage?: boolean;
   lang?: LanguageCode | null;
   enabled?: boolean;
   requestPermissionOnMount?: boolean;
@@ -45,6 +47,7 @@ export function useServerVoiceInput({
   speakerName,
   onFallback = () => {},
   langs,
+  automaticLanguage = false,
   lang = null,
   enabled = true,
   requestPermissionOnMount = true,
@@ -202,7 +205,7 @@ export function useServerVoiceInput({
     async (event: Extract<VoiceEventPayload, { t: "transcript" }>, receivedAt = performance.now()) => {
       if (testRef.current) {
         const commit = commits.current.shift();
-        await testRef.current.onSegment({ body: event.body, elapsedMs: commit ? receivedAt - commit.at : 0,
+        await testRef.current.onSegment({ body: event.body, lang: event.lang, elapsedMs: commit ? receivedAt - commit.at : 0,
           silenceMs: commit?.silenceMs ?? 0 });
         return;
       }
@@ -305,14 +308,16 @@ export function useServerVoiceInput({
       const scheme = window.location.protocol === "https:" ? "wss" : "ws";
       const dry = testRef.current?.dry === true;
       const query = testRef.current
-        ? `test=1&source=${encodeURIComponent(langs[0])}&provider=${testRef.current.provider}`
+        ? `test=1&source=${encodeURIComponent(automaticLanguage ? "" : langs[0])}&provider=${testRef.current.provider}`
         : `token=${encodeURIComponent(token)}`;
       const ws = dry ? null : new WebSocket(`${scheme}://${window.location.host}/ws/transcribe?${query}&clientId=${encodeURIComponent(clientId.current)}`);
       socket.current = ws;
       if (ws) ws.binaryType = "arraybuffer";
-      let turnSilenceMs = silenceMsFor(testRef.current?.settings ?? settingsRef.current, langs);
-      const nextSilenceMs = () => (turnSilenceMs = silenceMsFor(testRef.current?.settings ?? settingsRef.current, langs));
-      const detector = new AudioTurnDetector(nextSilenceMs);
+      let turnSilenceMs = silenceMsFor(testRef.current?.settings ?? settingsRef.current, langs, automaticLanguage);
+      const nextSilenceMs = () => (turnSilenceMs = silenceMsFor(testRef.current?.settings ?? settingsRef.current, langs, automaticLanguage));
+      const nextMaxTurnMs = () => (testRef.current?.settings ?? settingsRef.current).maxTurnMs;
+      const minRms = () => noiseGateRms((testRef.current?.settings ?? settingsRef.current).noiseGateLevel);
+      const detector = new AudioTurnDetector(nextSilenceMs, nextMaxTurnMs, minRms);
       let ready = dry;
       if (dry) { setState("active"); voiceDiagnostic("ready", run, { state: "active" }); }
       let lastTurnAt = performance.now();
@@ -336,6 +341,8 @@ export function useServerVoiceInput({
       vadLoading.current = NeuralTurnDetector.create(media, commitTurn, {
         redemptionMs: turnSilenceMs,
         nextSilenceMs,
+        nextMaxTurnMs,
+        minRms,
         audioContext,
       }).then((vad) => {
         // 로드가 끝나기 전에 세션이 닫혔으면 붙이지 않고 바로 버린다.
@@ -362,7 +369,7 @@ export function useServerVoiceInput({
         }
         ws?.send(pcm);
         updateMeter(meterTracker, rms, peak);
-        if (rms > 0.0025) speechSinceCommit.current = true;
+        if (rms > Math.max(0.0025, minRms())) speechSinceCommit.current = true;
         if (testRef.current) {
           const next = neuralVad.current?.phase() ?? detector.phase();
           setPhase((current) => next === "idle" && current === "committed" ? current : next);
@@ -447,7 +454,7 @@ export function useServerVoiceInput({
       setError(stage === "microphone" ? strings.permission : strings.startFailed);
       void disconnect();
     }
-  }, [autoSubmit, closed, deviceId, disconnect, enabled, lang, langs, refreshDevices, speakerName, state, strings, submitTranscript, token, updateMeter]);
+  }, [automaticLanguage, autoSubmit, closed, deviceId, disconnect, enabled, lang, langs, refreshDevices, speakerName, state, strings, submitTranscript, token, updateMeter]);
 
   return { state, partial, error, devices, deviceId, setDeviceId, start, stop, meter, phase };
 }

@@ -13,7 +13,7 @@
 import { DEFAULT_VOICE_SETTINGS, silenceMsFor } from "./voice-settings";
 
 // ponytail: 현장 마이크 편차가 크므로 오탐이 보이면 이 값들만 조정한다.
-export const MAX_TURN_MS = 15_000;
+export const MAX_TURN_MS = DEFAULT_VOICE_SETTINGS.maxTurnMs;
 const REDEMPTION_MS = 1_100; // 무음이 이 길이를 넘으면 턴 종료
 const MIN_SPEECH_MS = 200;
 
@@ -31,6 +31,14 @@ type VadInstance = {
   setOptions: (options: { redemptionMs: number }) => void;
 };
 
+/** Gate only the classifier's input. Never modify the original transcription audio. */
+export function gateVadFrame(frame: Float32Array, minRms: number): Float32Array {
+  if (minRms <= 0) return frame;
+  let energy = 0;
+  for (const sample of frame) energy += sample * sample;
+  return Math.sqrt(energy / frame.length) >= minRms ? frame : new Float32Array(frame.length);
+}
+
 /** VAD 이벤트를 저장 가능한 발화 턴으로 묶는다. 오디오 모델과 무관해 단위 검사한다. */
 export class SpeechTurnCommitter {
   private maxTurnTimer: ReturnType<typeof setTimeout> | null = null;
@@ -38,7 +46,10 @@ export class SpeechTurnCommitter {
   private speechSinceCommit = false;
   private destroyed = false;
 
-  constructor(private readonly onCommit: () => void) {}
+  constructor(
+    private readonly onCommit: () => void,
+    private readonly nextMaxTurnMs: () => number = () => MAX_TURN_MS,
+  ) {}
 
   hasSpeech(): boolean { return this.speechActive || this.speechSinceCommit; }
 
@@ -88,9 +99,9 @@ export class SpeechTurnCommitter {
         this.speechSinceCommit = false;
         this.onCommit();
       }
-      // 발화가 계속되는 동안 15초마다 다시 자른다.
+      // 현재 구간은 유지하고 다음 구간부터 새 최대 시간을 적용한다.
       this.scheduleMaxTurn();
-    }, MAX_TURN_MS);
+    }, this.nextMaxTurnMs());
   }
 }
 
@@ -99,8 +110,8 @@ export class NeuralTurnDetector {
   private readonly turns: SpeechTurnCommitter;
   private currentPhase: "idle" | "speech" | "silence" = "idle";
 
-  private constructor(onCommit: () => void) {
-    this.turns = new SpeechTurnCommitter(onCommit);
+  private constructor(onCommit: () => void, nextMaxTurnMs?: () => number) {
+    this.turns = new SpeechTurnCommitter(onCommit, nextMaxTurnMs);
   }
 
   hasSpeech(): boolean { return this.turns.hasSpeech(); }
@@ -113,12 +124,12 @@ export class NeuralTurnDetector {
   static async create(
     stream: MediaStream,
     onCommit: () => void,
-    options: { redemptionMs?: number; nextSilenceMs?: () => number; audioContext?: AudioContext } = {},
+    options: { redemptionMs?: number; nextSilenceMs?: () => number; nextMaxTurnMs?: () => number; minRms?: () => number; audioContext?: AudioContext } = {},
   ): Promise<NeuralTurnDetector | null> {
-    const detector = new NeuralTurnDetector(onCommit);
+    const detector = new NeuralTurnDetector(onCommit, options.nextMaxTurnMs);
     try {
       const { MicVAD } = await import("@ricky0123/vad-web");
-      detector.vad = await MicVAD.new({
+      const vad = await MicVAD.new({
         model: "v5",
         baseAssetPath: "/vad/",
         onnxWASMBasePath: "/vad/",
@@ -126,7 +137,7 @@ export class NeuralTurnDetector {
         getStream: async () => stream,
         pauseStream: async () => {},
         resumeStream: async () => stream,
-        startOnLoad: true,
+        startOnLoad: false,
         audioContext: options.audioContext,
         positiveSpeechThreshold: 0.5,
         negativeSpeechThreshold: 0.35,
@@ -151,8 +162,14 @@ export class NeuralTurnDetector {
         },
         onVADMisfire: () => { detector.currentPhase = "idle"; detector.turns.handleMisfire(); },
       });
+      detector.vad = vad;
+      // Both audio adapters capture processFrame at start, so install the gate first.
+      const processFrame = vad.processFrame;
+      vad.processFrame = (frame) => processFrame(gateVadFrame(frame, options.minRms?.() ?? 0));
+      await vad.start();
       return detector;
     } catch (error) {
+      await detector.destroy().catch(() => {});
       console.warn("[vad] 신경망 VAD 로드 실패 — RMS 감지기로 돌아갑니다", error);
       return null;
     }

@@ -5,11 +5,15 @@ const languageSettingSchema = z.object({
   silenceMs: z.number().int().min(300).max(5000).multipleOf(100),
 }).strict();
 export const voiceSettingsSchema = languageSettingSchema.extend({
+  maxTurnMs: z.number().int().min(5000).max(30000).multipleOf(1000).default(15000),
+  automaticLanguage: languageSettingSchema.default({ mode: "auto", silenceMs: 1100 }),
+  noiseGateLevel: z.number().int().min(0).max(100).default(0),
   languages: z.record(z.string().regex(/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/i), languageSettingSchema).optional(),
 }).strict();
 export type VoiceSettings = z.infer<typeof voiceSettingsSchema>;
-export const DEFAULT_VOICE_SETTINGS: VoiceSettings = { mode: "auto", silenceMs: 1100 };
-export function silenceMsFor(settings: VoiceSettings, langs: readonly string[]): number {
+export const DEFAULT_VOICE_SETTINGS: VoiceSettings = voiceSettingsSchema.parse({ mode: "auto", silenceMs: 1100 });
+export function silenceMsFor(settings: VoiceSettings, langs: readonly string[], automaticLanguage = false): number {
+  if (automaticLanguage && settings.automaticLanguage.mode === "manual") return settings.automaticLanguage.silenceMs;
   return Math.max(...(langs.length ? langs : ["ko"]).map((lang) => {
     const code = lang.toLowerCase();
     const base = code.split("-")[0];

@@ -364,12 +364,13 @@ function resolveTestTarget(url: URL, request: IncomingMessage): TranscriptionTar
   }
   if (!isAdminFromCookieHeader(request.headers.cookie) || !desktopTransportAllowed(url.href, headers)) return null;
   const lang = url.searchParams.get("source");
+  const languages = listLanguages().map((row) => row.code);
   const provider = z.enum(["openai", "google", "local"]).safeParse(url.searchParams.get("provider"));
   const clientId = url.searchParams.get("clientId");
-  if (!lang || !listLanguages().some((row) => row.code === lang) || !provider.success || !clientId || !/^[a-f0-9]{32}$/.test(clientId)) return null;
+  if (lang === null || (lang && !languages.includes(lang)) || !languages.length || !provider.success || !clientId || !/^[a-f0-9]{32}$/.test(clientId)) return null;
   const id = `admin-test:${clientId}`;
-  return { testAuthorized: () => isAdminFromCookieHeader(request.headers.cookie), clientId, languages: [lang], mode: "single",
-    page: { id, meetingId: "admin-test", token: "", kind: "input", lang, createdAt: Date.now() },
+  return { testAuthorized: () => isAdminFromCookieHeader(request.headers.cookie), clientId, languages: lang ? [lang] : languages, mode: lang ? "single" : "combined",
+    page: { id, meetingId: "admin-test", token: "", kind: "input", lang: lang || languages[0], createdAt: Date.now() },
     meeting: { id: "admin-test", title: "", status: "open", engine: "openai", fallbackEngine: null,
       inputMode: "realtime", speakerLabels: false, translationModel: null, transcriptionProvider: provider.data,
       transcriptionContext: null, createdAt: Date.now(), closedAt: null } };
@@ -881,7 +882,8 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
       lastAudio = now;
       audioAllowance -= audio.length;
       turnBytes += audio.length;
-      if (audio.length % 2 || audioAllowance < 0 || turnBytes > 30 * 48_000 || queuedBytes + turnBytes > 6 * 1024 * 1024) {
+      // Allow a 30-second turn plus up to 20 seconds of leading silence and delivery headroom.
+      if (audio.length % 2 || audioAllowance < 0 || turnBytes > RESCUE_MAX_BYTES || queuedBytes + turnBytes > 6 * 1024 * 1024) {
         fail("busy"); return;
       }
       if (local || google) {

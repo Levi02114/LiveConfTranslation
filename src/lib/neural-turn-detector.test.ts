@@ -1,7 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { MAX_TURN_MS, redemptionMsFor, SpeechTurnCommitter } from "@/lib/neural-turn-detector";
+import { gateVadFrame, MAX_TURN_MS, redemptionMsFor, SpeechTurnCommitter } from "@/lib/neural-turn-detector";
+import { noiseGateRms } from "@/lib/voice-level";
+
+test("neural noise gate zeros classifier frames without modifying original audio or loud speech", () => {
+  const quiet = new Float32Array(512).fill(0.003);
+  const speech = new Float32Array(512).fill(0.03);
+  const original = quiet.slice();
+  const threshold = noiseGateRms(25);
+  assert.deepEqual(gateVadFrame(quiet, threshold), new Float32Array(512));
+  assert.deepEqual(quiet, original, "raw transcription audio stays intact");
+  assert.equal(gateVadFrame(speech, threshold), speech);
+  assert.equal(gateVadFrame(quiet, 0), quiet, "off keeps quiet voices and existing neural behavior");
+  assert.equal(gateVadFrame(quiet, noiseGateRms(1)), quiet, "lower thresholds can recover quiet speakers");
+});
 
 test("일반 언어는 기본 redemption 을 쓴다", () => {
   assert.equal(redemptionMsFor(["ko"]), 1_100);
@@ -59,4 +72,35 @@ test("destroyed VAD ignores queued model callbacks and cannot rearm its timer", 
   context.mock.timers.tick(MAX_TURN_MS * 2);
   assert.equal(commits, 0);
   assert.equal(detector.hasSpeech(), false);
+});
+
+test("neural maximum duration changes only at the next segment, including continuous speech", (context) => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  let maxTurnMs = 30000;
+  let commits = 0;
+  const detector = new SpeechTurnCommitter(() => { commits++; }, () => maxTurnMs);
+  detector.handleSpeechStart();
+  maxTurnMs = 5000;
+  context.mock.timers.tick(29999);
+  assert.equal(commits, 0, "changing settings does not cut the current segment");
+  context.mock.timers.tick(1);
+  assert.equal(commits, 1);
+  detector.handleSpeechFrame(0.9);
+  context.mock.timers.tick(4999);
+  assert.equal(commits, 1);
+  context.mock.timers.tick(1);
+  assert.equal(commits, 2);
+  detector.handleSpeechEnd();
+  assert.equal(commits, 2, "no empty commit after the maximum");
+  maxTurnMs = 30000;
+  detector.handleSpeechStart();
+  context.mock.timers.tick(1000);
+  detector.handleSpeechEnd();
+  assert.equal(commits, 3, "silence can finish earlier");
+  context.mock.timers.tick(30000);
+  assert.equal(commits, 3, "speech end clears the old timer");
+  detector.handleSpeechStart();
+  detector.destroy();
+  context.mock.timers.tick(30000);
+  assert.equal(commits, 3, "stop cancels the configurable timer");
 });

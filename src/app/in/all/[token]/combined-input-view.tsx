@@ -97,6 +97,7 @@ export function CombinedInputView({
     speakerName: speakerName.trim() || null,
     onFallback: showFallback,
     langs: inputLang ? [inputLang] : inputLanguages,
+    automaticLanguage: !inputLang,
     lang: inputLang || null,
     autoSubmit: voiceMode,
     rewrite,

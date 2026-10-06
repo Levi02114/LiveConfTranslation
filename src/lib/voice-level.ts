@@ -28,6 +28,11 @@ export function meterLevel(rms: number): number {
   return Math.min(1, Math.max(0, (db + 60) / 60));
 }
 
+/** Same logarithmic scale as the visible meter; zero disables the extra gate. */
+export function noiseGateRms(level: number): number {
+  return level <= 0 ? 0 : 10 ** ((level / 100 * 60 - 60) / 20);
+}
+
 export class VoiceMeterTracker {
   private quietSince: number | null = null;
   private noSignalSince: number | null = null;

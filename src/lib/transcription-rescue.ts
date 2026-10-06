@@ -14,8 +14,8 @@ import { parseJsonResponse } from "@/lib/json-response";
 
 const transcriptionResponseSchema = z.object({ text: z.string() });
 
-/** 구조는 지연·비용을 올리므로 긴 턴에는 태우지 않는다. */
-export const RESCUE_MAX_BYTES = 30 * 24_000 * 2; // 30초 × 24kHz × s16le
+/** 30초 발화에 앞선 무음·전송 여유를 포함하되, 요청당 음성은 60초로 제한한다. */
+export const RESCUE_MAX_BYTES = 60 * 24_000 * 2; // 60초 × 24kHz × s16le
 export const RESCUE_BUFFER_MAX_BYTES = 60 * 24_000 * 2; // 완료 지연을 포함해 최대 60초만 보관
 
 type AudioSegment = { start: number; end: number };

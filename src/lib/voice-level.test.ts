@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { meterLevel, VoiceMeterTracker } from "@/lib/voice-level";
+import { meterLevel, noiseGateRms, VoiceMeterTracker } from "@/lib/voice-level";
+
+test("noise gate percentages match the visible meter and zero preserves the old detector", () => {
+  assert.equal(noiseGateRms(0), 0);
+  for (const value of [1, 10, 25, 50, 100]) assert.ok(Math.abs(meterLevel(noiseGateRms(value)) * 100 - value) < 1e-9);
+});
 
 test("음량 매핑은 -60dB 이하를 0, 0dB 를 1 로 눌러 담는다", () => {
   assert.equal(meterLevel(0), 0);

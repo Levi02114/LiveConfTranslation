@@ -126,7 +126,16 @@ export function parseVoiceEvent(text: string): VoiceEventPayload | null {
     if (!settings || typeof settings !== "object" || Array.isArray(settings) ||
       (settings.mode !== "auto" && settings.mode !== "manual") || typeof settings.silenceMs !== "number" ||
       !Number.isInteger(settings.silenceMs) || settings.silenceMs < 300 || settings.silenceMs > 5000 || settings.silenceMs % 100 !== 0) return null;
-    const parsed: VoiceSettings = { mode: settings.mode, silenceMs: settings.silenceMs };
+    const maxTurnMs = settings.maxTurnMs === undefined ? 15000 : settings.maxTurnMs;
+    if (typeof maxTurnMs !== "number" || !Number.isInteger(maxTurnMs) || maxTurnMs < 5000 || maxTurnMs > 30000 || maxTurnMs % 1000 !== 0) return null;
+    const noiseGateLevel = settings.noiseGateLevel === undefined ? 0 : settings.noiseGateLevel;
+    if (typeof noiseGateLevel !== "number" || !Number.isInteger(noiseGateLevel) || noiseGateLevel < 0 || noiseGateLevel > 100) return null;
+    const automaticLanguage = settings.automaticLanguage === undefined ? { mode: "auto", silenceMs: 1100 } : settings.automaticLanguage;
+    if (!automaticLanguage || typeof automaticLanguage !== "object" || Array.isArray(automaticLanguage) ||
+      (automaticLanguage.mode !== "auto" && automaticLanguage.mode !== "manual") || typeof automaticLanguage.silenceMs !== "number" ||
+      !Number.isInteger(automaticLanguage.silenceMs) || automaticLanguage.silenceMs < 300 || automaticLanguage.silenceMs > 5000 || automaticLanguage.silenceMs % 100 !== 0) return null;
+    const parsed: VoiceSettings = { mode: settings.mode, silenceMs: settings.silenceMs, maxTurnMs, noiseGateLevel,
+      automaticLanguage: { mode: automaticLanguage.mode, silenceMs: automaticLanguage.silenceMs } };
     if (settings.languages !== undefined) {
       if (!settings.languages || typeof settings.languages !== "object" || Array.isArray(settings.languages)) return null;
       parsed.languages = {};

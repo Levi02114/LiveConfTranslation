@@ -22,10 +22,19 @@ export function VoiceSettingsForm({ initial, strings, ui, languages, engines }: 
   const edited = useRef(new Set<string>());
   const { confirm, confirmation } = useConfirmation({ confirm: ui.speaker.confirm, cancel: ui.message.cancel });
   const [source, setSource] = useState(languages[0]?.code ?? "ko");
-  const selected = settings.languages?.[source] ?? settings;
-  const changeSelected = (value: { mode: "auto" | "manual"; silenceMs: number }) => { edited.current.add(source); setSettings({
-    ...settings, languages: { ...settings.languages, [source]: value },
-  }); };
+  const selected = source ? settings.languages?.[source] ?? settings : settings.automaticLanguage;
+  const testLangs = source ? [source] : languages.map((lang) => lang.code);
+  const delay = silenceMsFor(settings, testLangs, !source);
+  const changeSelected = (value: { mode: "auto" | "manual"; silenceMs: number }) => {
+    edited.current.add(source);
+    setSettings((current) => source ? { ...current, languages: { ...current.languages, [source]: value } } : { ...current, automaticLanguage: value });
+  };
+  const changeMaxTurn = (maxTurnMs: number) => {
+    edited.current.add("maxTurnMs"); setSettings((current) => ({ ...current, maxTurnMs }));
+  };
+  const changeNoiseGate = (noiseGateLevel: number) => {
+    edited.current.add("noiseGateLevel"); setSettings((current) => ({ ...current, noiseGateLevel }));
+  };
   const [target, setTarget] = useState(languages[1]?.code ?? "vi");
   const [provider, setProvider] = useState<"openai" | "google" | "local">("openai");
   const [engine, setEngine] = useState<EngineId>(engines.find((item) => item.configured)?.id ?? "openai");
@@ -41,7 +50,11 @@ export function VoiceSettingsForm({ initial, strings, ui, languages, engines }: 
     void fetch("/api/admin/voice-settings", { signal: controller.signal }).then(async (response) => {
       const parsed = voiceSettingsSchema.safeParse(await response.json());
       if (!response.ok || !parsed.success) throw new Error();
-      if (!controller.signal.aborted) setSettings((current) => ({ ...parsed.data, languages: {
+      if (!controller.signal.aborted) setSettings((current) => ({ ...parsed.data,
+        maxTurnMs: edited.current.has("maxTurnMs") ? current.maxTurnMs : parsed.data.maxTurnMs,
+        automaticLanguage: edited.current.has("") ? current.automaticLanguage : parsed.data.automaticLanguage,
+        noiseGateLevel: edited.current.has("noiseGateLevel") ? current.noiseGateLevel : parsed.data.noiseGateLevel,
+        languages: {
         ...parsed.data.languages,
         ...Object.fromEntries(Object.entries(current.languages ?? {}).filter(([code]) => edited.current.has(code))),
       } }));
@@ -50,7 +63,7 @@ export function VoiceSettingsForm({ initial, strings, ui, languages, engines }: 
     return () => controller.abort();
   }, [strings.security.failed]);
   useEffect(() => () => abort.current?.abort(), []);
-  const voice = useServerVoiceInput({ token: "", langs: [source], strings: ui.capture, closed: false,
+  const voice = useServerVoiceInput({ token: "", langs: testLangs, automaticLanguage: !source, strings: ui.capture, closed: false,
     autoSubmit: false, requestPermissionOnMount: false,
     test: { dry, provider, settings, onSegment: async (result) => {
       const controller = abort.current;
@@ -60,7 +73,7 @@ export function VoiceSettingsForm({ initial, strings, ui, languages, engines }: 
       if (dry || !result.body.trim()) return;
       try {
         const response = await fetch("/api/admin/voice-test", { method: "POST", headers: { "content-type": "application/json" },
-          signal: controller.signal, body: JSON.stringify({ text: result.body, from: source, to: target, engine }) });
+          signal: controller.signal, body: JSON.stringify({ text: result.body, from: result.lang ?? source, to: target, engine }) });
         const parsed = translationSchema.safeParse(await response.json());
         if (!response.ok || !parsed.success) throw new Error();
         if (!controller.signal.aborted) setResults((rows) => rows.map((row) => row.id === id ? { ...row, text: parsed.data.text, translationMs: parsed.data.elapsedMs } : row));
@@ -72,20 +85,36 @@ export function VoiceSettingsForm({ initial, strings, ui, languages, engines }: 
   return <section className="grid gap-4">
     {confirmation}
     <h2>{s.voice}</h2>
-    <label>{s.source}<select disabled={voice.state !== "idle"} value={source} onChange={(event) => setSource(event.target.value)}>{languages.map((lang) => <option key={lang.code} value={lang.code}>{lang.label}</option>)}</select></label>
+    <label>{s.source}<select disabled={voice.state !== "idle"} value={source} onChange={(event) => setSource(event.target.value)}><option value="">{s.automaticLanguage}</option>{languages.map((lang) => <option key={lang.code} value={lang.code}>{lang.label}</option>)}</select></label>
     <p className="text-muted">{s.perLanguage}</p>
     <label>{s.delay}
       <select value={selected.mode} onChange={(event) => changeSelected({ silenceMs: selected.silenceMs, mode: event.target.value === "manual" ? "manual" : "auto" })}>
         <option value="auto">{s.auto}</option><option value="manual">{s.manual}</option>
       </select>
     </label>
-    <label>{s.delay} · {silenceMsFor(settings, [source])} ms
-      <input aria-label={s.delay} type="range" min={300} max={5000} step={100} disabled={selected.mode === "auto"}
-        value={silenceMsFor(settings, [source])} onChange={(event) => changeSelected({ mode: selected.mode, silenceMs: Number(event.target.value) })} />
+    <label>{s.delay} · {delay} ms
+      <input className="accent-fg" aria-label={s.delay} type="range" min={300} max={5000} step={100} disabled={selected.mode === "auto"}
+        value={delay} onChange={(event) => changeSelected({ mode: selected.mode, silenceMs: Number(event.target.value) })} />
       <input aria-label={s.manual} type="number" min={300} max={5000} step={100} disabled={selected.mode === "auto"}
-        value={selected.mode === "auto" ? silenceMsFor(settings, [source]) : selected.silenceMs} onChange={(event) => changeSelected({ mode: selected.mode, silenceMs: event.currentTarget.valueAsNumber })} />
+        value={Number.isNaN(delay) ? "" : delay} onChange={(event) => changeSelected({ mode: selected.mode, silenceMs: event.currentTarget.valueAsNumber })} />
     </label>
-    <p className="text-muted">{s.note}</p><p className="text-muted">{s.nextTurn}</p>
+    <p className="text-muted">{s.note}</p>
+    <label>{s.noiseGate}
+      <input className="accent-fg" type="range" min={0} max={100} step={1} disabled={saving} aria-label={s.noiseGate} aria-describedby="voice-noise-gate-note"
+        value={Number.isNaN(settings.noiseGateLevel) ? 0 : settings.noiseGateLevel} onChange={(event) => changeNoiseGate(Number(event.target.value))} />
+      <input type="number" min={0} max={100} step={1} disabled={saving} aria-label={s.noiseGate} aria-describedby="voice-noise-gate-note"
+        value={Number.isNaN(settings.noiseGateLevel) ? "" : settings.noiseGateLevel} onChange={(event) => changeNoiseGate(event.currentTarget.valueAsNumber)} />
+    </label>
+    <p id="voice-noise-gate-note" className="text-muted">{s.noiseGateNote}</p>
+    <button className="justify-self-start" disabled={saving} onClick={() => changeNoiseGate(DEFAULT_VOICE_SETTINGS.noiseGateLevel)}>{s.resetNoiseGate}</button>
+    <label>{s.maxTurn}
+      <input type="number" min={5} max={30} step={1} disabled={saving} aria-describedby="voice-max-turn-note"
+        value={Number.isNaN(settings.maxTurnMs) ? "" : settings.maxTurnMs / 1000}
+        onChange={(event) => changeMaxTurn(event.currentTarget.valueAsNumber * 1000)} />
+    </label>
+    <p id="voice-max-turn-note" className="text-muted">{s.maxTurnNote}</p>
+    <button className="justify-self-start" disabled={saving} onClick={() => changeMaxTurn(DEFAULT_VOICE_SETTINGS.maxTurnMs)}>{s.resetMaxTurn}</button>
+    <p className="text-muted">{s.nextTurn}</p>
     <div className="flex flex-wrap gap-2">
       <button disabled={!loaded || saving || !voiceSettingsSchema.safeParse(settings).success} onClick={async () => {
         if (!loaded || saving) return;
@@ -97,7 +126,7 @@ export function VoiceSettingsForm({ initial, strings, ui, languages, engines }: 
         } catch { setNotice(strings.security.failed); }
         finally { setSaving(false); }
       }}>{saving ? strings.security.saving : strings.security.save}</button>
-      <button disabled={saving} onClick={() => changeSelected({ ...DEFAULT_VOICE_SETTINGS })}>{s.reset}</button>
+      <button disabled={saving} onClick={() => changeSelected({ mode: DEFAULT_VOICE_SETTINGS.mode, silenceMs: DEFAULT_VOICE_SETTINGS.silenceMs })}>{s.reset}</button>
     </div>
     <p role="status">{notice}</p>
     <fieldset disabled={voice.state !== "idle"} className="grid gap-3 border-t border-line pt-4">
@@ -123,7 +152,11 @@ export function VoiceSettingsForm({ initial, strings, ui, languages, engines }: 
       }}>{voice.state === "starting" ? ui.capture.starting : ui.capture.start}</button>
       <button disabled={voice.state === "idle" || voice.state === "stopping"} onClick={() => { abort.current?.abort(); voice.stop(false); }}>{voice.state === "stopping" ? ui.capture.stopping : ui.capture.stop}</button>
     </div>
-    <meter min={0} max={1} value={voice.meter?.level ?? 0} aria-label={ui.capture.level} className="w-full" />
+    <div className="relative">
+      <meter min={0} max={1} value={voice.meter?.level ?? 0} aria-label={ui.capture.level} className="w-full [&::-webkit-meter-bar]:border-line [&::-webkit-meter-bar]:bg-panel [&::-webkit-meter-optimum-value]:bg-fg [&::-moz-meter-bar]:bg-fg" />
+      {settings.noiseGateLevel > 0 && settings.noiseGateLevel <= 100 ? <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 border-l-2 border-fg" style={{ left: `${settings.noiseGateLevel}%` }} /> : null}
+    </div>
+    <p className="text-muted">{s.noiseGateMeter.replace("{level}", String(Math.round((voice.meter?.level ?? 0) * 100))).replace("{threshold}", String(Number.isNaN(settings.noiseGateLevel) ? "—" : settings.noiseGateLevel))}</p>
     <p role="status">{voice.state === "stopping" ? ui.capture.stopping : voice.phase === "idle" ? ui.capture.standby : s[voice.phase]}</p>
     {voice.meter?.noSignal ? <p>{ui.capture.noSignal}</p> : voice.meter?.clipping ? <p>{ui.capture.levelClipping}</p> : voice.meter?.tooQuiet ? <p>{ui.capture.levelTooQuiet}</p> : null}
     {voice.error ? <p role="alert">{voice.error}</p> : null}
