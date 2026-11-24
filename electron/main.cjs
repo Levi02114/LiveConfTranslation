@@ -505,7 +505,7 @@ function openInBrowser(value) {
 }
 
 function cloudflaredPath() {
-  if (app.isPackaged) return path.join(process.resourcesPath, "cloudflared.exe");
+  if (app.isPackaged) return path.join(process.resourcesPath, process.platform === "win32" ? "cloudflared.exe" : "cloudflared");
   const local = path.join(app.getAppPath(), ".tmp", "cloudflared");
   return existsSync(local) ? local : "cloudflared";
 }

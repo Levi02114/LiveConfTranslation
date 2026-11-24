@@ -13,7 +13,8 @@
     "dist:win": "npm run build && npm run prepare:cloudflared && electron-builder --win nsis portable --x64",
     "lint": "eslint && oxlint",
     "typecheck": "tsc --noEmit",
-    "postinstall": "node scripts/prepare-vad.mjs"
+    "postinstall": "node scripts/prepare-vad.mjs",
+    "dist:mac": "npm run build && npm run prepare:cloudflared -- --mac && electron-builder --mac dir --arm64 --x64 && node scripts/zip-mac.mjs"
   },
   "dependencies": {
     "@fontsource/unifont": "^5.3.0",
@@ -21,14 +22,14 @@
     "@ricky0123/vad-web": "^0.0.30",
     "@zoom/appssdk": "0.16.41",
     "fasttext.wasm": "^1.0.1",
-    "next": "16.3.4",
+    "next": "16.4.6",
     "pdfkit": "^0.20.1",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
-    "ws": "^8.21.3",
-    "zod": "^4.4.3"
+    "ws": "^8.23.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@oxlint/plugins": "1.79.0",
@@ -39,11 +40,11 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/ws": "^8.18.1",
-    "electron": "43.4.0",
+    "electron": "43.8.12",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "eslint": "^9",
-    "eslint-config-next": "16.3.4",
+    "eslint-config-next": "16.4.6",
     "oxlint": "1.79.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.12",
@@ -78,20 +79,47 @@
       "!.env*",
       "!.tmp/**/*"
     ],
-    "extraResources": [
-      {
-        "from": ".tmp/cloudflared-windows-amd64.exe",
-        "to": "cloudflared.exe"
-      },
-      {
-        "from": ".tmp/cloudflared-LICENSE",
-        "to": "cloudflared-LICENSE.txt"
-      }
-    ],
     "win": {
       "target": [
         "nsis",
         "portable"
+      ],
+      "extraResources": [
+        {
+          "from": ".tmp/cloudflared-windows-amd64.exe",
+          "to": "cloudflared.exe"
+        },
+        {
+          "from": ".tmp/cloudflared-LICENSE",
+          "to": "cloudflared-LICENSE.txt"
+        }
+      ]
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "hardenedRuntime": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "세션 음성을 실시간 전사하려면 마이크가 필요합니다. / Microphone access is used for live session transcription."
+      },
+      "extraResources": [
+        {
+          "from": ".tmp/cloudflared-darwin-${arch}",
+          "to": "cloudflared"
+        },
+        {
+          "from": ".tmp/cloudflared-LICENSE",
+          "to": "cloudflared-LICENSE.txt"
+        }
       ]
     },
     "nsis": {
@@ -107,6 +135,14 @@
         "th_TH"
       ],
       "include": "electron/installer.nsh"
+    },
+    "extraMetadata": {
+      "version": "0.9.29.1"
+    }
+  },
+  "overrides": {
+    "google-gax": {
+      "rimraf": "6.1.4"
     }
   }
 }

@@ -6,7 +6,6 @@ import { getStrings } from "@/lib/i18n";
 import type { UiStrings } from "@/lib/i18n-builtin";
 import { getLanguage, textDirection, type Language } from "@/lib/languages";
 import { formatClock } from "@/lib/log-format";
-import { compressedTextResponse } from "@/lib/http-response";
 import {
   getCombinedSince,
   getMeeting,
@@ -101,18 +100,15 @@ export async function GET(request: Request, { params }: Params) {
 <button id="latest" class="scroll-latest" type="button" aria-label="${html(strings.status.scrollToLatest)}" title="${html(strings.status.scrollToLatest)}"><span aria-hidden="true">↓</span><span data-unread hidden aria-label="${html(strings.status.newMessages)}" aria-live="polite">0</span></button>
 <script type="module">import {createScrollFollow} from '/scroll-follow.js';const DATA=${data};${CLIENT}</script>
 </body></html>`;
-  return compressedTextResponse(
-    request,
-    body,
-    {
-      headers: {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "private, no-store",
-        "referrer-policy": "no-referrer",
-        "x-content-type-options": "nosniff",
-      },
+  // Next 16.4+ 가 라우트 핸들러 응답도 gzip 으로 압축한다. 직접 압축하면 이중 압축돼 깨진다.
+  return new Response(body, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "private, no-store",
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
     },
-  );
+  });
 }
 
 function compact(entry: CombinedEntry) {

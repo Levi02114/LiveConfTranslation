@@ -10,6 +10,9 @@
 
 ![세션 생성 화면](docs/images/app-admin-create-session.png)
 
+**v0.9.29.1**은 v0.9.29에 보안 패치(Next.js 16.4.6, Electron 43.8.12 등)만 적용한 유지보수판입니다.
+기능은 v0.9.29와 같습니다. 새 기능이 필요하면 [최신 릴리스](https://github.com/Levi02114/LiveConfTranslation/releases/latest)를 쓰세요.
+
 **v0.9.29**에는 전사 구간·자동 감지 대기시간·잡음 무시 설정과 OpenAI 번역 모델 선택이
 포함됩니다. Zoom 자동 세션·기록·번역 채팅 연동은 **개발 검증 중인 선택 기능**이며,
 실제 Windows의 Zoom 회의·권한·유료 API 동작은 테스트 계정에서 별도로 확인해야 합니다.
@@ -116,10 +119,13 @@ Windows 설치본은 Node.js나 개발 도구를 따로 설치하지 않아도 �
 
 ### 1. 설치 또는 포터블 실행
 
-[최신 릴리스 페이지](https://github.com/Levi02114/LiveConfTranslation/releases/latest)에서 다음 중
+[v0.9.29.1 릴리스 페이지](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.29.1)에서 다음 중
 하나를 내려받습니다.
 
-현재 배포 버전: [v0.9.29](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.29)
+이 브랜치의 배포 버전: [v0.9.29.1](https://github.com/Levi02114/LiveConfTranslation/releases/tag/v0.9.29.1) (v0.9.29 + 보안 패치)
+
+v0.9.29.1은 v0.9.29의 Next.js 16.3.4 취약점(인증 없는 원격 코드 실행 등)을 고친 Next.js 16.4.6과
+Electron 43.8.12, zod·ws 등 의존성 업데이트만 담았습니다. 기능과 화면은 v0.9.29와 같습니다.
 
 v0.9.29는 최대 연속 발화 시간(5~30초), 언어 자동 감지의 독립된 무음 대기시간,
 잡음 무시 수준(0~100%)을 앱 설정에 추가했습니다. OpenAI 모델 목록의 주기적 갱신과
@@ -128,9 +134,11 @@ v0.9.29는 최대 연속 발화 시간(5~30초), 언어 자동 감지의 독립�
 v0.9.25에서 Electron 앱 설정에 HTTPS/localhost 안내가 뜨며 터널 설정이 비활성화되면
 v0.9.26 이상으로 업데이트하세요. 서버의 바인딩 주소와 실제 로컬 접속 주소를 구분하도록 수정했습니다.
 
-- [Windows 설치형](https://github.com/Levi02114/LiveConfTranslation/releases/download/v0.9.29/Live.Conference.Translation.Setup.0.9.29.exe): 로컬 AI를 선택적으로 설치할 수 있는 버전
-- [Windows 포터블](https://github.com/Levi02114/LiveConfTranslation/releases/download/v0.9.29/Live.Conference.Translation.0.9.29.exe): 설치 없이 실행하는 온라인 엔진 전용 버전
-- [SHA-256 검증 파일](https://github.com/Levi02114/LiveConfTranslation/releases/download/v0.9.29/SHA256SUMS.txt)
+- [Windows 설치형](https://github.com/Levi02114/LiveConfTranslation/releases/download/v0.9.29.1/Live.Conference.Translation.Setup.0.9.29.1.exe): 로컬 AI를 선택적으로 설치할 수 있는 버전
+- [Windows 포터블](https://github.com/Levi02114/LiveConfTranslation/releases/download/v0.9.29.1/Live.Conference.Translation.0.9.29.1.exe): 설치 없이 실행하는 온라인 엔진 전용 버전
+- [macOS Apple Silicon 시험판](https://github.com/Levi02114/LiveConfTranslation/releases/download/v0.9.29.1/LiveConfTranslation-0.9.29.1-mac-arm64.zip) · [macOS Intel 시험판](https://github.com/Levi02114/LiveConfTranslation/releases/download/v0.9.29.1/LiveConfTranslation-0.9.29.1-mac-x64.zip): 서명하지 않은 zip(마이크 입력만). 풀어서 응용 프로그램 폴더로 옮긴 뒤 터미널에서
+  `xattr -cr "/Applications/Live Conference Translation.app"`, `codesign --force --deep --sign - "/Applications/Live Conference Translation.app"`를 실행하고 엽니다.
+- [SHA-256 검증 파일](https://github.com/Levi02114/LiveConfTranslation/releases/download/v0.9.29.1/SHA256SUMS.txt)
 
 둘 중 하나만 사용하면 됩니다. 한 컴퓨터에서 두 버전을 동시에 실행하지 마세요.
 현재 배포본은 상용 코드 서명 인증서로 서명하지 않았으므로 Windows SmartScreen 경고가
