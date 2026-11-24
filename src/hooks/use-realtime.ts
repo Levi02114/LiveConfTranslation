@@ -32,15 +32,19 @@ export function shouldSendRealtimeMessage(
 export function useRealtime(
   query: string,
   onMessage: (message: ServerMessage) => void,
+  /** 연결이 (다시) 열릴 때마다 부른다. 끊긴 동안의 기록을 다시 받는 데 쓴다. */
+  onOpen?: () => void | Promise<void>,
 ): RealtimeConnection {
   const [state, setState] = useState<ConnectionState>("connecting");
   const socketRef = useRef<WebSocket | null>(null);
 
   // 콜백이 매 렌더 바뀌어도 소켓을 다시 열지 않도록 ref 로 우회한다.
   const handlerRef = useRef(onMessage);
+  const openRef = useRef(onOpen);
   useEffect(() => {
     handlerRef.current = onMessage;
-  }, [onMessage]);
+    openRef.current = onOpen;
+  }, [onMessage, onOpen]);
 
   useEffect(() => {
     let disposed = false;
@@ -58,6 +62,7 @@ export function useRealtime(
         if (disposed) return;
         retry = 0;
         setState("open");
+        void openRef.current?.();
       };
 
       socket.onmessage = (event) => {

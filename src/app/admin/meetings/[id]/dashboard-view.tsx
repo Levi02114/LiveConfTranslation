@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { z } from "zod";
 
 import { AppearanceControls } from "@/components/appearance-controls";
+import { useConfirmation } from "@/components/confirm-dialog";
 import { generateQr, QrDialog, type QrImage } from "@/components/qr-dialog";
 import { copyText } from "@/lib/clipboard";
 import { useSetAdminLang } from "@/hooks/use-admin-lang";
@@ -47,6 +48,7 @@ export function DashboardView({
   strings,
   ui,
   displayLanguages,
+  inputGuideToken,
 }: {
   meeting: Meeting;
   languages: Language[];
@@ -63,9 +65,11 @@ export function DashboardView({
   strings: AdminStrings;
   ui: UiStrings;
   displayLanguages: Language[];
+  inputGuideToken: string | null;
 }) {
   const [locallyClosed, setClosed] = useState(meeting.status === "closed");
   const connections = useConnectionStats();
+  const { confirm, confirmation } = useConfirmation({ confirm: ui.speaker.confirm, cancel: ui.message.cancel });
   const closed = locallyClosed || connections.sessions.get(meeting.id)?.status === "closed" ||
     (connections.at !== null && !connections.sessions.has(meeting.id));
   const [closedAt, setClosedAt] = useState<number | null>(meeting.closedAt);
@@ -123,6 +127,8 @@ export function DashboardView({
 
   const close = async () => {
     if (closing) return;
+    // 종료는 되돌릴 수 없다. 목록 화면과 같은 확인을 거친다.
+    if (!await confirm(strings.list.closeConfirm.replace("{title}", meeting.title))) return;
     setClosing(true);
     setCloseError(null);
     try {
@@ -220,6 +226,7 @@ export function DashboardView({
       <AdminBusyOverlay
         label={closing ? strings.list.closingSession : navigating ? strings.list.loading : null}
       />
+      {confirmation}
       <AppGuide stage="dashboard" strings={strings} ui={ui} />
       <AppearanceControls
         leading={<button className="app-settings-launcher" aria-haspopup="dialog" onClick={() => window.dispatchEvent(new Event("lct-open-settings"))}>⚙ {strings.appSettings.title}</button>}
@@ -464,11 +471,11 @@ export function DashboardView({
             />
           </div>
         ) : null}
-        {combined && hasInput ? (
+        {inputGuideToken && hasInput ? (
           <div className="grid grid-cols-1 gap-3 border-b border-line py-4 lg:grid-cols-[110px_1fr] lg:items-center lg:gap-x-5 lg:py-3.5">
             <div className="text-[15px]">{strings.dashboard.inputGuide}</div>
             <UrlCell
-              url={`${origin}/join/input/${combined.token}`}
+              url={`${origin}/join/input/${inputGuideToken}`}
               copied={copied?.key === "input-guide" ? copied : null}
               onCopy={(url) => void copy("input-guide", url)}
               className={copyBtn}

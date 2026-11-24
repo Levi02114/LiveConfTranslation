@@ -35,6 +35,9 @@ export function GlossaryDialog({
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<GlossaryRow[]>([]);
   const [busy, setBusy] = useState(false);
+  // 저장은 목록 전체를 교체하므로, 조회가 성공하기 전에는 빈 목록으로 덮어쓰지 않게 막는다.
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const orderedLanguages = [
@@ -45,6 +48,8 @@ export function GlossaryDialog({
   const load = async () => {
     setError(null);
     setNotice(null);
+    setLoaded(false);
+    setLoading(true);
     try {
       const response = await fetch("/api/admin/glossary");
       const payload = await parseJsonResponse(response, glossaryResponseSchema);
@@ -55,8 +60,11 @@ export function GlossaryDialog({
           clientId: entry.id,
         })),
       );
+      setLoaded(true);
     } catch {
-      setError(strings.saveFailed);
+      setError(strings.loadFailed);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -118,7 +126,7 @@ export function GlossaryDialog({
   };
 
   const save = async () => {
-    if (busy) return;
+    if (busy || !loaded) return;
     if (rows.some((row) => languages.some((language) => !row.terms[language.code]?.trim()))) {
       setError(strings.required);
       return;
@@ -191,7 +199,8 @@ export function GlossaryDialog({
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
-                className="cursor-pointer border border-line px-2 py-1 font-mono text-[11px] hover:border-fg hover:bg-fg hover:text-bg"
+                disabled={loading}
+                className="cursor-pointer disabled:cursor-default disabled:opacity-30 border border-line px-2 py-1 font-mono text-[11px] hover:border-fg hover:bg-fg hover:text-bg"
               >
                 {strings.upload}
               </button>
@@ -205,9 +214,10 @@ export function GlossaryDialog({
               <button
                 type="button"
                 onClick={add}
+                disabled={loading}
                 title={strings.add}
                 aria-label={strings.add}
-                className="grid h-7 w-7 cursor-pointer place-items-center border border-line font-mono text-[16px] hover:border-fg hover:bg-fg hover:text-bg"
+                className="disabled:cursor-default disabled:opacity-30 grid h-7 w-7 cursor-pointer place-items-center border border-line font-mono text-[16px] hover:border-fg hover:bg-fg hover:text-bg"
               >
                 +
               </button>
@@ -230,7 +240,7 @@ export function GlossaryDialog({
           <div className="mt-4 max-h-[56vh] overflow-y-auto">
             {rows.length === 0 ? (
               <p className="border-t border-line py-7 font-mono text-[12px] text-muted">
-                {strings.empty}
+                {loading ? strings.loading : strings.empty}
               </p>
             ) : (
               rows.map((row) => (
@@ -280,7 +290,7 @@ export function GlossaryDialog({
             <button
               type="button"
               onClick={() => void save()}
-              disabled={busy}
+              disabled={busy || !loaded}
               className="cursor-pointer border border-fg px-4 py-1.5 font-mono text-[12px] transition-colors hover:bg-fg hover:text-bg disabled:cursor-default disabled:opacity-30"
             >
               {busy ? strings.saving : strings.save}

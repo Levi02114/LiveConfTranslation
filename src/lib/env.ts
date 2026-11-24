@@ -52,6 +52,8 @@ export async function registerTranslationWorker(): Promise<void> {
   if (process.env.NEXT_RUNTIME === "nodejs" && globalThis.__liveConfServerStarted) {
     const { startTranslationWorker } = await import("@/lib/translation-worker");
     startTranslationWorker();
+    const { scheduleUiStringAutofill } = await import("@/lib/ui-autofill");
+    scheduleUiStringAutofill();
   }
 }
 

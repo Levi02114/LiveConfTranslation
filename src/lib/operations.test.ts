@@ -11,6 +11,7 @@ test("shared connection snapshots, batched admin updates, desktop links and edit
   const directory = mkdtempSync(pathJoin(tmpdir(), "lct-operations-"));
   const previous = process.env.DATABASE_PATH;
   process.env.DATABASE_PATH = pathJoin(directory, "test.db");
+  process.env.SESSION_SECRET ??= "test-session-secret-for-input-guide-links";
   const repo = await import("./repo");
   const { getDb } = await import("./db");
   const { desktopOperations, sessionConnections } = await import("./desktop-operations");

@@ -15,6 +15,7 @@ import {
 } from "@/lib/repo";
 import { cleanTranscript } from "@/lib/transcript-clean";
 import { rewriteTranscript } from "@/lib/transcript-rewrite";
+import { shareToZoomChat } from "@/lib/zoom";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -25,6 +26,8 @@ const schema = z.object({
   lang: z.string().trim().min(1).max(35).optional(),
   speakerName: z.string().trim().min(1).max(40).regex(/^[^\r\n]+$/).optional(),
   rewrite: z.boolean().optional(),
+  /** 참가자가 입력 화면에서 고른 Zoom 채팅 전송. */
+  zoomChat: z.boolean().optional(),
 });
 
 export async function POST(request: Request, { params }: Params) {
@@ -111,7 +114,8 @@ export async function POST(request: Request, { params }: Params) {
     }).catch((error) => console.error("[translate] AI 전사 번역 오류", error));
   }
 
-  return Response.json({ message: result.message, inserted: result.inserted }, { status: result.inserted ? 201 : 200 });
+  const zoomChat = parsed.data.zoomChat && result.inserted ? shareToZoomChat(result.message) : undefined;
+  return Response.json({ message: result.message, inserted: result.inserted, zoomChat }, { status: result.inserted ? 201 : 200 });
   } catch (error) {
     const response = inputErrorResponse(error);
     if (response) return response;

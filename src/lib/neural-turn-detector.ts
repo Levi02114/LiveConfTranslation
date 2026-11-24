@@ -10,6 +10,7 @@
  * **커밋 타이밍만** 결정한다.
  */
 
+import { SOFT_PAUSE_MS, softCutAfterMs } from "./audio-turn-detector";
 import { DEFAULT_VOICE_SETTINGS, silenceMsFor } from "./voice-settings";
 
 // ponytail: 현장 마이크 편차가 크므로 오탐이 보이면 이 값들만 조정한다.
@@ -45,10 +46,15 @@ export class SpeechTurnCommitter {
   private speechActive = false;
   private speechSinceCommit = false;
   private destroyed = false;
+  private turnStartedAt = 0;
+  private turnLimitMs = MAX_TURN_MS;
+  private quietSince: number | null = null;
 
   constructor(
-    private readonly onCommit: () => void,
+    /** `forced` 는 최대 발화 시간에 강제로 끊었다는 뜻이다(다음 턴에 음성을 겹친다). */
+    private readonly onCommit: (forced: boolean) => void,
     private readonly nextMaxTurnMs: () => number = () => MAX_TURN_MS,
+    private readonly now: () => number = () => Date.now(),
   ) {}
 
   hasSpeech(): boolean { return this.speechActive || this.speechSinceCommit; }
@@ -57,12 +63,23 @@ export class SpeechTurnCommitter {
     if (this.destroyed) return;
     this.speechActive = true;
     this.speechSinceCommit = true;
+    this.quietSince = null;
     this.scheduleMaxTurn();
   }
 
   handleSpeechFrame(probability: number): void {
-    if (this.destroyed) return;
-    if (this.speechActive && probability >= 0.35) this.speechSinceCommit = true;
+    if (this.destroyed || !this.speechActive) return;
+    if (probability >= 0.35) this.speechSinceCommit = true;
+    const now = this.now();
+    if (probability < 0.35) this.quietSince ??= now;
+    else if (probability >= 0.5) this.quietSince = null;
+    if (this.speechSinceCommit && this.quietSince !== null && now - this.quietSince >= SOFT_PAUSE_MS &&
+      now - this.turnStartedAt >= softCutAfterMs(this.turnLimitMs)) {
+      this.speechSinceCommit = false;
+      this.quietSince = null;
+      this.onCommit(false);
+      this.scheduleMaxTurn();
+    }
   }
 
   handleSpeechEnd(): void {
@@ -70,7 +87,7 @@ export class SpeechTurnCommitter {
     if (this.maxTurnTimer) clearTimeout(this.maxTurnTimer);
     this.maxTurnTimer = null;
     this.speechActive = false;
-    if (this.speechSinceCommit) this.onCommit();
+    if (this.speechSinceCommit) this.onCommit(false);
     this.speechSinceCommit = false;
   }
 
@@ -92,16 +109,18 @@ export class SpeechTurnCommitter {
 
   private scheduleMaxTurn(): void {
     if (this.maxTurnTimer) clearTimeout(this.maxTurnTimer);
+    this.turnStartedAt = this.now();
+    this.turnLimitMs = this.nextMaxTurnMs();
     this.maxTurnTimer = setTimeout(() => {
       this.maxTurnTimer = null;
       if (!this.speechActive) return;
       if (this.speechSinceCommit) {
         this.speechSinceCommit = false;
-        this.onCommit();
+        this.onCommit(true);
       }
       // 현재 구간은 유지하고 다음 구간부터 새 최대 시간을 적용한다.
       this.scheduleMaxTurn();
-    }, this.nextMaxTurnMs());
+    }, this.turnLimitMs);
   }
 }
 
@@ -110,7 +129,7 @@ export class NeuralTurnDetector {
   private readonly turns: SpeechTurnCommitter;
   private currentPhase: "idle" | "speech" | "silence" = "idle";
 
-  private constructor(onCommit: () => void, nextMaxTurnMs?: () => number) {
+  private constructor(onCommit: (forced: boolean) => void, nextMaxTurnMs?: () => number) {
     this.turns = new SpeechTurnCommitter(onCommit, nextMaxTurnMs);
   }
 
@@ -123,7 +142,7 @@ export class NeuralTurnDetector {
    */
   static async create(
     stream: MediaStream,
-    onCommit: () => void,
+    onCommit: (forced: boolean) => void,
     options: { redemptionMs?: number; nextSilenceMs?: () => number; nextMaxTurnMs?: () => number; minRms?: () => number; audioContext?: AudioContext } = {},
   ): Promise<NeuralTurnDetector | null> {
     const detector = new NeuralTurnDetector(onCommit, options.nextMaxTurnMs);

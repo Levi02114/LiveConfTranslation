@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import { useServerVoiceInput } from "@/hooks/use-combined-voice-input";
+import { SYSTEM_AUDIO_DEVICE, useServerVoiceInput } from "@/hooks/use-combined-voice-input";
 import type { AdminStrings, UiStrings } from "@/lib/i18n-builtin";
 import type { Language } from "@/lib/languages";
 import { DEFAULT_VOICE_SETTINGS, silenceMsFor, voiceSettingsSchema, type VoiceSettings } from "@/lib/voice-settings";
 import { engineIdSchema, type EngineId } from "@/lib/translate/types";
 import { transcriptionProviderSchema } from "@/lib/repo-schema";
 import { useConfirmation } from "@/components/confirm-dialog";
+import { voiceLevelHint } from "@/components/voice-level-meter";
 
 const translationSchema = z.object({ text: z.string(), elapsedMs: z.number() });
 type Result = { id: number; body: string; elapsedMs: number; silenceMs: number; text?: string; translationMs?: number; error?: boolean };
@@ -82,6 +83,7 @@ export function VoiceSettingsForm({ initial, strings, ui, languages, engines }: 
       }
     } },
   });
+  const levelHint = voice.meter ? voiceLevelHint(voice.meter, ui.capture, voice.deviceId === SYSTEM_AUDIO_DEVICE) : null;
   return <section className="grid gap-4">
     {confirmation}
     <h2>{s.voice}</h2>
@@ -133,6 +135,7 @@ export function VoiceSettingsForm({ initial, strings, ui, languages, engines }: 
       <label>{ui.capture.microphone}<select value={voice.deviceId} onChange={(event) => voice.setDeviceId(event.target.value)}>
         <option value="">{ui.capture.microphone}</option>
         {voice.devices.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `${ui.capture.microphone} ${index + 1}`}</option>)}
+        {voice.systemAudio ? <option value={SYSTEM_AUDIO_DEVICE}>{ui.capture.systemAudio}</option> : null}
       </select></label>
       <label><input type="radio" name="voice-test-mode" checked={dry} onChange={() => setDry(true)} /> {s.dry}</label>
       <label><input type="radio" name="voice-test-mode" checked={!dry} onChange={() => setDry(false)} /> {s.paid}</label>
@@ -158,7 +161,7 @@ export function VoiceSettingsForm({ initial, strings, ui, languages, engines }: 
     </div>
     <p className="text-muted">{s.noiseGateMeter.replace("{level}", String(Math.round((voice.meter?.level ?? 0) * 100))).replace("{threshold}", String(Number.isNaN(settings.noiseGateLevel) ? "—" : settings.noiseGateLevel))}</p>
     <p role="status">{voice.state === "stopping" ? ui.capture.stopping : voice.phase === "idle" ? ui.capture.standby : s[voice.phase]}</p>
-    {voice.meter?.noSignal ? <p>{ui.capture.noSignal}</p> : voice.meter?.clipping ? <p>{ui.capture.levelClipping}</p> : voice.meter?.tooQuiet ? <p>{ui.capture.levelTooQuiet}</p> : null}
+    {levelHint ? <p>{levelHint}</p> : null}
     {voice.error ? <p role="alert">{voice.error}</p> : null}
     {voice.partial ? <p>{voice.partial}</p> : null}
     <ol className="grid gap-3" aria-live="polite">{results.map((row) => <li key={row.id} className="border border-line p-3">

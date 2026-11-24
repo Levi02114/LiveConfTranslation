@@ -32,6 +32,9 @@ test("후보에 없는 언어는 null", () => {
 
 test("혼합 텍스트는 많이 나온 문자를 따른다", () => {
   assert.equal(scriptLanguageOf("회의실 번호는 302호입니다", CANDIDATES), "ko");
+  assert.equal(scriptLanguageOf("회의실 Zoom 링크입니다", CANDIDATES), "ko");
+  assert.equal(scriptLanguageOf("Từ '감사' nghĩa là cảm ơn", CANDIDATES), null);
+  assert.equal(scriptLanguageOf("Mr. 김 at Samsung", CANDIDATES), null);
 });
 
 test("hasScriptEvidence: 문자 증거 유무와 검증 불가를 구분한다", () => {

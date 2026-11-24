@@ -22,6 +22,8 @@ export function useVoiceInput({
   requestPermissionOnMount?: boolean;
   lang?: LanguageCode;
   forceServerTransport?: boolean;
+  zoomChat?: boolean;
+  onZoomChatUnavailable?: () => void;
 }) {
   return useServerVoiceInput({ ...input, langs: lang ? [lang] : [], enabled: true });
 }

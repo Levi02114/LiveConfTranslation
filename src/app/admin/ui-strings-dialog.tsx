@@ -62,13 +62,21 @@ export function UiStringsDialog({
   const [engine, setEngine] = useState<EngineId>(defaultEngine);
   const [busy, setBusy] = useState<"save" | "retranslate" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 응답이 늦게 와도 지금 고른 언어의 편집칸만 바꾼다. 다른 언어 문구가 섞여 저장되는 것을 막는다.
+  const langRef = useRef(lang);
+  const loadSeq = useRef(0);
+  const isCurrent = (target: LanguageCode) => langRef.current === target;
 
   const load = async (target: LanguageCode) => {
+    const seq = ++loadSeq.current;
+    langRef.current = target;
     setError(null);
     setDrafts({});
+    setRows([]);
     try {
       const response = await fetch(`/api/admin/ui-strings?lang=${encodeURIComponent(target)}`);
       const payload = await parseJsonResponse(response, stringsResponseSchema);
+      if (seq !== loadSeq.current) return;
 
       if (!response.ok || !payload) {
         setError(strings.saveFailed);
@@ -76,7 +84,7 @@ export function UiStringsDialog({
       }
       setRows(payload.entries ?? []);
     } catch {
-      setError(strings.saveFailed);
+      if (seq === loadSeq.current) setError(strings.saveFailed);
     }
   };
 
@@ -97,6 +105,7 @@ export function UiStringsDialog({
       return;
     }
 
+    const target = lang;
     setBusy("save");
     setError(null);
     try {
@@ -104,11 +113,12 @@ export function UiStringsDialog({
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          lang,
+          lang: target,
           entries: changed.map(([key, text]) => ({ key, text })),
         }),
       });
       const payload = await parseJsonResponse(response, stringsResponseSchema);
+      if (!isCurrent(target)) return;
 
       if (!response.ok || !payload) {
         setError(strings.saveFailed);
@@ -128,13 +138,16 @@ export function UiStringsDialog({
   const revert = async (key: string) => {
     if (busy) return;
 
+    const target = lang;
+    setBusy("save");
     setError(null);
     try {
       const response = await fetch(
-        `/api/admin/ui-strings?lang=${encodeURIComponent(lang)}&key=${encodeURIComponent(key)}`,
+        `/api/admin/ui-strings?lang=${encodeURIComponent(target)}&key=${encodeURIComponent(key)}`,
         { method: "DELETE" },
       );
       const payload = await parseJsonResponse(response, stringsResponseSchema);
+      if (!isCurrent(target)) return;
 
       if (!response.ok || !payload) {
         setError(strings.saveFailed);
@@ -149,21 +162,25 @@ export function UiStringsDialog({
       onSaved();
     } catch {
       setError(strings.saveFailed);
+    } finally {
+      setBusy(null);
     }
   };
 
   const retranslate = async () => {
     if (busy) return;
 
+    const target = lang;
     setBusy("retranslate");
     setError(null);
     try {
       const response = await fetch("/api/admin/ui-strings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ lang, engine }),
+        body: JSON.stringify({ lang: target, engine }),
       });
       const payload = await parseJsonResponse(response, stringsResponseSchema);
+      if (!isCurrent(target)) return;
 
       if (!response.ok || !payload) {
         setError(strings.saveFailed);
@@ -224,11 +241,12 @@ export function UiStringsDialog({
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <select
               value={lang}
+              disabled={busy !== null}
               onChange={(event) => {
                 setLang(event.target.value);
                 void load(event.target.value);
               }}
-              className="border border-line bg-bg px-2.5 py-1.5 font-mono text-[13px] outline-none"
+              className="disabled:opacity-30 border border-line bg-bg px-2.5 py-1.5 font-mono text-[13px] outline-none"
             >
               {languages.map((item) => (
                 <option key={item.code} value={item.code}>

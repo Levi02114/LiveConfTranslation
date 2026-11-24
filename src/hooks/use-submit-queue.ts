@@ -9,6 +9,8 @@ export type MessagePayload = {
   ingestKey: string;
   lang?: string;
   speakerName?: string;
+  /** 참가자가 고른 Zoom 채팅 전송. */
+  zoomChat?: boolean;
 };
 
 const RETRY_DELAYS_MS = [0, 750, 2_000] as const;

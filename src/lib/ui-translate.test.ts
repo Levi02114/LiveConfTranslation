@@ -52,3 +52,48 @@ test("credit failures preserve registered languages, stop repeated requests and 
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("startup autofill translates only missing UI strings for added languages and keeps manual text", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "lct-ui-autofill-"));
+  const previousDatabase = process.env.DATABASE_PATH;
+  const previousSecret = process.env.SESSION_SECRET;
+  process.env.DATABASE_PATH = join(directory, "test.db");
+  process.env.SESSION_SECRET = "fake-ui-autofill-secret";
+  const originalFetch = globalThis.fetch;
+  const requested: string[] = [];
+  globalThis.fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    const items: string[] = JSON.parse(body.messages.at(-1).content).items;
+    requested.push(...items);
+    return Response.json({ choices: [{ message: { content: JSON.stringify({ items: items.map((text) => `EN ${text}`) }) } }] });
+  };
+  const repo = await import("./repo");
+  const { getDb } = await import("./db");
+  const { encryptSecret } = await import("./crypto");
+  const { getStrings, sourceEntries } = await import("./i18n");
+  const { fillMissingUiStrings } = await import("./ui-autofill");
+  try {
+    repo.upsertEngineSecret({ engine: "openai", secret: encryptSecret("fake-test-key"), hint: "fake" });
+    repo.addLanguage("en");
+    // 업데이트 전 상태: 새 문구(ui.zoomChat.*)만 빠져 있고, 하나는 사람이 고쳐 둔 문구다.
+    const old = sourceEntries().filter((entry) => entry.source.trim() && !entry.key.startsWith("ui.zoomChat."));
+    repo.upsertUiStrings("en", old.map((entry) => ({ key: entry.key, text: `old ${entry.key}`, origin: "machine" as const })));
+    repo.upsertUiStrings("en", [{ key: "ui.zoomChat.label", text: "Zoom chat (manual)", origin: "manual" }]);
+    await fillMissingUiStrings();
+    const chat = getStrings("en").zoomChat;
+    assert.equal(chat.label, "Zoom chat (manual)", "manual text is never overwritten");
+    assert.equal(chat.off, `EN ${getStrings("ko").zoomChat.off}`);
+    assert.equal(requested.length, 4, "only the missing strings are sent for translation");
+    assert.equal(getStrings("en").capture.start, "old ui.capture.start", "existing machine text stays");
+    requested.length = 0;
+    await fillMissingUiStrings();
+    assert.equal(requested.length, 0, "nothing is requested once complete");
+  } finally {
+    globalThis.fetch = originalFetch;
+    getDb().close();
+    globalThis.__meetingDb = undefined;
+    if (previousDatabase === undefined) delete process.env.DATABASE_PATH; else process.env.DATABASE_PATH = previousDatabase;
+    if (previousSecret === undefined) delete process.env.SESSION_SECRET; else process.env.SESSION_SECRET = previousSecret;
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

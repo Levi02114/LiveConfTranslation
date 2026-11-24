@@ -1,16 +1,16 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { randomBytes } = require("node:crypto");
 const { spawn } = require("node:child_process");
-const { existsSync, mkdirSync, readFileSync, writeFileSync } = require("node:fs");
+const { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } = require("node:fs");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const { z } = require("zod");
-const { microphoneAllowed } = require("./permissions.cjs");
+const { displayCaptureRequested, microphoneAllowed, systemAudioAllowed } = require("./permissions.cjs");
 const { initializeDiagnostics, log, errorFields } = require("./diagnostics.cjs");
 const { createTelegramBot } = require("./telegram-bot.cjs");
 
-const { app, BrowserWindow, clipboard, dialog, Menu, net, safeStorage, session, shell } = require("electron");
+const { app, BrowserWindow, clipboard, desktopCapturer, dialog, Menu, net, safeStorage, session, shell } = require("electron");
 
 const {
   extractQuickTunnelUrl,
@@ -177,7 +177,15 @@ function loadDesktopSettings() {
   const userData = app.getPath("userData");
   desktopSettingsPath = path.join(userData, "desktop-settings.json");
   mkdirSync(userData, { recursive: true });
-  if (existsSync(desktopSettingsPath)) desktopSettings = JSON.parse(readFileSync(desktopSettingsPath, "utf8"));
+  if (existsSync(desktopSettingsPath)) {
+    // 쓰는 도중 전원이 꺼져 파일이 깨졌으면 직전 정상본으로 연다. 비밀번호·세션 시크릿을 잃지 않게 한다.
+    try { desktopSettings = JSON.parse(readFileSync(desktopSettingsPath, "utf8")); }
+    catch (error) {
+      if (!existsSync(`${desktopSettingsPath}.bak`)) throw error;
+      desktopSettings = JSON.parse(readFileSync(`${desktopSettingsPath}.bak`, "utf8"));
+      log("warn", "electron.settings-restored", {});
+    }
+  }
   if (app.isPackaged) {
     const localAi = installedLocalAi(process.resourcesPath);
     if (localAi) desktopSettings = { ...desktopSettings, localAi };
@@ -189,7 +197,10 @@ function loadDesktopSettings() {
 
 function writeDesktopSettings() {
   if (!desktopSettingsPath || !desktopSettings) return;
-  writeFileSync(desktopSettingsPath, `${JSON.stringify(desktopSettings, null, 2)}\n`, { mode: 0o600 });
+  const next = `${desktopSettingsPath}.tmp`;
+  writeFileSync(next, `${JSON.stringify(desktopSettings, null, 2)}\n`, { mode: 0o600 });
+  try { if (existsSync(desktopSettingsPath)) copyFileSync(desktopSettingsPath, `${desktopSettingsPath}.bak`); } catch {}
+  renameSync(next, desktopSettingsPath);
   globalThis.__liveConfSettingsChanged?.();
 }
 
@@ -505,7 +516,7 @@ function openInBrowser(value) {
 }
 
 function cloudflaredPath() {
-  if (app.isPackaged) return path.join(process.resourcesPath, "cloudflared.exe");
+  if (app.isPackaged) return path.join(process.resourcesPath, process.platform === "win32" ? "cloudflared.exe" : "cloudflared");
   const local = path.join(app.getAppPath(), ".tmp", "cloudflared");
   return existsSync(local) ? local : "cloudflared";
 }
@@ -909,7 +920,19 @@ function createWindow(loadAdmin = true) {
 
 async function start() {
   session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
-    callback(permission === "media" && microphoneAllowed(details.requestingUrl, details.mediaTypes, contents.getURL(), adminOrigin));
+    callback((permission === "media" && microphoneAllowed(details.requestingUrl, details.mediaTypes, contents.getURL(), adminOrigin)) ||
+      (displayCaptureRequested(permission, details.mediaTypes) && systemAudioAllowed(details.requestingUrl, contents.getURL(), adminOrigin)));
+  });
+  // 브라우저의 화면 공유 선택 창 대신 시스템 소리(loopback, Windows·macOS 14.2+)를 바로 준다. 영상 원본은 필수라 넘기고 페이지가 바로 멈춘다.
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    const url = request.frame?.url ?? "";
+    if (!request.audioRequested || !systemAudioAllowed(url, request.frame?.top?.url ?? url, adminOrigin)) { callback({}); return; }
+    // macOS는 화면을 영상으로 넘기면 "화면 기록" 권한(시스템 설정에서만 켤 수 있음)이 필요하다.
+    // 요청한 창 자신을 영상으로 넘기면 "시스템 오디오 녹음" 허용 창 하나로 끝난다.
+    if (process.platform === "darwin") { callback(request.frame ? { video: request.frame, audio: "loopback" } : {}); return; }
+    desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } })
+      .then((sources) => callback(sources[0] ? { video: sources[0], audio: "loopback" } : {}))
+      .catch(() => callback({}));
   });
   session.defaultSession.setPermissionCheckHandler((contents, permission, origin, details) => {
     return permission === "media" && details.mediaType === "audio" &&
@@ -930,6 +953,17 @@ async function start() {
   loadDesktopSettings();
   lanAddresses = listLanAddresses(os.networkInterfaces());
   shareOrigin = selectedLanOrigin();
+  // Wi-Fi·ZeroTier가 늦게 붙거나 IP가 바뀌면 공유 주소 목록과 QR을 재시작 없이 맞춘다.
+  setInterval(() => {
+    const next = listLanAddresses(os.networkInterfaces());
+    if (JSON.stringify(next) === JSON.stringify(lanAddresses)) return;
+    lanAddresses = next;
+    const previous = shareOrigin;
+    shareOrigin = tunnelUrl || selectedLanOrigin();
+    installApplicationMenu();
+    if (shareOrigin !== previous) syncPublicOrigin();
+    else globalThis.__liveConfSettingsChanged?.();
+  }, 10_000).unref();
 
   // 서버 준비와 첫 렌더링을 기다리는 동안에도 앱이 실행됐다는 것을 바로 보여 준다.
   installApplicationMenu();

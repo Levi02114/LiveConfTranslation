@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation";
 import { ADMIN_LANG_COOKIE, toAdminLang } from "@/lib/admin-lang";
 import { isAdmin } from "@/lib/auth";
 import { getAdminStrings, getStrings } from "@/lib/i18n";
+import { inputGuideToken } from "@/lib/input-guide";
 import { getLanguage } from "@/lib/languages";
 import {
   getMeeting,
@@ -46,6 +47,8 @@ export default async function DashboardPage({
 
   const langs = getMeetingLangs(id);
   const activeLangs = getMeetingActiveLangs(id);
+  const pages = getMeetingPages(id);
+  const combined = pages.find((page) => page.kind === "combined");
   const registered = listLanguages().map((row) => row.code);
   const lang = toAdminLang((await cookies()).get(ADMIN_LANG_COOKIE)?.value, registered);
 
@@ -58,7 +61,8 @@ export default async function DashboardPage({
       displayLanguages={registered.map((code) => getLanguage(code, lang))}
       meeting={meeting}
       languages={langs.map((code) => getLanguage(code, lang))}
-      pages={getMeetingPages(id)}
+      pages={pages}
+      inputGuideToken={combined ? inputGuideToken(combined.token) : null}
       languageConfigs={getMeetingLanguageConfigs(id)}
       coverage={engineCoverage(meeting.engine, activeLangs)}
       fallbackCoverage={

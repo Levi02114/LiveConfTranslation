@@ -2,6 +2,7 @@ import { requireAdmin } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { getZoomMeeting, getMeetingActiveLangs, getMeetingPages } from "@/lib/repo";
 import { notifyConnectionsChanged } from "@/lib/realtime/hub";
+import { log } from "@/lib/diagnostics";
 import { desktopTransportAllowed } from "@/lib/desktop-control";
 import { zoomActionSchema, zoomCredentialsSchema } from "@/lib/zoom-contract";
 import { ownedZoomRelay, saveZoomCredentials, startZoomRelay, zoomSettingsStatus } from "@/lib/zoom";
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
   if (!parsed.success) return Response.json({ error: "requestFailed" }, { status: 400 });
   try {
     const action = parsed.data;
+    if (action.action === "stop" && action.sdk) log("info", "zoom.sdk-stop", { phase: action.sdk.response, code: action.sdk.code, state: action.sdk.status });
     const relay = action.action === "start" ? startZoomRelay(action) : ownedZoomRelay(action.owner);
     if (action.action === "start") {
       notifyConnectionsChanged(relay.meeting.id);
@@ -53,6 +55,7 @@ export async function POST(request: Request) {
       revalidatePath("/admin/zoom");
     }
     if (action.action === "stop") relay.stop();
+    if (action.action === "assign") relay.assign(action.speaker, action.lang);
     return Response.json(relay.poll(action.action === "poll" ? action.ack : undefined), { headers: { "cache-control": "no-store" } });
   } catch (error) { return failure(error); }
 }

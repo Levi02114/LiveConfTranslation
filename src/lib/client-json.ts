@@ -30,6 +30,8 @@ export type VoiceEventPayload =
       lang: string;
       usedFallback: boolean;
       leaseId: string;
+      /** 겹쳐 다시 들은 턴에서 앞 전사의 마지막 단어가 잘린 단어로 판정됐다. 앞 꼬리의 마지막 단어를 지운다. */
+      replaceLastWord?: boolean;
     }
   | {
       t: "error";
@@ -46,6 +48,8 @@ export type MessageResponsePayload = {
   usedFallback?: boolean;
   error?: string;
   message?: { lang?: string };
+  /** 참가자가 Zoom 채팅 전송을 요청했을 때만 온다. */
+  zoomChat?: "queued" | "unavailable";
 };
 
 function objectFromJson(text: string): JsonObject | null {
@@ -171,6 +175,7 @@ export function parseVoiceEvent(text: string): VoiceEventPayload | null {
       lang: row.lang,
       usedFallback: row.usedFallback,
       leaseId: row.leaseId,
+      replaceLastWord: row.replaceLastWord === true || undefined,
     };
   }
   if (row.t !== "error") return null;
@@ -198,10 +203,12 @@ export function parseMessageResponse(text: string): MessageResponsePayload | nul
     if (!isObject(row.message) || !optionalString(row.message.lang)) return null;
     message = { lang: row.message.lang };
   }
+  if (row.zoomChat !== undefined && row.zoomChat !== "queued" && row.zoomChat !== "unavailable") return null;
   return {
     usedFallback: row.usedFallback,
     error: row.error,
     message,
+    zoomChat: row.zoomChat,
   };
 }
 

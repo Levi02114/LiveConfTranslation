@@ -12,6 +12,7 @@ import {
   checkInputRate,
 } from "@/lib/repo";
 import { acceptMessage, translateMessage } from "@/lib/pipeline";
+import { shareToZoomChat } from "@/lib/zoom";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -20,6 +21,8 @@ const schema = z.object({
   lang: z.string().trim().min(1).max(35).optional(),
   speakerName: z.string().trim().min(1).max(40).regex(/^[^\r\n]+$/).optional(),
   ingestKey: z.string().min(8).max(240).optional(),
+  /** 참가자가 입력 화면에서 고른 Zoom 채팅 전송. */
+  zoomChat: z.boolean().optional(),
 });
 
 /**
@@ -125,8 +128,9 @@ export async function POST(request: Request, { params }: Params) {
     });
   }
 
+  const zoomChat = parsed.data.zoomChat && result.inserted ? shareToZoomChat(message) : undefined;
   return Response.json(
-    { message, usedFallback: detected.usedFallback, inserted: result.inserted },
+    { message, usedFallback: detected.usedFallback, inserted: result.inserted, zoomChat },
     { status: result.inserted ? 201 : 200 },
   );
   } catch (error) {

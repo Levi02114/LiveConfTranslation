@@ -2,14 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { retryAfterMilliseconds } from "@/hooks/use-submit-queue";
 import { AudioTurnDetector } from "@/lib/audio-turn-detector";
 import { newBrowserId } from "@/lib/browser-id";
-import { parseVoiceEvent, type VoiceEventPayload } from "@/lib/client-json";
+import { parseMessageResponse, parseVoiceEvent, type VoiceEventPayload } from "@/lib/client-json";
 import { voiceDiagnostic, voiceErrorType } from "@/lib/client-diagnostics";
 import { releaseVoiceAudio } from "@/lib/voice-cleanup";
 import type { UiStrings } from "@/lib/i18n-builtin";
 import type { LanguageCode } from "@/lib/languages";
 import { NeuralTurnDetector } from "@/lib/neural-turn-detector";
+import { SentenceJoiner, type JoinedSegment } from "@/lib/sentence-joiner";
 import { DEFAULT_VOICE_SETTINGS, silenceMsFor, voiceSettingsSchema, type VoiceSettings } from "@/lib/voice-settings";
 import {
   METER_INTERVAL_MS,
@@ -37,7 +39,39 @@ type ServerVoiceInputOptions = {
   autoSubmit?: boolean;
   rewrite?: boolean;
   onTranscript?: (body: string) => void;
+  /** 자동 전송한 확정 전사를 Zoom 채팅에도 보낼지(참가자 개별 설정). */
+  zoomChat?: boolean;
+  onZoomChatUnavailable?: () => void;
 };
+
+/** 마이크 대신 컴퓨터에서 나는 소리(Zoom 등 앱 소리)를 받는 가상 장치 값. */
+export const SYSTEM_AUDIO_DEVICE = "lct-system-audio";
+
+/** 데스크톱 브라우저만 화면 공유로 시스템 소리를 줄 수 있다. 휴대전화·태블릿은 숨긴다. */
+function systemAudioSupported() {
+  return Boolean(navigator.mediaDevices?.getDisplayMedia) && !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) &&
+    !(navigator.maxTouchPoints > 1 && /Mac/.test(navigator.userAgent));
+}
+
+/**
+ * 시스템 소리만 남긴다. 화면 공유는 영상 없이 요청할 수 없어 받은 즉시 영상 트랙을 멈춘다.
+ * 공유 창에서 "시스템 오디오 공유"를 끄면 소리 트랙이 없으므로 시작하지 않는다.
+ */
+async function captureSystemAudio() {
+  const media = await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+    // 앱 소리를 그대로 받는다. 에코 제거·자동 음량은 회의 음성을 깎을 수 있다.
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+  });
+  media.getVideoTracks().forEach((track) => track.stop());
+  const tracks = media.getAudioTracks();
+  // macOS에서 시스템 오디오 녹음 권한이 없으면 오류 없이 이미 끝난 트랙이 온다.
+  if (!tracks.length || tracks[0].readyState === "ended") {
+    media.getTracks().forEach((track) => track.stop());
+    throw new Error("system-audio-missing");
+  }
+  return new MediaStream(tracks);
+}
 
 export function useServerVoiceInput({
   token,
@@ -54,6 +88,8 @@ export function useServerVoiceInput({
   autoSubmit = true,
   rewrite = false,
   onTranscript,
+  zoomChat = false,
+  onZoomChatUnavailable,
   test,
 }: ServerVoiceInputOptions) {
   const testRef = useRef(test);
@@ -64,11 +100,23 @@ export function useServerVoiceInput({
   useEffect(() => {
     testRef.current = test ? { ...test, settings: voiceSettingsSchema.safeParse(test.settings).success ? test.settings : testRef.current?.settings ?? DEFAULT_VOICE_SETTINGS } : undefined;
   }, [test]);
+  // 녹음 중에 바꿔도 다음 전사부터 적용되게 시작 시점의 값을 붙잡지 않는다.
+  const zoomChatRef = useRef({ enabled: zoomChat, unavailable: onZoomChatUnavailable });
+  useEffect(() => {
+    zoomChatRef.current = { enabled: zoomChat, unavailable: onZoomChatUnavailable };
+  }, [onZoomChatUnavailable, zoomChat]);
   const [state, setState] = useState<VoiceState>("idle");
   const [partial, setPartial] = useState("");
+  const [tail, setTail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState("");
+  const [systemAudio, setSystemAudio] = useState(false);
+  // 마이크 권한과 무관하게 보인다. 서버 렌더와 맞추려고 마운트 뒤에 판단한다.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setSystemAudio(systemAudioSupported()));
+    return () => cancelAnimationFrame(frame);
+  }, []);
   const [meter, setMeter] = useState<VoiceMeter | null>(null);
   const clientId = useRef("");
   const socket = useRef<WebSocket | null>(null);
@@ -87,6 +135,12 @@ export function useServerVoiceInput({
   const expectedClose = useRef(false);
   const speechSinceCommit = useRef(false);
   const pendingTranscripts = useRef(0);
+  // 자동 저장은 문장 단위로 다시 묶는다. 꼬리는 다음 턴·말이 멈춤·중지 때 내보낸다.
+  const joiner = useRef(new SentenceJoiner());
+  const lastLease = useRef("");
+  const lastTranscriptAt = useRef(0);
+  const tailTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const postRef = useRef<(segment: JoinedSegment, leaseId: string) => Promise<Response>>(async () => Response.error());
   const submission = useRef(Promise.resolve());
   const meterLastSet = useRef(0);
   const meterPeak = useRef(0);
@@ -111,7 +165,7 @@ export function useServerVoiceInput({
     if (generation.current !== run) return;
     setDevices(rows);
     setDeviceId((current) =>
-      current && rows.some((device) => device.deviceId === current)
+      current && (current === SYSTEM_AUDIO_DEVICE || rows.some((device) => device.deviceId === current))
         ? current
         : (rows[0]?.deviceId ?? ""),
     );
@@ -142,6 +196,12 @@ export function useServerVoiceInput({
     setPhase("idle");
     if (heartbeat.current) clearInterval(heartbeat.current);
     if (stopTimer.current) clearTimeout(stopTimer.current);
+    if (tailTimer.current) clearInterval(tailTimer.current);
+    tailTimer.current = null;
+    // 오류로 끊길 때도 들고 있던 꼬리를 버리지 않도록 마지막으로 한 번 보낸다.
+    const tail = joiner.current.flush();
+    if (tail && lastLease.current) void postRef.current(tail, lastLease.current).catch(() => {});
+    setTail("");
     heartbeat.current = null;
     stopTimer.current = null;
     speechSinceCommit.current = false;
@@ -214,23 +274,61 @@ export function useServerVoiceInput({
         onTranscript?.(event.body);
         return;
       }
-      const response = await fetch(`/api/pages/${encodeURIComponent(token)}/transcripts`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          leaseId: event.leaseId,
-          ingestKey: `${clientId.current}:${event.itemId}:${event.contentIndex}`,
-          body: event.body,
-          lang: event.lang,
-          speakerName: speakerName || undefined,
-          rewrite,
-        }),
-      });
-      if (!response.ok) throw new Error(strings.lost);
+      lastLease.current = event.leaseId;
+      lastTranscriptAt.current = Date.now();
+      const segments = joiner.current.push(event.body, event.lang, `${event.itemId}:${event.contentIndex}`, Date.now(), event.replaceLastWord);
+      setTail(joiner.current.peek());
+      for (const segment of segments) await postRef.current(segment, event.leaseId);
       if (event.usedFallback) onFallback(event.lang);
     },
-    [autoSubmit, onFallback, onTranscript, rewrite, speakerName, strings.lost, token],
+    [autoSubmit, onFallback, onTranscript],
   );
+
+  const postTranscript = useCallback(
+    async (segment: JoinedSegment, leaseId: string) => {
+      const request = JSON.stringify({
+        leaseId,
+        ingestKey: `${clientId.current}:${segment.key}`,
+        body: segment.text,
+        lang: segment.lang,
+        speakerName: speakerName || undefined,
+        rewrite,
+        zoomChat: zoomChatRef.current.enabled || undefined,
+      });
+      // 같은 ingestKey로 다시 보내므로 중복 저장되지 않는다. 일시 오류 한 번에 세션을 끊지 않는다.
+      let response: Response | null = null;
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          response = await fetch(`/api/pages/${encodeURIComponent(token)}/transcripts`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: request,
+          });
+        } catch {
+          response = null;
+        }
+        const transient = !response || response.status === 429 || response.status >= 500;
+        if (!transient || attempt >= 3) break;
+        const delay = Math.max(1_000 * 2 ** attempt, response ? retryAfterMilliseconds(response) : 0);
+        await new Promise((resolve) => setTimeout(resolve, Math.min(delay, 10_000)));
+      }
+      if (!response?.ok) throw new Error(strings.lost);
+      if (parseMessageResponse(await response.clone().text().catch(() => ""))?.zoomChat === "unavailable") zoomChatRef.current.unavailable?.();
+      return response;
+    },
+    [rewrite, speakerName, strings.lost, token],
+  );
+  useEffect(() => { postRef.current = postTranscript; }, [postTranscript]);
+
+  /** 들고 있는 문장 꼬리를 저장 순서 큐 뒤에 붙여 보낸다. */
+  const flushTail = useCallback(() => {
+    submission.current = submission.current.then(async () => {
+      const tail = joiner.current.flush();
+      setTail("");
+      if (tail && lastLease.current) await postRef.current(tail, lastLease.current);
+    });
+    return submission.current;
+  }, []);
 
   const stop = useCallback((flush = true) => {
     voiceDiagnostic(flush ? "stop-flush" : "stop-immediate", generation.current);
@@ -249,9 +347,12 @@ export function useServerVoiceInput({
       // 로컬 Whisper는 저사양 CPU에서 마지막 턴 확정에 수십 초가 걸릴 수 있다.
       stopTimer.current = setTimeout(disconnect, 60_000);
     } else {
-      void disconnect();
+      void flushTail().catch(() => {}).finally(() => { void disconnect(); });
     }
-  }, [disconnect, releaseAudio, state]);
+  }, [disconnect, flushTail, releaseAudio, state]);
+  // 시작 시점에 붙인 공유 종료 처리기도 최신 상태의 stop을 부르게 한다.
+  const stopRef = useRef(stop);
+  useEffect(() => { stopRef.current = stop; }, [stop]);
 
   const start = useCallback(async () => {
     // A synchronous latch also covers double clicks before React commits the starting state.
@@ -275,10 +376,19 @@ export function useServerVoiceInput({
         noiseSuppression: false,
         autoGainControl: true,
       };
-      if (deviceId) audio.deviceId = { exact: deviceId };
-      const media = await navigator.mediaDevices.getUserMedia({ audio });
+      const system = deviceId === SYSTEM_AUDIO_DEVICE;
+      if (deviceId && !system) audio.deviceId = { exact: deviceId };
+      const media = system ? await captureSystemAudio() : await navigator.mediaDevices.getUserMedia({ audio });
       if (generation.current !== run) { media.getTracks().forEach((track) => track.stop()); return; }
       stream.current = media;
+      if (system) {
+        // 브라우저의 "공유 중지"를 누르면 소리가 끊긴다. 받은 데까지 확정하고 멈춘다.
+        media.getAudioTracks()[0].addEventListener("ended", () => {
+          if (generation.current !== run) return;
+          setError(strings.systemAudioEnded);
+          stopRef.current(true);
+        });
+      }
       voiceDiagnostic("microphone-ready", run);
       void refreshDevices();
 
@@ -294,7 +404,10 @@ export function useServerVoiceInput({
       stage = "worklet";
       await audioContext.audioWorklet.addModule("/pcm-capture-worklet.js");
       if (generation.current !== run) return;
-      if (audioContext.state !== "running") await audioContext.resume();
+      // Windows 일부 장치에서 resume()이 끝나지 않으면 "시작 중"에 갇힌다. 상한 뒤 시작 실패로 처리한다.
+      if (audioContext.state !== "running") {
+        await Promise.race([audioContext.resume(), new Promise((_, reject) => setTimeout(() => reject(new Error("resume-timeout")), 8_000))]);
+      }
       if (generation.current !== run) return;
       const source = audioContext.createMediaStreamSource(media);
       audioNodes.current.push(source);
@@ -322,13 +435,14 @@ export function useServerVoiceInput({
       if (dry) { setState("active"); voiceDiagnostic("ready", run, { state: "active" }); }
       let lastTurnAt = performance.now();
 
-      const commitTurn = () => {
+      const commitTurn = (forced = false) => {
         if (!ready || stopping.current || generation.current !== run) return;
         if (dry) void testRef.current?.onSegment({ body: "", elapsedMs: 0, silenceMs: turnSilenceMs });
         else {
           if (ws?.readyState !== WebSocket.OPEN) return;
           if (testRef.current) commits.current.push({ at: performance.now(), silenceMs: turnSilenceMs });
-          ws.send(JSON.stringify({ t: "commit" }));
+          // 강제 컷이면 서버가 끝 1초를 다음 턴 앞에 겹쳐 잘린 단어를 다시 듣는다.
+          ws.send(JSON.stringify(forced ? { t: "commit", overlap: true } : { t: "commit" }));
           pendingTranscripts.current += 1;
         }
         setPhase("committed");
@@ -376,7 +490,7 @@ export function useServerVoiceInput({
         }
         if (neuralVad.current) return; // 커밋은 신경망 VAD 가 결정한다
         if (detector.update(rms, performance.now()) && speechSinceCommit.current) {
-          commitTurn();
+          commitTurn(detector.lastCutForced);
         }
       };
 
@@ -400,6 +514,17 @@ export function useServerVoiceInput({
           heartbeat.current = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: "heartbeat" }));
           }, 5_000);
+          joiner.current = new SentenceJoiner();
+          // 말이 멈췄거나(2.5초 무음) 꼬리를 너무 오래 들고 있으면 문장이 안 끝났어도 내보낸다.
+          tailTimer.current = setInterval(() => {
+            if (generation.current !== run || stopping.current || pendingTranscripts.current || !joiner.current.holding()) return;
+            if (Date.now() - lastTranscriptAt.current < (speechSinceCommit.current ? 25_000 : 2_500)) return;
+            void flushTail().catch(() => {
+              if (generation.current !== run) return;
+              setError(strings.lost);
+              void disconnect();
+            });
+          }, 1_000);
         } else if (event.t === "partial") {
           setPartial(event.text);
         } else if (event.t === "transcript") {
@@ -419,7 +544,7 @@ export function useServerVoiceInput({
               generation.current === run &&
               stopping.current &&
               pendingTranscripts.current === 0
-            ) disconnect();
+            ) void flushTail().catch(() => {}).finally(() => { void disconnect(); });
           });
         } else if (event.t === "error") {
           // 서버가 구체적인 사유를 보낸 뒤 연결을 닫아도 onclose 가 `lost`로 덮지 않는다.
@@ -451,10 +576,12 @@ export function useServerVoiceInput({
       const stale = generation.current !== run;
       voiceDiagnostic(stale ? "start-error-stale" : `${stage}-failed`, run, { errorType: voiceErrorType(error) });
       if (stale) return;
-      setError(stage === "microphone" ? strings.permission : strings.startFailed);
+      setError(stage !== "microphone" ? strings.startFailed
+        : deviceId === SYSTEM_AUDIO_DEVICE ? (/Mac/.test(navigator.userAgent) ? strings.systemAudioMac : strings.systemAudioMissing)
+        : strings.permission);
       void disconnect();
     }
-  }, [automaticLanguage, autoSubmit, closed, deviceId, disconnect, enabled, lang, langs, refreshDevices, speakerName, state, strings, submitTranscript, token, updateMeter]);
+  }, [automaticLanguage, autoSubmit, closed, deviceId, disconnect, enabled, flushTail, lang, langs, refreshDevices, speakerName, state, strings, submitTranscript, token, updateMeter]);
 
-  return { state, partial, error, devices, deviceId, setDeviceId, start, stop, meter, phase };
+  return { state, partial: tail && partial ? `${tail} ${partial}` : tail || partial, error, devices, deviceId, setDeviceId, systemAudio, start, stop, meter, phase };
 }

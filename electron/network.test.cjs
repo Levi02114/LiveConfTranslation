@@ -5,7 +5,7 @@ const { EventEmitter } = require("node:events");
 const { readFileSync } = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
-const { microphoneAllowed } = require("./permissions.cjs");
+const { displayCaptureRequested, microphoneAllowed, systemAudioAllowed } = require("./permissions.cjs");
 
 const {
   extractQuickTunnelUrl,
@@ -159,6 +159,7 @@ test("Quick Tunnel 로그에서 공개 URL만 꺼낸다", () => {
     "https://calm-river.trycloudflare.com",
   );
   assert.equal(extractQuickTunnelUrl("INF 연결 준비 중"), null);
+  assert.equal(extractQuickTunnelUrl("ERR failed to request quick Tunnel: Post \"https://api.trycloudflare.com/tunnel\": dial tcp"), null);
 });
 
 test("상태 응답에서 진행 중인 세션 수를 읽는다", () => {
@@ -181,6 +182,18 @@ test("Electron grants audio only to internal input, capture and authenticated ad
   assert.equal(microphoneAllowed(`${origin}/admin/meetings/id`, ["audio"], `${origin}/admin/meetings/id`, origin), true);
   assert.equal(microphoneAllowed(`${origin}/admin/login`, ["audio"], `${origin}/admin/login`, origin), false);
   assert.equal(microphoneAllowed(`${origin}/out/token`, ["audio"], input, origin), false);
+  // Electron 43은 getDisplayMedia 를 장치 목록이 빈 "media" 요청으로 보낸다. 마이크 요청과 구분한다.
+  assert.equal(displayCaptureRequested("display-capture", undefined), true);
+  assert.equal(displayCaptureRequested("media", []), true);
+  assert.equal(displayCaptureRequested("media", ["audio"]), false);
+  assert.equal(displayCaptureRequested("notifications", []), false);
+  // 컴퓨터 소리는 같은 내부 입력 화면에서, 시스템 소리를 줄 수 있는 Windows·macOS에서만.
+  assert.equal(systemAudioAllowed(input, input, origin, "win32"), true);
+  assert.equal(systemAudioAllowed(`${origin}/admin`, `${origin}/admin`, origin, "win32"), true);
+  assert.equal(systemAudioAllowed(input, input, origin, "darwin"), true);
+  assert.equal(systemAudioAllowed(input, input, origin, "linux"), false);
+  assert.equal(systemAudioAllowed(`${origin}/out/token`, `${origin}/out/token`, origin, "win32"), false);
+  assert.equal(systemAudioAllowed("https://external.invalid/in/token", input, origin, "win32"), false);
 });
 
 test("settings use the browser bridge, hide the native menu and return pairing links without opening host apps", async () => {

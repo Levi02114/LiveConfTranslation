@@ -124,32 +124,43 @@ function ps(value) {
 async function ensureLocalCertificate({ app, settings, save, addresses }) {
   if (process.platform !== "win32" || isPortable()) return false;
   if (!settings) return false;
-  if (settings.localHttps?.pfx && existsSync(settings.localHttps.pfx) && existsSync(settings.localHttps.ca)) {
+  const current = settings.localHttps;
+  // 행사장 이동·DHCP로 IP가 바뀌면 SAN이 맞지 않아 https://<ip>:3443 이 경고를 낸다. 주소가 그대로면 재사용한다.
+  const covered = Array.isArray(current?.addresses) && addresses.every((address) => current.addresses.includes(address));
+  if (current?.pfx && existsSync(current.pfx) && existsSync(current.ca) && covered) {
     applyLocalAiEnvironment(settings);
     return true;
   }
   const directory = path.join(app.getPath("userData"), "tls");
   mkdirSync(directory, { recursive: true });
   const pfx = path.join(directory, "server.pfx");
+  const next = path.join(directory, "server.next.pfx");
   const ca = path.join(directory, "local-ca.cer");
   const password = randomBytes(24).toString("base64url");
   const sans = ["DNS=localhost", ...addresses.map((address) => `IPAddress=${address}`)].join("&");
-  delete settings.localHttps;
-  save();
-  applyLocalAiEnvironment(settings);
-  rmSync(pfx, { force: true });
-  rmSync(ca, { force: true });
+  rmSync(next, { force: true });
+  // 이미 신뢰한 로컬 CA가 남아 있으면 서버 인증서만 다시 발급한다. 루트 저장소에 CA를 다시 넣지 않으므로
+  // Windows 보안 확인창이 IP가 바뀔 때마다 뜨지 않고, CA와 이전 서버 인증서가 저장소에 쌓이지도 않는다.
   const command = [
     "$ErrorActionPreference='Stop'",
-    "$caCert=New-SelfSignedCertificate -Type Custom -Subject 'CN=Live Conference Translation Local CA' -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -KeyUsage CertSign,CRLSign,DigitalSignature -KeyExportPolicy Exportable -CertStoreLocation 'Cert:\\CurrentUser\\My' -NotAfter (Get-Date).AddYears(10) -TextExtension @('2.5.29.19={critical}{text}ca=true')",
+    "$X509=[System.Security.Cryptography.X509Certificates.X509Certificate2]",
+    "$caCert=$null",
+    `if (Test-Path ${ps(ca)}) { $thumb=$X509::new(${ps(ca)}).Thumbprint; $found=Get-Item ('Cert:\\CurrentUser\\My\\'+$thumb) -ErrorAction SilentlyContinue; if ($found -and $found.HasPrivateKey) { $caCert=$found } }`,
+    current?.pfx && current?.password
+      ? `if (Test-Path ${ps(current.pfx)}) { try { $old=$X509::new(${ps(current.pfx)}, ${ps(current.password)}); Remove-Item ('Cert:\\CurrentUser\\My\\'+$old.Thumbprint) -ErrorAction SilentlyContinue } catch {} }`
+      : "",
+    "$newCa=-not $caCert",
+    "if ($newCa) { $caCert=New-SelfSignedCertificate -Type Custom -Subject 'CN=Live Conference Translation Local CA' -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -KeyUsage CertSign,CRLSign,DigitalSignature -KeyExportPolicy Exportable -CertStoreLocation 'Cert:\\CurrentUser\\My' -NotAfter (Get-Date).AddYears(10) -TextExtension @('2.5.29.19={critical}{text}ca=true') }",
     `$leaf=New-SelfSignedCertificate -Type Custom -Subject 'CN=Live Conference Translation' -Signer $caCert -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 -KeyUsage DigitalSignature,KeyEncipherment -KeyExportPolicy Exportable -CertStoreLocation 'Cert:\\CurrentUser\\My' -NotAfter (Get-Date).AddYears(3) -TextExtension @(${ps(`2.5.29.17={text}${sans}`)})`,
     `$secure=ConvertTo-SecureString ${ps(password)} -AsPlainText -Force`,
-    `Export-PfxCertificate -Cert $leaf -FilePath ${ps(pfx)} -Password $secure | Out-Null`,
-    `Export-Certificate -Cert $caCert -FilePath ${ps(ca)} | Out-Null`,
-    `Import-Certificate -FilePath ${ps(ca)} -CertStoreLocation 'Cert:\\CurrentUser\\Root' | Out-Null`,
-  ].join(";");
+    `Export-PfxCertificate -Cert $leaf -FilePath ${ps(next)} -Password $secure | Out-Null`,
+    // 서버 인증서의 개인키는 PFX 파일에만 둔다.
+    "Remove-Item ('Cert:\\CurrentUser\\My\\'+$leaf.Thumbprint) -ErrorAction SilentlyContinue",
+    `if ($newCa) { Export-Certificate -Cert $caCert -FilePath ${ps(ca)} | Out-Null; Import-Certificate -FilePath ${ps(ca)} -CertStoreLocation 'Cert:\\CurrentUser\\Root' | Out-Null }`,
+  ].filter(Boolean).join(";");
   await exec("powershell.exe", ["-NoProfile", "-Command", command]);
-  settings.localHttps = { pfx, ca, password };
+  renameSync(next, pfx);
+  settings.localHttps = { pfx, ca, password, addresses: [...addresses] };
   save();
   applyLocalAiEnvironment(settings);
   return true;
@@ -174,6 +185,8 @@ function request(url, headers = {}) {
         }
         resolve(response);
       });
+      // CDN이 응답 없이 멈추면 설치 배너가 무한 대기한다. 소켓이 60초 조용하면 끊고 다음 실행에서 이어받는다.
+      req.setTimeout(60_000, () => req.destroy(new Error("download-timeout")));
       req.on("error", reject);
     };
     follow(url, 0);
@@ -189,8 +202,17 @@ async function sha256(file) {
 async function download(asset, destination, onProgress, text) {
   if (existsSync(destination) && await sha256(destination) === asset.sha256) return;
   const partial = `${destination}.part`;
-  const offset = existsSync(partial) ? statSync(partial).size : 0;
+  const finish = () => { rmSync(destination, { force: true }); renameSync(partial, destination); };
+  let offset = existsSync(partial) ? statSync(partial).size : 0;
   let response = await request(asset.url, offset ? { Range: `bytes=${offset}-` } : {});
+  if (response.statusCode === 416) {
+    // .part를 다 받은 뒤 중단됐으면 이어받을 바이트가 없다. 완성본이면 그대로 쓰고, 아니면 처음부터 받는다.
+    response.resume();
+    if (await sha256(partial) === asset.sha256) return finish();
+    rmSync(partial, { force: true });
+    offset = 0;
+    response = await request(asset.url);
+  }
   if (response.statusCode !== 200 && response.statusCode !== 206) {
     response.resume();
     throw new Error(`${text.downloadFailed}: HTTP ${response.statusCode}`);
@@ -208,8 +230,7 @@ async function download(asset, destination, onProgress, text) {
     rmSync(partial, { force: true });
     throw new Error(text.checksumMismatch);
   }
-  rmSync(destination, { force: true });
-  renameSync(partial, destination);
+  finish();
 }
 
 function exec(command, args) {

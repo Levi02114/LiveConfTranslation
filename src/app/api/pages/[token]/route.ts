@@ -4,6 +4,7 @@ import {
   getMeeting,
   getMeetingActivity,
   getMeetingActiveLangs,
+  getCombinedSince,
   getPageByToken,
   getRecentCombined,
   getRecentOutput,
@@ -22,7 +23,7 @@ type Params = { params: Promise<{ token: string }> };
  * 클라이언트가 사전 4벌을 모두 받아 놓고 고르게 하는 것보다 필요한 한 벌만
  * 보내는 편이 낫다.
  */
-export async function GET(_request: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
   const { token } = await params;
 
   const page = getPageByToken(token);
@@ -33,6 +34,18 @@ export async function GET(_request: Request, { params }: Params) {
   const meeting = getMeeting(page.meetingId);
   if (!meeting) {
     return Response.json({ error: "세션을 찾을 수 없습니다" }, { status: 404 });
+  }
+
+  // 입력 페이지의 재연결 동기화. 끊긴 동안 생성·수정·번역된 원문만 돌려준다.
+  const sinceParam = new URL(request.url).searchParams.get("since");
+  const since = Number(sinceParam);
+  if (sinceParam !== null && Number.isSafeInteger(since) && since >= 0 &&
+    (page.kind === "input" || page.kind === "combined-input")) {
+    const snapshotAt = Date.now();
+    return Response.json(
+      { entries: getCombinedSince(meeting.id, since), snapshotAt },
+      { headers: { "cache-control": "private, no-store" } },
+    );
   }
 
   const langs = getMeetingActiveLangs(meeting.id);

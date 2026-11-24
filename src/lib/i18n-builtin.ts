@@ -79,7 +79,19 @@ export type UiStrings = {
     noSignal: string;
     levelTooQuiet: string;
     levelClipping: string;
+    /** 마이크 선택 목록의 "컴퓨터 소리" 항목과 그 안내 */
+    systemAudio: string;
+    systemAudioMissing: string;
+    /** macOS 앱에서 시스템 오디오 녹음 권한이 없을 때 */
+    systemAudioMac: string;
+    /** 컴퓨터 소리를 고른 채 소리가 들어오지 않을 때 */
+    systemAudioSilent: string;
+    /** macOS 앱에서 컴퓨터 소리가 들어오지 않을 때. 무음과 권한 거부를 구분할 수 없어 둘 다 안내한다. */
+    systemAudioSilentMac: string;
+    systemAudioEnded: string;
   };
+  /** 참가자가 고르는 Zoom 회의 채팅 전송. Zoom에 연결된 세션의 입력 화면에만 보인다. */
+  zoomChat: { label: string; off: string; voice: string; all: string; unavailable: string };
   status: {
     waiting: string;
     noContent: string;
@@ -164,6 +176,19 @@ const ko: UiStrings = {
     noSignal: "마이크 입력이 감지되지 않습니다. 연결을 확인해 주세요",
     levelTooQuiet: "소리가 너무 작습니다 — 마이크를 가까이 하세요",
     levelClipping: "소리가 너무 큽니다 — 조금 떨어지세요",
+    systemAudio: "컴퓨터 소리 (Zoom 등 앱 소리)",
+    systemAudioMissing: "컴퓨터 소리를 받지 못했습니다. 공유 창에서 전체 화면을 고르고 '시스템 오디오 공유'를 켜 주세요.",
+    systemAudioMac: "컴퓨터 소리를 받지 못했습니다. 시스템 설정 → 개인정보 보호 및 보안 → 화면 및 시스템 오디오 녹음의 '시스템 오디오 녹음만'에서 이 앱을 켜고 다시 시작해 주세요. macOS 14.2 이상이 필요합니다.",
+    systemAudioSilent: "컴퓨터 소리가 들어오지 않습니다. 재생 중인 소리가 있는지 확인해 주세요.",
+    systemAudioSilentMac: "컴퓨터 소리가 들어오지 않습니다. 재생 중인 소리가 있는지 확인하세요. 계속 조용하면 시스템 설정 → 개인정보 보호 및 보안 → 화면 및 시스템 오디오 녹음의 '시스템 오디오 녹음만'에서 이 앱이 켜져 있는지 확인하세요.",
+    systemAudioEnded: "컴퓨터 소리 공유가 끝나 음성 입력을 멈췄습니다.",
+  },
+  zoomChat: {
+    label: "Zoom 채팅",
+    off: "보내지 않음",
+    voice: "마이크 입력만",
+    all: "마이크·타자 입력",
+    unavailable: "Zoom 중계가 켜져 있지 않아 Zoom 채팅으로 보내지 않았습니다.",
   },
   status: {
     waiting: "번역을 기다리는 중",
@@ -260,6 +285,19 @@ const vi: UiStrings = {
     noSignal: "Không phát hiện tín hiệu micrô. Hãy kiểm tra kết nối.",
     levelTooQuiet: "Âm thanh quá nhỏ — hãy lại gần micrô hơn",
     levelClipping: "Âm thanh quá lớn — hãy tránh xa micrô một chút",
+    systemAudio: "Âm thanh máy tính (Zoom và ứng dụng khác)",
+    systemAudioMissing: "Không nhận được âm thanh máy tính. Trong cửa sổ chia sẻ, hãy chọn toàn màn hình và bật 'Chia sẻ âm thanh hệ thống'.",
+    systemAudioMac: "Không nhận được âm thanh máy tính. Vào Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Ghi màn hình & âm thanh hệ thống, bật ứng dụng này trong 'Chỉ ghi âm thanh hệ thống' rồi khởi động lại. Cần macOS 14.2 trở lên.",
+    systemAudioSilent: "Không có âm thanh máy tính. Hãy kiểm tra xem có âm thanh đang phát không.",
+    systemAudioSilentMac: "Không có âm thanh máy tính. Hãy kiểm tra xem có âm thanh đang phát không. Nếu vẫn im lặng, hãy kiểm tra ứng dụng này đã được bật trong Cài đặt hệ thống → Quyền riêng tư & Bảo mật → Ghi màn hình & âm thanh hệ thống → 'Chỉ ghi âm thanh hệ thống' chưa.",
+    systemAudioEnded: "Đã dừng chia sẻ âm thanh máy tính nên nhập giọng nói đã dừng.",
+  },
+  zoomChat: {
+    label: "Trò chuyện Zoom",
+    off: "Không gửi",
+    voice: "Chỉ nhập bằng micrô",
+    all: "Micrô và bàn phím",
+    unavailable: "Chuyển tiếp Zoom chưa bật nên nội dung chưa được gửi vào trò chuyện Zoom.",
   },
   status: {
     waiting: "Đang chờ bản dịch",
@@ -360,6 +398,19 @@ const th: UiStrings = {
     noSignal: "ไม่พบสัญญาณไมโครโฟน โปรดตรวจสอบการเชื่อมต่อ",
     levelTooQuiet: "เสียงเบาเกินไป — โปรดเข้าใกล้ไมโครโฟน",
     levelClipping: "เสียงดังเกินไป — โปรดอยู่ห่างจากไมโครโฟนเล็กน้อย",
+    systemAudio: "เสียงคอมพิวเตอร์ (Zoom และแอปอื่น)",
+    systemAudioMissing: "ไม่ได้รับเสียงคอมพิวเตอร์ ในหน้าต่างแชร์ ให้เลือกทั้งหน้าจอและเปิด 'แชร์เสียงระบบ'",
+    systemAudioMac: "ไม่ได้รับเสียงคอมพิวเตอร์ ไปที่การตั้งค่าระบบ → ความเป็นส่วนตัวและความปลอดภัย → การบันทึกหน้าจอและเสียงระบบ เปิดแอปนี้ใน 'บันทึกเสียงระบบเท่านั้น' แล้วเริ่มใหม่ ต้องใช้ macOS 14.2 ขึ้นไป",
+    systemAudioSilent: "ไม่มีเสียงคอมพิวเตอร์เข้ามา โปรดตรวจสอบว่ามีเสียงกำลังเล่นอยู่",
+    systemAudioSilentMac: "ไม่มีเสียงคอมพิวเตอร์เข้ามา โปรดตรวจสอบว่ามีเสียงกำลังเล่นอยู่ หากยังเงียบ โปรดตรวจสอบว่าเปิดแอปนี้ไว้ในการตั้งค่าระบบ → ความเป็นส่วนตัวและความปลอดภัย → การบันทึกหน้าจอและเสียงระบบ → 'บันทึกเสียงระบบเท่านั้น'",
+    systemAudioEnded: "การแชร์เสียงคอมพิวเตอร์สิ้นสุดแล้ว จึงหยุดการป้อนเสียง",
+  },
+  zoomChat: {
+    label: "แชท Zoom",
+    off: "ไม่ส่ง",
+    voice: "เฉพาะไมโครโฟน",
+    all: "ไมโครโฟนและการพิมพ์",
+    unavailable: "การส่งต่อ Zoom ไม่ได้เปิดอยู่ จึงไม่ได้ส่งไปยังแชท Zoom",
   },
   status: {
     waiting: "กำลังรอคำแปล",
@@ -456,6 +507,19 @@ const si: UiStrings = {
     noSignal: "මයික්‍රෆෝන ආදානයක් අනාවරණය නොවේ. සම්බන්ධතාව පරීක්ෂා කරන්න.",
     levelTooQuiet: "හඬ ඉතා මෘදුයි — මයික්‍රෆෝනයට ළං වන්න",
     levelClipping: "හඬ ඉතා වැඩියි — මයික්‍රෆෝනයෙන් ටිකක් ඈත් වන්න",
+    systemAudio: "පරිගණක හඬ (Zoom සහ වෙනත් යෙදුම්)",
+    systemAudioMissing: "පරිගණක හඬ ලැබුණේ නැත. බෙදාගැනීමේ කවුළුවේ සම්පූර්ණ තිරය තෝරා 'පද්ධති ශ්‍රව්‍ය බෙදාගන්න' සක්‍රිය කරන්න.",
+    systemAudioMac: "පරිගණක හඬ ලැබුණේ නැත. පද්ධති සැකසීම් → පෞද්ගලිකත්වය සහ ආරක්ෂාව → තිර සහ පද්ධති ශ්‍රව්‍ය පටිගත කිරීම තුළ 'පද්ධති ශ්‍රව්‍ය පටිගත කිරීම පමණි' හි මෙම යෙදුම සක්‍රිය කර නැවත අරඹන්න. macOS 14.2 හෝ ඊට ඉහළ අවශ්‍යයි.",
+    systemAudioSilent: "පරිගණක හඬ ලැබෙන්නේ නැත. හඬක් වාදනය වෙමින් තිබේදැයි පරීක්ෂා කරන්න.",
+    systemAudioSilentMac: "පරිගණක හඬ ලැබෙන්නේ නැත. හඬක් වාදනය වෙමින් තිබේදැයි පරීක්ෂා කරන්න. තවමත් නිහඬ නම්, පද්ධති සැකසීම් → පෞද්ගලිකත්වය සහ ආරක්ෂාව → තිර සහ පද්ධති ශ්‍රව්‍ය පටිගත කිරීම → 'පද්ධති ශ්‍රව්‍ය පටිගත කිරීම පමණි' හි මෙම යෙදුම සක්‍රිය දැයි පරීක්ෂා කරන්න.",
+    systemAudioEnded: "පරිගණක හඬ බෙදාගැනීම අවසන් වූ බැවින් හඬ ආදානය නැවැත්වීය.",
+  },
+  zoomChat: {
+    label: "Zoom කතාබස්",
+    off: "යවන්න එපා",
+    voice: "මයික්‍රෆෝනය පමණි",
+    all: "මයික්‍රෆෝනය සහ ටයිප් කිරීම",
+    unavailable: "Zoom සම්ප්‍රේෂණය ක්‍රියාත්මක නැති බැවින් Zoom කතාබස් වෙත යැවුවේ නැත.",
   },
   status: {
     waiting: "පරිවර්තනය එනතුරු",
@@ -534,7 +598,7 @@ const tunnelStrings = {
     confirm: "공유 링크와 QR을 검사한 주소로 변경할까요? 기존에 배포한 링크는 자동 변경되지 않습니다.",
     restore: "기존 연결 방식으로 돌아가기", retain: "검사 중에는 기존 주소를 유지합니다. 적용해도 기존 터널은 즉시 종료하지 않습니다. 앱 종료 또는 해당 실행 환경에서 별도로 중지하세요.",
     autoHelp: "앱이 관리하는 터널을 서버 시작 시 실행하고 연결이 끊기면 복구합니다. Telegram 등록은 필요하지 않으며, 수신 대상을 연결한 경우에만 주소 알림을 보냅니다.",
-    shareHelp: "링크와 QR에 사용할 주소입니다. LAN·VPN 주소를 선택해도 공개 터널은 유지되며, 재연결 후에도 선택은 유지됩니다. LAN·VPN 주소는 해당 네트워크에서만 접속할 수 있습니다.",
+    shareHelp: "링크와 QR에 사용할 주소입니다. 공개 터널이 연결돼 있으면 항상 공개 주소를 쓰고, 터널이 꺼져 있을 때 여기서 고른 LAN·VPN 주소를 씁니다. LAN·VPN 주소는 해당 네트워크에서만 접속할 수 있습니다.",
     tunnelInvalid: "경로 없는 공개 HTTPS 도메인과 올바른 터널 토큰을 입력하세요. 사설 주소는 사용할 수 없습니다.",
     tunnelCheckFailed: "연결 검사에 실패했습니다. DNS, 터널 토큰, 로컬 서비스 주소와 WebSocket 허용 여부를 확인하세요. 기존 공유 주소는 유지됩니다.",
     tunnelStopFirst: "현재 고정 터널을 중지한 뒤 같은 주소의 토큰을 변경하세요.",
@@ -549,7 +613,7 @@ const tunnelStrings = {
     confirm: "Change sharing links and QR codes to the checked address? Previously distributed links do not change automatically.",
     restore: "Return to the previous connection mode", retain: "Checks keep the current address. Applying does not immediately stop the previous tunnel. Stop it separately in its running environment or exit the app.",
     autoHelp: "Start app-managed tunnels with the server and recover lost connections. Telegram is optional; address notifications are sent only to connected recipients.",
-    shareHelp: "Address used for links and QR codes. Selecting LAN/VPN does not stop the public tunnel, and your choice survives reconnection. LAN/VPN addresses require access to that network.",
+    shareHelp: "Address used for links and QR codes. While the public tunnel is connected its address is always used; the LAN/VPN address chosen here applies when the tunnel is off. LAN/VPN addresses require access to that network.",
     tunnelInvalid: "Enter a public HTTPS domain without a path and a valid tunnel token. Private addresses are not allowed.",
     tunnelCheckFailed: "Connection check failed. Check DNS, the tunnel token, the local service address and WebSocket access. The previous sharing address is unchanged.",
     tunnelStopFirst: "Stop the current fixed tunnel before changing the token for the same address.",
@@ -564,7 +628,7 @@ const tunnelStrings = {
     confirm: "Đổi liên kết chia sẻ và mã QR sang địa chỉ đã kiểm tra? Liên kết đã phát trước đó không tự đổi.",
     restore: "Trở lại kiểu kết nối trước", retain: "Giữ địa chỉ hiện tại khi kiểm tra. Áp dụng không dừng ngay đường hầm cũ. Hãy dừng riêng trong môi trường chạy hoặc thoát ứng dụng.",
     autoHelp: "Khởi động đường hầm do ứng dụng quản lý cùng máy chủ và khôi phục khi mất kết nối. Telegram là tùy chọn; chỉ gửi thông báo địa chỉ đến nơi nhận đã kết nối.",
-    shareHelp: "Địa chỉ dùng cho liên kết và mã QR. Chọn LAN/VPN không dừng đường hầm công khai và lựa chọn được giữ khi kết nối lại. Địa chỉ LAN/VPN chỉ truy cập được trong mạng đó.",
+    shareHelp: "Địa chỉ dùng cho liên kết và mã QR. Khi đường hầm công khai đang kết nối, luôn dùng địa chỉ công khai; địa chỉ LAN/VPN chọn ở đây được dùng khi đường hầm tắt. Địa chỉ LAN/VPN chỉ truy cập được trong mạng đó.",
     tunnelInvalid: "Nhập tên miền HTTPS công khai không có đường dẫn và token hợp lệ. Không cho phép địa chỉ riêng.",
     tunnelCheckFailed: "Kiểm tra thất bại. Kiểm tra DNS, token, địa chỉ dịch vụ cục bộ và quyền truy cập WebSocket. Địa chỉ chia sẻ cũ được giữ nguyên.",
     tunnelStopFirst: "Dừng đường hầm cố định hiện tại trước khi đổi token cho cùng địa chỉ.",
@@ -579,7 +643,7 @@ const tunnelStrings = {
     confirm: "เปลี่ยนลิงก์แชร์และรหัส QR เป็นที่อยู่ที่ตรวจสอบแล้วหรือไม่? ลิงก์ที่แจกไปแล้วจะไม่เปลี่ยนอัตโนมัติ",
     restore: "กลับไปใช้รูปแบบการเชื่อมต่อเดิม", retain: "คงที่อยู่เดิมระหว่างตรวจสอบ การนำไปใช้จะไม่หยุดทันเนลเดิมทันที โปรดหยุดแยกในสภาพแวดล้อมที่รันหรือปิดแอป",
     autoHelp: "เริ่มทันเนลที่แอปจัดการพร้อมเซิร์ฟเวอร์และกู้คืนเมื่อหลุด ไม่จำเป็นต้องลงทะเบียน Telegram จะแจ้งที่อยู่เฉพาะผู้รับที่เชื่อมต่อไว้",
-    shareHelp: "ที่อยู่สำหรับลิงก์และรหัส QR การเลือก LAN/VPN ไม่หยุดทันเนลสาธารณะและจะคงตัวเลือกเมื่อเชื่อมต่อใหม่ ที่อยู่ LAN/VPN ต้องเข้าถึงเครือข่ายนั้นได้",
+    shareHelp: "ที่อยู่สำหรับลิงก์และรหัส QR ขณะทันเนลสาธารณะเชื่อมต่ออยู่จะใช้ที่อยู่สาธารณะเสมอ ที่อยู่ LAN/VPN ที่เลือกที่นี่จะใช้เมื่อปิดทันเนล ที่อยู่ LAN/VPN ต้องเข้าถึงเครือข่ายนั้นได้",
     tunnelInvalid: "ใส่โดเมน HTTPS สาธารณะที่ไม่มีเส้นทางและโทเค็นที่ถูกต้อง ไม่อนุญาตที่อยู่ส่วนตัว",
     tunnelCheckFailed: "ตรวจสอบไม่สำเร็จ โปรดตรวจ DNS โทเค็น ที่อยู่บริการภายใน และการอนุญาต WebSocket ที่อยู่แชร์เดิมยังคงอยู่",
     tunnelStopFirst: "หยุดทันเนลถาวรปัจจุบันก่อนเปลี่ยนโทเค็นสำหรับที่อยู่เดิม",
@@ -594,7 +658,7 @@ const tunnelStrings = {
     confirm: "බෙදාගැනීමේ සබැඳි සහ QR කේත පරීක්ෂා කළ ලිපිනයට වෙනස් කරන්නද? කලින් බෙදාදුන් සබැඳි ස්වයංක්‍රීයව වෙනස් නොවේ.",
     restore: "පෙර සම්බන්ධතා ආකාරයට ආපසු යන්න", retain: "පරීක්ෂා කරන අතරතුර වත්මන් ලිපිනය පවතී. යෙදීමෙන් පෙර ටනලය වහාම නවතින්නේ නැත. එය ක්‍රියාත්මක පරිසරයෙන් වෙනම නවත්වන්න හෝ යෙදුම වසන්න.",
     autoHelp: "යෙදුම කළමනාකරණය කරන ටනලය සේවාදායකය සමඟ අරඹා සම්බන්ධතාව බිඳුණහොත් යළි සම්බන්ධ කරයි. Telegram අවශ්‍ය නොවේ; ලිපින දැනුම්දීම් සම්බන්ධ කළ ලබන්නන්ට පමණක් යවයි.",
-    shareHelp: "සබැඳි සහ QR කේත සඳහා ලිපිනයයි. LAN/VPN තේරීම පොදු ටනලය නවත්වන්නේ නැති අතර නැවත සම්බන්ධ වූ පසුවත් තේරීම පවතී. LAN/VPN ලිපින සඳහා එම ජාලයට ප්‍රවේශය අවශ්‍යය.",
+    shareHelp: "සබැඳි සහ QR කේත සඳහා ලිපිනයයි. පොදු ටනලය සම්බන්ධව ඇති විට සැමවිටම පොදු ලිපිනය භාවිත වේ; මෙහි තේරූ LAN/VPN ලිපිනය ටනලය අක්‍රිය විට භාවිත වේ. LAN/VPN ලිපින සඳහා එම ජාලයට ප්‍රවේශය අවශ්‍යය.",
     tunnelInvalid: "මාර්ගයක් නැති පොදු HTTPS වසමක් සහ වලංගු ටෝකනයක් ඇතුළත් කරන්න. පුද්ගලික ලිපින භාවිතා කළ නොහැක.",
     tunnelCheckFailed: "සම්බන්ධතා පරීක්ෂාව අසාර්ථකයි. DNS, ටෝකනය, දේශීය සේවා ලිපිනය සහ WebSocket අවසර පරීක්ෂා කරන්න. පෙර බෙදාගැනීමේ ලිපිනය වෙනස් නොවේ.",
     tunnelStopFirst: "එම ලිපිනයේ ටෝකනය වෙනස් කිරීමට පෙර වත්මන් ස්ථිර ටනලය නවත්වන්න.",
@@ -609,7 +673,7 @@ const tunnelStrings = {
     confirm: "将共享链接和二维码改为已检查的地址？之前分发的链接不会自动改变。",
     restore: "返回原来的连接方式", retain: "检查期间保留当前地址。应用后不会立即停止原隧道，请在其运行环境中单独停止或退出应用。",
     autoHelp: "随服务器启动应用管理的隧道，并在断线后恢复。无需注册 Telegram；仅向已连接的接收者发送地址通知。",
-    shareHelp: "用于链接和二维码的地址。选择 LAN/VPN 不会停止公开隧道，重连后仍保留选择。LAN/VPN 地址仅在对应网络内可访问。",
+    shareHelp: "用于链接和二维码的地址。公开隧道连接时始终使用公开地址；隧道关闭时使用此处选择的 LAN/VPN 地址。LAN/VPN 地址仅在对应网络内可访问。",
     tunnelInvalid: "请输入不含路径的公开 HTTPS 域名和有效隧道令牌。不允许使用私有地址。",
     tunnelCheckFailed: "连接检查失败。请检查 DNS、隧道令牌、本地服务地址及 WebSocket 访问权限。原共享地址保持不变。",
     tunnelStopFirst: "更换同一地址的令牌前，请先停止当前固定隧道。",
@@ -624,7 +688,7 @@ const tunnelStrings = {
     confirm: "Palitan ang mga link at QR code ng nasuring address? Hindi awtomatikong magbabago ang mga naipamahaging link.",
     restore: "Bumalik sa dating paraan ng koneksyon", retain: "Nananatili ang kasalukuyang address habang sinusuri. Hindi agad hihinto ang dating tunnel kapag inilapat. Ihinto ito nang hiwalay sa kapaligirang nagpapatakbo nito o isara ang app.",
     autoHelp: "Simulan ang tunnel na pinamamahalaan ng app kasabay ng server at ibalik ang naputol na koneksyon. Opsyonal ang Telegram; sa mga nakakonektang tatanggap lang ipinapadala ang abiso ng address.",
-    shareHelp: "Address para sa mga link at QR code. Hindi pinapatigil ng pagpili ng LAN/VPN ang pampublikong tunnel at nananatili ang pagpili sa muling pagkonekta. Kailangan ang access sa kaukulang network para sa LAN/VPN address.",
+    shareHelp: "Address para sa mga link at QR code. Habang nakakonekta ang pampublikong tunnel, palaging ginagamit ang pampublikong address; ang LAN/VPN address na pinili rito ay ginagamit kapag naka-off ang tunnel. Kailangan ang access sa kaukulang network para sa LAN/VPN address.",
     tunnelInvalid: "Maglagay ng pampublikong HTTPS domain na walang path at wastong tunnel token. Hindi pinapayagan ang pribadong address.",
     tunnelCheckFailed: "Nabigo ang pagsusuri. Suriin ang DNS, tunnel token, lokal na service address at pahintulot sa WebSocket. Hindi nagbago ang dating address.",
     tunnelStopFirst: "Ihinto muna ang kasalukuyang permanenteng tunnel bago palitan ang token para sa parehong address.",
@@ -633,7 +697,13 @@ const tunnelStrings = {
 
 const zoomStrings = {
   ko: {
-    title: "Zoom 채팅 번역", open: "Zoom 연결 화면 열기", connect: "현재 Zoom 회의 확인",
+    mode: "입력 음성", modeSpeakers: "참가자별 음성 (권장)", modeMixed: "회의 전체 음성 · 언어 자동 감지", modeTranscript: "Zoom 자체 전사", modeChat: "Zoom 채팅 전송만 (회의 음성 받지 않음)",
+    chatOnlyHelp: "Zoom 회의 음성을 받지 않아 호스트 승인이 필요 없습니다. 입력 페이지에서 'Zoom 채팅'을 고른 입력(컴퓨터 소리·마이크·타자)만 이 앱 창이 채팅으로 보냅니다. 앱 창을 열어 두세요.", chatOnlyLive: "Zoom 채팅 전송 중",
+    modeHelp: "음성 모드는 Zoom 회의 음성을 받아 이 앱의 음성 인식(관리자 화면에서 고른 엔진)으로 세션 언어를 모두 전사합니다. 참가자별 음성은 화자 이름이 정확하고 겹친 발화가 덜 섞입니다. 말하는 동안만 전사로 보냅니다. Zoom 자체 전사는 Zoom 지원 언어만 받습니다.",
+    chat: "번역문을 Zoom 채팅에도 보내기", chatHelp: "끄면 번역은 세션 기록·출력·통합 조회에만 남고, 앱 창을 최소화해도 음성 수신이 계속됩니다. 켜면 발화마다 모든 언어를 한 메시지로 보내며 앱 창을 열어 두어야 합니다.",
+    speakers: "참가자 입력 언어", speakerAuto: "자동 감지", speakersEmpty: "참가자가 말하면 여기에 나타납니다.", mixedSpeaker: "회의 전체 음성",
+    transcriptionUnavailable: "음성 인식 엔진을 쓸 수 없어 중지했습니다. 관리자 화면의 음성 인식 엔진과 키(또는 로컬 설치)를 확인하세요.",
+    title: "Zoom 회의 번역", open: "Zoom 연결 화면 열기", connect: "현재 Zoom 회의 확인",
     sessionTitle: "세션 이름", untitled: "Zoom 세션", autoSession: "Zoom 제목으로 세션을 자동 생성합니다. 재연결하면 기존 기록과 번역 설정을 이어 씁니다.",
     savedSession: "기록 세션", manageSession: "세션 관리 열기", viewSession: "통합 조회 열기", working: "처리 중…",
     archiveStart: "번역·기록 시작",
@@ -644,24 +714,30 @@ const zoomStrings = {
     clientId: "Zoom Client ID", clientSecret: "Zoom Client Secret", webhookSecret: "웹훅 Secret Token",
     credentialsHelp: "Zoom Marketplace의 General App 값을 입력하세요. 비밀값은 암호화 저장하며 다시 표시하지 않습니다. 저장된 비밀값을 유지하려면 비워 두세요. 앱 ID를 바꿀 때는 두 비밀값도 새로 입력하세요.",
     setup: "Zoom 앱 등록 안내", homeUrl: "Zoom App Home URL", webhookUrl: "이벤트 수신 주소",
-    setupHelp: "고정 HTTPS 주소를 사용하세요. Zoom 앱에서 RTMS 전사 권한과 meeting.rtms_started / meeting.rtms_stopped 이벤트를 활성화하고 이벤트 주소를 검증하세요. 이 화면을 Zoom 회의의 앱 메뉴에서 열어야 채팅 전송이 가능합니다.",
+    setupHelp: "고정 HTTPS 주소(고정 도메인 터널)를 사용하세요. Quick Tunnel은 주소가 바뀔 때마다 Zoom 앱 설정을 다시 해야 합니다. Zoom 앱에 RTMS 음성(meeting:read:meeting_audio)·전사 권한과 meeting.rtms_started / meeting.rtms_stopped 이벤트를 켜고 이벤트 주소를 검증하세요. 운영자가 호스트가 아니어도 되지만, 그때는 회의에 있는 호스트가 Zoom 승인 요청을 승인해야 합니다. 이 화면은 Zoom 회의의 앱 메뉴에서 여세요.",
     ready: "자격 증명 저장됨", missing: "자격 증명 설정 필요",
     source: "첫 발언의 언어", sourceHelp: "초기 전사 언어입니다. 이후 Zoom이 언어를 감지합니다. 언어 전환 감지에는 약 10~30초가 걸릴 수 있으며 Zoom 전사 지원 언어만 선택할 수 있습니다.",
     targets: "번역·조회·채팅 언어", targetsHelp: "선택한 언어만 번역하고 같은 결과를 기록·조회·Zoom 채팅에 사용합니다. 번역 엔진·모델·단어집·지정 폴백을 재사용합니다.",
     stop: "중지", received: "수신 발언", sent: "전송 메시지", pending: "대기 중", meetingReady: "현재 회의 연결 준비됨",
-    waiting: "Zoom 전사 시작 대기", connecting: "전사 연결 중", live: "번역 채팅 중", paused: "Zoom 전사 일시 중지", stopped: "중지됨", error: "오류로 중지됨",
+    waiting: "Zoom 시작 대기 · 참가자로 시작했다면 호스트 승인을 기다립니다", connecting: "Zoom 연결 중", live: "수신·번역 중", paused: "Zoom 전사 일시 중지", stopped: "중지됨", error: "오류로 중지됨",
     notConfigured: "먼저 Zoom 앱 자격 증명을 저장하세요.", busy: "다른 Zoom 중계가 실행 중입니다. 해당 창에서 중지하거나 연결 만료 후 다시 시도하세요.",
     invalidSession: "종료되었거나 사용할 수 없는 세션입니다.", invalidLanguage: "세션 또는 Zoom에서 지원하는 언어를 선택하세요.",
     insecure: "HTTPS 또는 이 컴퓨터의 localhost로 접속하세요.", requestFailed: "연결 요청에 실패했습니다. 서버와 로그인 상태를 확인하세요.",
-    transportFailed: "Zoom 전사 연결에 실패했습니다. 앱 권한·이벤트 설정·네트워크를 확인한 뒤 다시 시작하세요.",
-    webhookTimeout: "Zoom 시작 이벤트가 도착하지 않았습니다. RTMS 권한과 이벤트 수신 주소를 확인하세요.", leaseExpired: "앱 창과의 연결이 끊겨 중계를 중지했습니다.",
+    transportFailed: "Zoom 연결에 실패했습니다(재연결도 실패). 앱 권한(음성·전사)·이벤트 설정·네트워크를 확인한 뒤 다시 시작하세요.",
+    webhookTimeout: "3분 안에 Zoom 시작 이벤트가 도착하지 않았습니다. 호스트 승인, RTMS 권한, 이벤트 수신 주소를 확인하세요.", leaseExpired: "앱 창과의 연결이 끊겨 중계를 중지했습니다.",
     translationFailed: "번역에 실패해 중지했습니다. 선택한 엔진의 키·잔액·지원 언어를 확인하세요.", queueFull: "처리가 늦어 대기 한도에 도달했습니다. 전송 언어 수를 줄여 다시 시작하세요.",
     sendUncertain: "채팅 전송 결과를 확인할 수 없어 중지했습니다. 중복 방지를 위해 자동 재전송하지 않습니다. Zoom 채팅을 확인하세요.",
     revoked: "Zoom에서 전사 접근을 철회해 중지했습니다. 미전송 채팅은 폐기하며 저장된 세션 기록은 유지합니다.", streamStopped: "Zoom에서 전사를 종료했습니다.",
     zoomRequired: "Zoom 데스크톱 6.5.5 이상에서 회의에 입장한 뒤, 설치한 Zoom 앱 안에서 이 화면을 여세요.", stopFailed: "앱 중계는 중지했습니다. Zoom 전사 중지 여부는 회의에서 직접 확인하세요.",
   },
   vi: {
-    title: "Dịch trò chuyện Zoom", open: "Mở kết nối Zoom", connect: "Kiểm tra cuộc họp Zoom hiện tại",
+    mode: "Âm thanh đầu vào", modeSpeakers: "Âm thanh theo từng người (khuyên dùng)", modeMixed: "Âm thanh toàn cuộc họp · tự nhận diện ngôn ngữ", modeTranscript: "Bản chép của Zoom", modeChat: "Chỉ gửi trò chuyện Zoom (không nhận âm thanh cuộc họp)",
+    chatOnlyHelp: "Không nhận âm thanh cuộc họp Zoom nên không cần chủ trì phê duyệt. Cửa sổ ứng dụng này chỉ gửi vào trò chuyện những nội dung đã chọn 'Trò chuyện Zoom' ở trang nhập (âm thanh máy tính, micrô, bàn phím). Hãy giữ cửa sổ ứng dụng mở.", chatOnlyLive: "Đang gửi trò chuyện Zoom",
+    modeHelp: "Chế độ âm thanh nhận âm thanh cuộc họp Zoom và chép mọi ngôn ngữ của phiên bằng nhận dạng giọng nói của ứng dụng này (bộ máy chọn ở trang quản trị). Âm thanh theo từng người giữ đúng tên người nói và ít lẫn khi nói chồng. Chỉ gửi đi khi có người nói. Bản chép của Zoom chỉ nhận ngôn ngữ Zoom hỗ trợ.",
+    chat: "Gửi bản dịch vào trò chuyện Zoom", chatHelp: "Khi tắt, bản dịch chỉ nằm trong lịch sử phiên, trang đầu ra và xem tổng hợp; thu nhỏ cửa sổ ứng dụng vẫn tiếp tục nhận âm thanh. Khi bật, mỗi lời nói được gửi thành một tin nhắn gồm mọi ngôn ngữ và phải giữ cửa sổ ứng dụng mở.",
+    speakers: "Ngôn ngữ của người tham gia", speakerAuto: "Tự nhận diện", speakersEmpty: "Người tham gia sẽ xuất hiện ở đây khi nói.", mixedSpeaker: "Âm thanh toàn cuộc họp",
+    transcriptionUnavailable: "Đã dừng vì không dùng được bộ nhận dạng giọng nói. Kiểm tra bộ máy nhận dạng và khóa (hoặc bản cài cục bộ) trong trang quản trị.",
+    title: "Dịch cuộc họp Zoom", open: "Mở kết nối Zoom", connect: "Kiểm tra cuộc họp Zoom hiện tại",
     sessionTitle: "Tên phiên", untitled: "Phiên Zoom", autoSession: "Tự tạo phiên theo tiêu đề Zoom. Kết nối lại sẽ dùng tiếp lịch sử và thiết lập dịch đã lưu.",
     savedSession: "Phiên lưu trữ", manageSession: "Mở quản lý phiên", viewSession: "Mở xem tổng hợp", working: "Đang xử lý…",
     archiveStart: "Bắt đầu dịch và lưu",
@@ -672,24 +748,30 @@ const zoomStrings = {
     clientId: "Zoom Client ID", clientSecret: "Zoom Client Secret", webhookSecret: "Secret Token webhook",
     credentialsHelp: "Nhập thông tin General App từ Zoom Marketplace. Bí mật được lưu mã hóa và không hiển thị lại. Để trống để giữ giá trị đã lưu. Khi đổi App ID, hãy nhập lại cả hai bí mật.",
     setup: "Hướng dẫn đăng ký ứng dụng Zoom", homeUrl: "Zoom App Home URL", webhookUrl: "Địa chỉ nhận sự kiện",
-    setupHelp: "Dùng địa chỉ HTTPS cố định. Bật quyền bản chép RTMS và sự kiện meeting.rtms_started / meeting.rtms_stopped, rồi xác thực địa chỉ sự kiện. Mở màn hình này từ menu ứng dụng trong cuộc họp Zoom để gửi trò chuyện.",
+    setupHelp: "Dùng địa chỉ HTTPS cố định (tunnel tên miền cố định). Với Quick Tunnel, mỗi lần đổi địa chỉ phải cấu hình lại ứng dụng Zoom. Bật quyền âm thanh RTMS (meeting:read:meeting_audio), quyền bản chép và sự kiện meeting.rtms_started / meeting.rtms_stopped, rồi xác thực địa chỉ sự kiện. Người vận hành không cần là chủ trì, nhưng khi đó chủ trì đang ở trong cuộc họp phải phê duyệt yêu cầu của Zoom. Mở màn hình này từ menu ứng dụng trong cuộc họp Zoom.",
     ready: "Đã lưu thông tin xác thực", missing: "Cần thông tin xác thực",
     source: "Ngôn ngữ phát biểu đầu tiên", sourceHelp: "Ngôn ngữ chép ban đầu. Sau đó Zoom tự nhận diện; đổi ngôn ngữ có thể mất 10–30 giây. Chỉ chọn được ngôn ngữ Zoom hỗ trợ.",
     targets: "Ngôn ngữ dịch, xem và chat", targetsHelp: "Chỉ dịch các ngôn ngữ đã chọn và dùng cùng kết quả cho lưu trữ, xem và chat Zoom. Sử dụng bộ máy, mô hình, bảng thuật ngữ và dự phòng đã chọn.",
     stop: "Dừng", received: "Phát biểu nhận được", sent: "Tin nhắn đã gửi", pending: "Đang chờ", meetingReady: "Sẵn sàng kết nối cuộc họp",
-    waiting: "Chờ Zoom bắt đầu chép", connecting: "Đang kết nối bản chép", live: "Đang dịch trò chuyện", paused: "Zoom tạm dừng chép", stopped: "Đã dừng", error: "Đã dừng do lỗi",
+    waiting: "Chờ Zoom bắt đầu · nếu bắt đầu với tư cách người tham gia, cần chủ trì phê duyệt", connecting: "Đang kết nối Zoom", live: "Đang nhận và dịch", paused: "Zoom tạm dừng chép", stopped: "Đã dừng", error: "Đã dừng do lỗi",
     notConfigured: "Lưu thông tin xác thực Zoom trước.", busy: "Một chuyển tiếp Zoom khác đang chạy. Dừng ở cửa sổ đó hoặc chờ kết nối hết hạn.",
     invalidSession: "Phiên đã đóng hoặc không khả dụng.", invalidLanguage: "Chọn ngôn ngữ được phiên hoặc Zoom hỗ trợ.",
     insecure: "Dùng HTTPS hoặc localhost trên máy này.", requestFailed: "Yêu cầu thất bại. Kiểm tra máy chủ và đăng nhập.",
     transportFailed: "Không kết nối được bản chép Zoom. Kiểm tra quyền, sự kiện và mạng rồi thử lại.",
-    webhookTimeout: "Không nhận được sự kiện bắt đầu. Kiểm tra quyền RTMS và địa chỉ sự kiện.", leaseExpired: "Mất kết nối cửa sổ ứng dụng; đã dừng chuyển tiếp.",
+    webhookTimeout: "Không nhận được sự kiện bắt đầu trong 3 phút. Kiểm tra phê duyệt của chủ trì, quyền RTMS và địa chỉ sự kiện.", leaseExpired: "Mất kết nối cửa sổ ứng dụng; đã dừng chuyển tiếp.",
     translationFailed: "Dịch thất bại. Kiểm tra khóa, số dư và ngôn ngữ của bộ máy đã chọn.", queueFull: "Hàng đợi đầy. Giảm số ngôn ngữ và bắt đầu lại.",
     sendUncertain: "Không xác nhận được tin nhắn nên đã dừng. Không tự gửi lại để tránh trùng lặp. Kiểm tra trò chuyện Zoom.",
     revoked: "Zoom đã thu hồi quyền chép nên đã dừng. Chat chưa gửi bị xóa; lịch sử phiên đã lưu được giữ lại.", streamStopped: "Zoom đã kết thúc chép.",
     zoomRequired: "Vào cuộc họp bằng Zoom desktop 6.5.5 trở lên rồi mở màn hình này trong ứng dụng Zoom đã cài.", stopFailed: "Đã dừng chuyển tiếp. Kiểm tra trực tiếp trong Zoom xem bản chép đã dừng chưa.",
   },
   th: {
-    title: "แปลแชต Zoom", open: "เปิดการเชื่อมต่อ Zoom", connect: "ตรวจสอบการประชุม Zoom ปัจจุบัน",
+    mode: "เสียงขาเข้า", modeSpeakers: "เสียงแยกตามผู้เข้าร่วม (แนะนำ)", modeMixed: "เสียงรวมทั้งการประชุม · ตรวจภาษาอัตโนมัติ", modeTranscript: "การถอดเสียงของ Zoom", modeChat: "ส่งแชท Zoom เท่านั้น (ไม่รับเสียงการประชุม)",
+    chatOnlyHelp: "ไม่รับเสียงการประชุม Zoom จึงไม่ต้องให้โฮสต์อนุมัติ หน้าต่างแอปนี้จะส่งไปยังแชทเฉพาะข้อความที่เลือก 'แชท Zoom' ในหน้าป้อนข้อมูล (เสียงคอมพิวเตอร์ ไมโครโฟน การพิมพ์) โปรดเปิดหน้าต่างแอปไว้", chatOnlyLive: "กำลังส่งแชท Zoom",
+    modeHelp: "โหมดเสียงรับเสียงจากการประชุม Zoom แล้วถอดเสียงทุกภาษาของเซสชันด้วยระบบรู้จำเสียงของแอปนี้ (เอนจินที่เลือกในหน้าผู้ดูแล) เสียงแยกตามผู้เข้าร่วมระบุชื่อผู้พูดได้ถูกต้องและปนกันน้อยเมื่อพูดพร้อมกัน ส่งไปถอดเสียงเฉพาะตอนที่มีคนพูด การถอดเสียงของ Zoom รับเฉพาะภาษาที่ Zoom รองรับ",
+    chat: "ส่งคำแปลไปยังแชต Zoom ด้วย", chatHelp: "เมื่อปิด คำแปลจะอยู่ในบันทึกเซสชัน หน้าผลลัพธ์ และมุมมองรวมเท่านั้น และย่อหน้าต่างแอปได้โดยยังรับเสียงต่อ เมื่อเปิด จะส่งทุกภาษาเป็นข้อความเดียวต่อการพูดหนึ่งครั้ง และต้องเปิดหน้าต่างแอปไว้",
+    speakers: "ภาษาของผู้เข้าร่วม", speakerAuto: "ตรวจอัตโนมัติ", speakersEmpty: "ผู้เข้าร่วมจะแสดงที่นี่เมื่อพูด", mixedSpeaker: "เสียงรวมทั้งการประชุม",
+    transcriptionUnavailable: "หยุดแล้วเพราะใช้ระบบรู้จำเสียงไม่ได้ ตรวจสอบเอนจินรู้จำเสียงและคีย์ (หรือการติดตั้งในเครื่อง) ในหน้าผู้ดูแล",
+    title: "แปลการประชุม Zoom", open: "เปิดการเชื่อมต่อ Zoom", connect: "ตรวจสอบการประชุม Zoom ปัจจุบัน",
     sessionTitle: "ชื่อเซสชัน", untitled: "เซสชัน Zoom", autoSession: "สร้างเซสชันตามชื่อ Zoom อัตโนมัติ เมื่อเชื่อมต่อใหม่จะใช้ประวัติและการตั้งค่าการแปลเดิม",
     savedSession: "เซสชันที่บันทึก", manageSession: "เปิดการจัดการเซสชัน", viewSession: "เปิดมุมมองรวม", working: "กำลังดำเนินการ…",
     archiveStart: "เริ่มแปลและบันทึก",
@@ -700,24 +782,30 @@ const zoomStrings = {
     clientId: "Zoom Client ID", clientSecret: "Zoom Client Secret", webhookSecret: "Secret Token ของเว็บฮุก",
     credentialsHelp: "กรอกข้อมูล General App จาก Zoom Marketplace ค่าลับจะเก็บแบบเข้ารหัสและไม่แสดงอีก เว้นว่างเพื่อใช้ค่าเดิม หากเปลี่ยน App ID ต้องกรอกค่าลับทั้งสองใหม่",
     setup: "วิธีลงทะเบียนแอป Zoom", homeUrl: "Zoom App Home URL", webhookUrl: "ที่อยู่รับเหตุการณ์",
-    setupHelp: "ใช้ที่อยู่ HTTPS คงที่ เปิดสิทธิ์ถอดเสียง RTMS และเหตุการณ์ meeting.rtms_started / meeting.rtms_stopped แล้วตรวจสอบที่อยู่รับเหตุการณ์ เปิดหน้านี้จากเมนูแอปในการประชุม Zoom เพื่อส่งแชต",
+    setupHelp: "ใช้ที่อยู่ HTTPS คงที่ (ทันเนลโดเมนคงที่) Quick Tunnel ต้องตั้งค่าแอป Zoom ใหม่ทุกครั้งที่ที่อยู่เปลี่ยน เปิดสิทธิ์เสียง RTMS (meeting:read:meeting_audio) สิทธิ์ถอดเสียง และเหตุการณ์ meeting.rtms_started / meeting.rtms_stopped แล้วตรวจสอบที่อยู่รับเหตุการณ์ ผู้ดูแลไม่จำเป็นต้องเป็นโฮสต์ แต่ในกรณีนั้นโฮสต์ที่อยู่ในการประชุมต้องอนุมัติคำขอของ Zoom เปิดหน้านี้จากเมนูแอปในการประชุม Zoom",
     ready: "บันทึกข้อมูลรับรองแล้ว", missing: "ต้องตั้งค่าข้อมูลรับรอง",
     source: "ภาษาของคำพูดแรก", sourceHelp: "เป็นภาษาเริ่มต้นในการถอดเสียง หลังจากนั้น Zoom จะตรวจจับภาษา การเปลี่ยนภาษาอาจใช้เวลา 10–30 วินาที เลือกได้เฉพาะภาษาที่ Zoom รองรับ",
     targets: "ภาษาสำหรับแปล ดู และแชต", targetsHelp: "แปลเฉพาะภาษาที่เลือกและใช้ผลเดียวกันในบันทึก หน้าดู และแชต Zoom โดยใช้เอนจิน โมเดล อภิธานศัพท์ และเอนจินสำรองที่เลือก",
     stop: "หยุด", received: "คำพูดที่รับ", sent: "ข้อความที่ส่ง", pending: "รอดำเนินการ", meetingReady: "พร้อมเชื่อมต่อการประชุม",
-    waiting: "รอ Zoom เริ่มถอดเสียง", connecting: "กำลังเชื่อมต่อการถอดเสียง", live: "กำลังแปลแชต", paused: "Zoom พักการถอดเสียง", stopped: "หยุดแล้ว", error: "หยุดเนื่องจากข้อผิดพลาด",
+    waiting: "รอ Zoom เริ่ม · หากเริ่มในฐานะผู้เข้าร่วม ต้องรอโฮสต์อนุมัติ", connecting: "กำลังเชื่อมต่อ Zoom", live: "กำลังรับและแปล", paused: "Zoom พักการถอดเสียง", stopped: "หยุดแล้ว", error: "หยุดเนื่องจากข้อผิดพลาด",
     notConfigured: "บันทึกข้อมูลรับรอง Zoom ก่อน", busy: "มีการส่งต่อ Zoom อื่นทำงานอยู่ หยุดจากหน้าต่างนั้นหรือรอให้การเชื่อมต่อหมดอายุ",
     invalidSession: "เซสชันปิดแล้วหรือไม่พร้อมใช้งาน", invalidLanguage: "เลือกภาษาที่เซสชันหรือ Zoom รองรับ",
     insecure: "ใช้ HTTPS หรือ localhost บนเครื่องนี้", requestFailed: "คำขอล้มเหลว ตรวจสอบเซิร์ฟเวอร์และการเข้าสู่ระบบ",
     transportFailed: "เชื่อมต่อการถอดเสียง Zoom ไม่ได้ ตรวจสอบสิทธิ์ เหตุการณ์ และเครือข่าย แล้วเริ่มใหม่",
-    webhookTimeout: "ไม่ได้รับเหตุการณ์เริ่มต้น ตรวจสอบสิทธิ์ RTMS และที่อยู่รับเหตุการณ์", leaseExpired: "ขาดการเชื่อมต่อหน้าต่างแอป จึงหยุดส่งต่อ",
+    webhookTimeout: "ไม่ได้รับเหตุการณ์เริ่มต้นภายใน 3 นาที ตรวจสอบการอนุมัติของโฮสต์ สิทธิ์ RTMS และที่อยู่รับเหตุการณ์", leaseExpired: "ขาดการเชื่อมต่อหน้าต่างแอป จึงหยุดส่งต่อ",
     translationFailed: "แปลไม่สำเร็จ ตรวจสอบคีย์ ยอดเงิน และภาษาของเอนจินที่เลือก", queueFull: "คิวเต็ม ลดจำนวนภาษาแล้วเริ่มใหม่",
     sendUncertain: "ยืนยันการส่งแชตไม่ได้จึงหยุด จะไม่ส่งซ้ำอัตโนมัติเพื่อป้องกันข้อความซ้ำ โปรดตรวจสอบแชต Zoom",
     revoked: "หยุดเพราะ Zoom ถอนสิทธิ์ถอดเสียง ล้างแชตที่ยังไม่ส่ง แต่เก็บประวัติเซสชันที่บันทึกแล้ว", streamStopped: "Zoom จบการถอดเสียงแล้ว",
     zoomRequired: "เข้าประชุมด้วย Zoom desktop 6.5.5 ขึ้นไป แล้วเปิดหน้านี้ในแอป Zoom ที่ติดตั้งไว้", stopFailed: "หยุดส่งต่อแล้ว โปรดตรวจสอบใน Zoom ว่าการถอดเสียงหยุดแล้วหรือไม่",
   },
   si: {
-    title: "Zoom කතාබස් පරිවර්තනය", open: "Zoom සම්බන්ධතාව විවෘත කරන්න", connect: "වත්මන් Zoom සැසිය පරීක්ෂා කරන්න",
+    mode: "ආදාන හඬ", modeSpeakers: "සහභාගිවන්නන් අනුව වෙන් හඬ (නිර්දේශිත)", modeMixed: "රැස්වීමේ සම්පූර්ණ හඬ · භාෂාව ස්වයංක්‍රීයව හඳුනාගැනීම", modeTranscript: "Zoom පිටපත", modeChat: "Zoom කතාබස් යැවීම පමණි (රැස්වීමේ හඬ නොගනී)",
+    chatOnlyHelp: "Zoom රැස්වීමේ හඬ නොගන්නා බැවින් සත්කාරක අනුමැතිය අවශ්‍ය නැත. ආදාන පිටුවේ 'Zoom කතාබස්' තේරූ ආදාන (පරිගණක හඬ, මයික්‍රෆෝනය, ටයිප් කිරීම) පමණක් මෙම යෙදුම් කවුළුව කතාබස් වෙත යවයි. යෙදුම් කවුළුව විවෘතව තබන්න.", chatOnlyLive: "Zoom කතාබස් යවමින්",
+    modeHelp: "හඬ ප්‍රකාරය Zoom රැස්වීමේ හඬ ලබාගෙන මෙම යෙදුමේ කථන හඳුනාගැනීමෙන් (පරිපාලක තිරයේ තේරූ එන්ජිම) සැසියේ සියලු භාෂා පිටපත් කරයි. සහභාගිවන්නන් අනුව වෙන් හඬ කථිකයාගේ නම නිවැරදිව තබා, එකවර කතාවලදී අඩුවෙන් මිශ්‍ර වේ. කවුරුන් හෝ කතා කරන විට පමණක් යවයි. Zoom පිටපත Zoom සහාය දක්වන භාෂා පමණක් ලබාගනී.",
+    chat: "පරිවර්තන Zoom කතාබහටද යවන්න", chatHelp: "අක්‍රිය කළ විට පරිවර්තන සැසි වාර්තාව, ප්‍රතිදාන සහ ඒකාබද්ධ දර්ශනයේ පමණක් ඇති අතර යෙදුම් කවුළුව කුඩා කළත් හඬ ලැබීම දිගටම සිදුවේ. සක්‍රිය කළ විට එක් කතාවකට සියලු භාෂා එක් පණිවිඩයක් ලෙස යවන අතර යෙදුම් කවුළුව විවෘතව තිබිය යුතුය.",
+    speakers: "සහභාගිවන්නන්ගේ භාෂාව", speakerAuto: "ස්වයංක්‍රීය හඳුනාගැනීම", speakersEmpty: "සහභාගිවන්නන් කතා කළ විට මෙහි පෙන්වයි.", mixedSpeaker: "රැස්වීමේ සම්පූර්ණ හඬ",
+    transcriptionUnavailable: "කථන හඳුනාගැනීම භාවිත කළ නොහැකි නිසා නතර කළා. පරිපාලක තිරයේ කථන හඳුනාගැනීමේ එන්ජිම සහ යතුර (හෝ දේශීය ස්ථාපනය) පරීක්ෂා කරන්න.",
+    title: "Zoom රැස්වීම් පරිවර්තනය", open: "Zoom සම්බන්ධතාව විවෘත කරන්න", connect: "වත්මන් Zoom සැසිය පරීක්ෂා කරන්න",
     sessionTitle: "සැසියේ නම", untitled: "Zoom සැසිය", autoSession: "Zoom මාතෘකාවෙන් සැසිය ස්වයංක්‍රීයව සාදයි. නැවත සම්බන්ධ වීමේදී පැරණි වාර්තා සහ පරිවර්තන සැකසුම් භාවිත කරයි.",
     savedSession: "වාර්තා සැසිය", manageSession: "සැසි කළමනාකරණය විවෘත කරන්න", viewSession: "ඒකාබද්ධ දර්ශනය විවෘත කරන්න", working: "සකසමින්…",
     archiveStart: "පරිවර්තනය සහ සුරැකීම අරඹන්න",
@@ -728,17 +816,17 @@ const zoomStrings = {
     clientId: "Zoom Client ID", clientSecret: "Zoom Client Secret", webhookSecret: "වෙබ්හුක් Secret Token",
     credentialsHelp: "Zoom Marketplace හි General App විස්තර ඇතුළත් කරන්න. රහස් අගයන් සංකේතනය කර සුරකින අතර නැවත නොපෙන්වයි. පැරණි අගයන් තබා ගැනීමට හිස්ව තබන්න. App ID වෙනස් කරන විට රහස් අගයන් දෙකම නැවත ඇතුළත් කරන්න.",
     setup: "Zoom යෙදුම ලියාපදිංචි කිරීම", homeUrl: "Zoom App Home URL", webhookUrl: "සිදුවීම් ලැබෙන ලිපිනය",
-    setupHelp: "ස්ථාවර HTTPS ලිපිනයක් භාවිත කරන්න. RTMS පිටපත් අවසර සහ meeting.rtms_started / meeting.rtms_stopped සිදුවීම් සක්‍රිය කර ලිපිනය තහවුරු කරන්න. කතාබස් යැවීමට Zoom සැසියේ යෙදුම් මෙනුවෙන් මෙම තිරය විවෘත කරන්න.",
+    setupHelp: "ස්ථාවර HTTPS ලිපිනයක් (ස්ථාවර වසම් ටනලය) භාවිත කරන්න. Quick Tunnel ලිපිනය වෙනස් වන සෑම විටම Zoom යෙදුම නැවත සැකසිය යුතුය. RTMS හඬ (meeting:read:meeting_audio) සහ පිටපත් අවසර සහ meeting.rtms_started / meeting.rtms_stopped සිදුවීම් සක්‍රිය කර ලිපිනය තහවුරු කරන්න. ක්‍රියාකරු සත්කාරක වීම අවශ්‍ය නැත, නමුත් එවිට රැස්වීමේ සිටින සත්කාරක Zoom ඉල්ලීම අනුමත කළ යුතුය. මෙම තිරය Zoom රැස්වීමේ යෙදුම් මෙනුවෙන් විවෘත කරන්න.",
     ready: "අක්තපත්‍ර සුරකින ලදී", missing: "අක්තපත්‍ර අවශ්‍යයි",
     source: "මුල් කථනයේ භාෂාව", sourceHelp: "මෙය මුල් පිටපත් භාෂාවයි. පසුව Zoom භාෂාව හඳුනා ගනී. භාෂා මාරුව හඳුනා ගැනීමට තත්පර 10–30 ගත විය හැකිය. Zoom සහාය දක්වන භාෂා පමණක් තෝරාගත හැකිය.",
     targets: "පරිවර්තන, දර්ශන සහ කතාබස් භාෂා", targetsHelp: "තෝරාගත් භාෂා පමණක් පරිවර්තනය කර එකම ප්‍රතිඵලය වාර්තා, දර්ශන සහ Zoom කතාබසට යොදයි. තෝරාගත් එන්ජිම, මාදිලිය, පදමාලාව හා විකල්ප එන්ජිම භාවිත කරයි.",
     stop: "නවත්වන්න", received: "ලැබුණු කථන", sent: "යැවූ පණිවිඩ", pending: "පොරොත්තුවේ", meetingReady: "සැසි සම්බන්ධතාව සූදානම්",
-    waiting: "Zoom පිටපත් ආරම්භය බලා සිටී", connecting: "පිටපත සම්බන්ධ කරමින්", live: "කතාබස් පරිවර්තනය කරමින්", paused: "Zoom පිටපත විරාම කර ඇත", stopped: "නවතා ඇත", error: "දෝෂයක් නිසා නැවතුණි",
+    waiting: "Zoom ආරම්භය බලා සිටී · සහභාගිවන්නෙකු ලෙස ආරම්භ කළේ නම් සත්කාරකගේ අනුමැතිය අවශ්‍යයි", connecting: "Zoom සම්බන්ධ කරමින්", live: "ලබාගෙන පරිවර්තනය කරමින්", paused: "Zoom පිටපත විරාම කර ඇත", stopped: "නවතා ඇත", error: "දෝෂයක් නිසා නැවතුණි",
     notConfigured: "පළමුව Zoom අක්තපත්‍ර සුරකින්න.", busy: "වෙනත් Zoom ප්‍රචාරණයක් ක්‍රියාත්මකයි. එම කවුළුවෙන් නවත්වන්න හෝ සම්බන්ධතාව කල් ඉකුත් වනතුරු රැඳෙන්න.",
     invalidSession: "සැසිය වසා ඇත හෝ භාවිත කළ නොහැකිය.", invalidLanguage: "සැසිය හෝ Zoom සහාය දක්වන භාෂාවක් තෝරන්න.",
     insecure: "HTTPS හෝ මෙම පරිගණකයේ localhost භාවිත කරන්න.", requestFailed: "ඉල්ලීම අසාර්ථකයි. සේවාදායකය සහ පිවිසුම පරීක්ෂා කරන්න.",
     transportFailed: "Zoom පිටපත සම්බන්ධ කළ නොහැකිය. අවසර, සිදුවීම් සහ ජාලය පරීක්ෂා කර නැවත අරඹන්න.",
-    webhookTimeout: "ආරම්භක සිදුවීම නොලැබුණි. RTMS අවසර සහ සිදුවීම් ලිපිනය පරීක්ෂා කරන්න.", leaseExpired: "යෙදුම් කවුළුවේ සම්බන්ධතාව බිඳී ප්‍රචාරණය නැවතුණි.",
+    webhookTimeout: "මිනිත්තු 3ක් තුළ ආරම්භක සිදුවීම නොලැබුණි. සත්කාරකගේ අනුමැතිය, RTMS අවසර සහ සිදුවීම් ලිපිනය පරීක්ෂා කරන්න.", leaseExpired: "යෙදුම් කවුළුවේ සම්බන්ධතාව බිඳී ප්‍රචාරණය නැවතුණි.",
     translationFailed: "පරිවර්තනය අසාර්ථකයි. තෝරාගත් එන්ජිමේ යතුර, ශේෂය සහ භාෂා පරීක්ෂා කරන්න.", queueFull: "පෝලිම පිරී ඇත. භාෂා ගණන අඩු කර නැවත අරඹන්න.",
     sendUncertain: "පණිවිඩය යැවූ බව තහවුරු කළ නොහැකි නිසා නැවතුණි. අනුපිටපත් වැළැක්වීමට ස්වයංක්‍රීයව නැවත නොයවයි. Zoom කතාබස පරීක්ෂා කරන්න.",
     revoked: "Zoom පිටපත් ප්‍රවේශය අවලංගු කළ නිසා නවතා ඇත. නොයැවූ කතාබස් ඉවත් කරයි; සුරැකි සැසි වාර්තා පවතී.", streamStopped: "Zoom පිටපත අවසන් කර ඇත.",
@@ -790,6 +878,7 @@ export type AdminStrings = {
     submit: string;
     pending: string;
     wrongPassword: string;
+    rateLimited: string;
     failed: string;
   };
   passwordChange: {
@@ -1044,6 +1133,7 @@ export type AdminStrings = {
     adding: string;
     addFailed: string;
     remove: string;
+    removeConfirm: string;
     removeFailed: string;
     inUse: string;
     builtin: string;
@@ -1085,6 +1175,8 @@ export type AdminStrings = {
     remove: string;
     close: string;
     empty: string;
+    loading: string;
+    loadFailed: string;
   };
 };
 
@@ -1163,6 +1255,7 @@ const adminKo: AdminStrings = {
     submit: "로그인",
     pending: "확인 중",
     wrongPassword: "비밀번호가 올바르지 않습니다",
+    rateLimited: "로그인 시도가 너무 많습니다 · {seconds}초 뒤에 다시 시도해 주세요",
     failed: "로그인에 실패했습니다",
   },
   passwordChange: {
@@ -1417,6 +1510,7 @@ const adminKo: AdminStrings = {
     adding: "추가하는 중",
     addFailed: "언어를 추가하지 못했습니다",
     remove: "제거",
+    removeConfirm: "{name}을(를) 제거할까요? 이 언어의 UI 문구(직접 고친 문구 포함)와 단어집의 번역 단어도 함께 지워집니다.",
     removeFailed: "언어를 제거하지 못했습니다",
     inUse: "세션에서 쓰인 언어는 제거할 수 없습니다",
     builtin: "기본 언어",
@@ -1459,6 +1553,8 @@ const adminKo: AdminStrings = {
     remove: "단어 삭제",
     close: "닫기",
     empty: "등록된 단어가 없습니다",
+    loading: "단어집 불러오는 중",
+    loadFailed: "단어집을 불러오지 못했습니다 · 창을 닫고 다시 열어 주세요",
   },
 };
 
@@ -1537,6 +1633,7 @@ const adminVi: AdminStrings = {
     submit: "Đăng nhập",
     pending: "Đang kiểm tra",
     wrongPassword: "Mật khẩu không đúng",
+    rateLimited: "Đăng nhập quá nhiều lần · Hãy thử lại sau {seconds} giây",
     failed: "Đăng nhập thất bại",
   },
   passwordChange: {
@@ -1791,6 +1888,7 @@ const adminVi: AdminStrings = {
     adding: "Đang thêm",
     addFailed: "Không thêm được ngôn ngữ",
     remove: "Xóa",
+    removeConfirm: "Xóa {name}? Văn bản giao diện của ngôn ngữ này (kể cả phần đã sửa tay) và thuật ngữ trong bảng thuật ngữ cũng sẽ bị xóa.",
     removeFailed: "Không xóa được ngôn ngữ",
     inUse: "Không thể xóa ngôn ngữ đã dùng trong phiên",
     builtin: "Ngôn ngữ mặc định",
@@ -1833,6 +1931,8 @@ const adminVi: AdminStrings = {
     remove: "Xóa thuật ngữ",
     close: "Đóng",
     empty: "Chưa có thuật ngữ",
+    loading: "Đang tải bảng thuật ngữ",
+    loadFailed: "Không tải được bảng thuật ngữ · Hãy đóng và mở lại",
   },
 };
 
@@ -1911,6 +2011,7 @@ const adminTh: AdminStrings = {
     submit: "เข้าสู่ระบบ",
     pending: "กำลังตรวจสอบ",
     wrongPassword: "รหัสผ่านไม่ถูกต้อง",
+    rateLimited: "พยายามเข้าสู่ระบบบ่อยเกินไป · ลองอีกครั้งใน {seconds} วินาที",
     failed: "เข้าสู่ระบบไม่สำเร็จ",
   },
   passwordChange: {
@@ -2165,6 +2266,7 @@ const adminTh: AdminStrings = {
     adding: "กำลังเพิ่ม",
     addFailed: "เพิ่มภาษาไม่สำเร็จ",
     remove: "ลบ",
+    removeConfirm: "ลบ {name} หรือไม่? ข้อความ UI ของภาษานี้ (รวมที่แก้ไขเอง) และคำศัพท์ในอภิธานศัพท์จะถูกลบไปด้วย",
     removeFailed: "ลบภาษาไม่สำเร็จ",
     inUse: "ไม่สามารถลบภาษาที่ใช้ในเซสชันแล้ว",
     builtin: "ภาษาพื้นฐาน",
@@ -2207,6 +2309,8 @@ const adminTh: AdminStrings = {
     remove: "ลบคำศัพท์",
     close: "ปิด",
     empty: "ยังไม่มีคำศัพท์",
+    loading: "กำลังโหลดอภิธานศัพท์",
+    loadFailed: "โหลดอภิธานศัพท์ไม่สำเร็จ · ปิดแล้วเปิดใหม่อีกครั้ง",
   },
 };
 
@@ -2285,6 +2389,7 @@ const adminSi: AdminStrings = {
     submit: "පිවිසෙන්න",
     pending: "පරීක්ෂා කරමින්",
     wrongPassword: "මුරපදය වැරදියි",
+    rateLimited: "පිවිසුම් උත්සාහ වැඩියි · තත්පර {seconds}කින් නැවත උත්සාහ කරන්න",
     failed: "පිවිසීම අසාර්ථකයි",
   },
   passwordChange: {
@@ -2539,6 +2644,7 @@ const adminSi: AdminStrings = {
     adding: "එක් කරමින්",
     addFailed: "භාෂාව එක් කළ නොහැකි විය",
     remove: "ඉවත් කරන්න",
+    removeConfirm: "{name} ඉවත් කරන්නද? මෙම භාෂාවේ UI පෙළ (අතින් සංස්කරණය කළ ඒවා ද ඇතුළුව) සහ පද මාලාවේ පද ද මැකී යයි.",
     removeFailed: "භාෂාව ඉවත් කළ නොහැකි විය",
     inUse: "සැසියක භාවිත වූ භාෂාවක් ඉවත් කළ නොහැක",
     builtin: "පෙරනිමි භාෂාව",
@@ -2581,6 +2687,8 @@ const adminSi: AdminStrings = {
     remove: "පදය මකන්න",
     close: "වසන්න",
     empty: "ලියාපදිංචි පද නැත",
+    loading: "පද මාලාව පූරණය කරමින්",
+    loadFailed: "පද මාලාව පූරණය කළ නොහැකි විය · වසා නැවත විවෘත කරන්න",
   },
 };
 

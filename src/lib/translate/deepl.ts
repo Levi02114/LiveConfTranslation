@@ -200,14 +200,19 @@ async function glossaryId(
 
 async function ensureGlossary(
   key: string,
-  sourceLang: string,
-  targetLang: string,
+  translateSource: string,
+  translateTarget: string,
   pairs: readonly { source: string; target: string }[],
   signal?: AbortSignal,
 ): Promise<string | undefined> {
   if (!pairs.length) return undefined;
   const support = await loadSupport(signal);
-  if (!support.glossary.has(sourceLang) || !support.glossary.has(targetLang)) return undefined;
+  // 용어집 사전은 지역 없는 기본 코드(en, pt, zh)만 받는다. EN-US·PT-BR 대상 번역도 같은 사전을 쓴다.
+  const base = (code: string) => code.split("-")[0]!;
+  const glossaryReady = (code: string) => support.glossary.has(code) || support.glossary.has(base(code));
+  if (!glossaryReady(translateSource) || !glossaryReady(translateTarget)) return undefined;
+  const sourceLang = base(translateSource).toLowerCase();
+  const targetLang = base(translateTarget).toLowerCase();
 
   const state = glossaryState(key);
   const pair = `${sourceLang}:${targetLang}`;

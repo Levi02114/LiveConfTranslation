@@ -7,10 +7,13 @@ import { ScrollToLatest } from "@/components/scroll-to-latest";
 import { FailedSubmissions, type FailedSubmission } from "@/components/failed-submissions";
 import { TranslationEntry } from "@/components/translation-entry";
 import { VoiceLevelMeter } from "@/components/voice-level-meter";
+import { useZoomChatMode, zoomChatFor, ZoomChatSelect } from "@/components/zoom-chat-select";
+import { useHistoryResync } from "@/hooks/use-history-resync";
 import { useRealtime } from "@/hooks/use-realtime";
 import { postPageMessage, retryAfterMilliseconds, useSubmitQueue } from "@/hooks/use-submit-queue";
 import { parseMessageResponse } from "@/lib/client-json";
 import { useVoiceInput } from "@/hooks/use-voice-input";
+import { SYSTEM_AUDIO_DEVICE } from "@/hooks/use-combined-voice-input";
 import { upsertSource, upsertTranslation } from "@/lib/combined-entry";
 import { newBrowserId } from "@/lib/browser-id";
 import type { UiStrings } from "@/lib/i18n-builtin";
@@ -36,6 +39,7 @@ export function InputView({
   rewriteAvailable,
   serverTranscription,
   speakerLabels,
+  zoomLinked,
 }: {
   token: string;
   pageId: string;
@@ -49,6 +53,8 @@ export function InputView({
   rewriteAvailable: boolean;
   serverTranscription: boolean;
   speakerLabels: boolean;
+  /** Zoom 회의에 묶인 세션이면 참가자별 Zoom 채팅 전송 설정을 보인다. */
+  zoomLinked: boolean;
 }) {
   const [entries, setEntries] = useState<CombinedEntry[]>(history);
   const [peers, setPeers] = useState<Peer[]>([]);
@@ -71,9 +77,14 @@ export function InputView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [zoomChatMode, setZoomChatMode] = useZoomChatMode(token, zoomLinked);
+  // 검토형 음성 초안이 섞인 입력은 사람이 보내도 마이크 입력으로 본다.
+  const voiceDraft = useRef(false);
   const appendTranscript = useCallback((body: string) => {
+    voiceDraft.current = true;
     setText((current) => appendTranscriptDraft(current, body));
   }, []);
+  const zoomChatUnavailable = useCallback(() => setError(strings.zoomChat.unavailable), [strings.zoomChat.unavailable]);
   const voice = useVoiceInput({
     token,
     participantId,
@@ -88,6 +99,8 @@ export function InputView({
     // 권한 팝업으로 멈추지 않게. 음성 입력이 없는 세션(키 미등록)에서는 묻지 않는다.
     requestPermissionOnMount: voiceAvailable,
     forceServerTransport: serverTranscription,
+    zoomChat: zoomChatFor(zoomChatMode, true),
+    onZoomChatUnavailable: zoomChatUnavailable,
   });
   const { stop: stopVoice } = voice;
 
@@ -131,9 +144,11 @@ export function InputView({
     }
   }, [stopVoice, strings.speaker.duplicate, token]);
 
+  const resync = useHistoryResync(token, history, setEntries);
   const { state, send } = useRealtime(
     `token=${encodeURIComponent(token)}&clientId=${participantId}`,
     onMessage,
+    resync,
   );
   const speakerReady = !speakerLabels || (speakerClaimed && Boolean(speakerName.trim()));
 
@@ -190,6 +205,7 @@ export function InputView({
 
   const onChange = (value: string) => {
     setText(value);
+    if (!value.trim()) voiceDraft.current = false;
 
     if (draftTimer.current) return;
     draftTimer.current = setTimeout(() => {
@@ -208,6 +224,8 @@ export function InputView({
     send({ t: "draft", text: "" });
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setError(null);
+    const zoomChat = zoomChatFor(zoomChatMode, voiceDraft.current);
+    voiceDraft.current = false;
     const ingestKey = `typed:${participantId}:${newBrowserId()}`;
     const retain = (response?: Response) => setFailedSubmissions((current) => [...current.filter((item) => item.id !== ingestKey), {
       id: ingestKey, body, retryAt: Date.now() + (response ? retryAfterMilliseconds(response) : 0), retry: attempt,
@@ -221,11 +239,15 @@ export function InputView({
           body,
           ingestKey,
           speakerName: speakerLabels ? speakerName.trim() : undefined,
+          zoomChat: zoomChat || undefined,
         });
 
         const payload = parseMessageResponse(await response.text());
         if (payload?.error === "session-closed") setClosed(true);
-        if (response.ok) return;
+        if (response.ok) {
+          if (payload?.zoomChat === "unavailable") zoomChatUnavailable();
+          return;
+        }
         setError(response.status === 429 ? strings.error.rateLimited : response.status === 413 ? strings.error.payloadTooLarge :
           payload?.error === "idempotency-conflict" ? strings.error.idempotencyConflict : strings.error.sendFailed);
         retain(response);
@@ -447,11 +469,13 @@ export function InputView({
               </label>
             ) : null}
 
+            {zoomLinked ? <ZoomChatSelect strings={strings.zoomChat} value={zoomChatMode} onChange={setZoomChatMode} /> : null}
+
             {!voiceAvailable ? (
               <span className="text-muted">{strings.capture.keyRequired}</span>
             ) : null}
 
-            {voiceAvailable && voice.devices.length ? (
+            {voiceAvailable && (voice.devices.length || voice.systemAudio) ? (
               <select
                 aria-label={strings.capture.microphone}
                 value={voice.deviceId}
@@ -464,6 +488,7 @@ export function InputView({
                     {device.label || `${strings.capture.microphone} ${index + 1}`}
                   </option>
                 ))}
+                {voice.systemAudio ? <option value={SYSTEM_AUDIO_DEVICE}>{strings.capture.systemAudio}</option> : null}
               </select>
             ) : null}
 
@@ -473,7 +498,7 @@ export function InputView({
               </span>
             ) : null}
             {voice.state === "active" ? (
-              <VoiceLevelMeter meter={voice.meter} strings={strings.capture} />
+              <VoiceLevelMeter meter={voice.meter} strings={strings.capture} systemAudio={voice.deviceId === SYSTEM_AUDIO_DEVICE} />
             ) : null}
             {voice.error ? <span>{voice.error}</span> : null}
           </div>

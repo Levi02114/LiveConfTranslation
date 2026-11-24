@@ -2,7 +2,6 @@ import { FOLLOW_SCROLL_CSS } from "@/lib/follow-scroll";
 import { getStrings } from "@/lib/i18n";
 import { getLanguage, textDirection } from "@/lib/languages";
 import { formatClock } from "@/lib/log-format";
-import { compressedTextResponse } from "@/lib/http-response";
 import { getMeeting, getPageByToken, getRecentOutput, isPageEnabled } from "@/lib/repo";
 import { translationFailureText } from "@/lib/translation-failure";
 
@@ -89,18 +88,15 @@ export async function GET(request: Request, { params }: Params) {
 <button id="latest" class="scroll-latest" type="button" aria-label="${html(strings.status.scrollToLatest)}" title="${html(strings.status.scrollToLatest)}"><span aria-hidden="true">↓</span><span data-unread hidden aria-label="${html(strings.status.newMessages)}" aria-live="polite">0</span></button>
 <script type="module">import {createScrollFollow} from '/scroll-follow.js';const DATA=${data};${CLIENT}</script>
 </body></html>`;
-  return compressedTextResponse(
-    request,
-    body,
-    {
-      headers: {
-        "content-type": "text/html; charset=utf-8",
-        "cache-control": "private, no-store",
-        "referrer-policy": "no-referrer",
-        "x-content-type-options": "nosniff",
-      },
+  // Next 16.4+ 가 라우트 핸들러 응답도 gzip 으로 압축한다. 직접 압축하면 이중 압축돼 깨진다.
+  return new Response(body, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "private, no-store",
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
     },
-  );
+  });
 }
 
 function html(value: string): string {
@@ -138,7 +134,7 @@ function mark(body,edited){body.querySelector('.edited')?.remove();if(edited){co
 function failure(error){const e=(error||'').toLowerCase(),billing=['credit_balance_exhausted','organization_spend_limit_exceeded','project_spend_limit_exceeded','organization_usage_limit_exceeded','insufficient_quota','current quota'].some(x=>e.includes(x));return error==='openai-billing-limit'||billing?DATA.strings.openaiBilling:error==='openai-rate-limit'||e.includes('openai')&&e.includes('429')?DATA.strings.openaiRateLimit:DATA.strings.failed}
 function add(message){let row=rows.get(message.messageId),previous=row?Number(row.dataset.revision||0):-1;if(row&&message.revision<previous)return;if(!row&&message.t==='message'&&message.lang!==DATA.lang)return;waiting.hidden=true;if(!row){row=document.createElement('div');row.className='line';row.dataset.id=message.messageId;row.append(document.createElement('time'),document.createElement('p'));lines.append(row);rows.set(message.messageId,row)}row.dataset.revision=message.revision;const time=row.querySelector('time'),body=row.querySelector('p'),isOwn=message.t==='message'&&message.lang===DATA.lang,ok=isOwn||message.t==='translation'&&message.status==='ok';time.textContent=clock(message.sourceCreatedAt||message.createdAt);body.className=ok?'':message.t==='message'?'waiting':'failed';body.textContent=(message.speakerName?'('+message.speakerName+') ':'')+(ok?message.body:message.t==='message'?DATA.strings.waiting:failure(message.error));mark(body,message.editedAt);follower.update(String(message.messageId),rowVersion(row))}
 async function sync(){try{const response=await fetch(location.pathname+'?since='+watermark,{cache:'no-store'}),data=await response.json();for(const line of data.lines)add({t:'translation',messageId:line[0],body:line[1],status:line[2],createdAt:line[3],speakerName:line[4],revision:line[5],editedAt:line[6],error:line[8]});watermark=data.snapshotAt;if(data.closed){ended=true;closed.textContent=' · '+DATA.strings.closed}}catch(e){}}
-function connect(){connection.textContent=DATA.strings.reconnecting;const scheme=location.protocol==='https:'?'wss':'ws',socket=new WebSocket(scheme+'://'+location.host+'/ws?token='+encodeURIComponent(DATA.token));socket.onopen=()=>{retry=0;connection.textContent=DATA.strings.connected;sync()};socket.onmessage=event=>{try{const message=JSON.parse(event.data);if(message.t==='message'||message.t==='translation')add(message);else if(message.t==='meeting-closed'){ended=true;closed.textContent=' · '+DATA.strings.closed;socket.close()}}catch(e){}};socket.onclose=()=>{connection.textContent=DATA.strings.disconnected;if(!ended)timer=setTimeout(connect,Math.min(10000,500*2**retry++))};socket.onerror=()=>socket.close()}
+function connect(){connection.textContent=DATA.strings.reconnecting;const scheme=location.protocol==='https:'?'wss':'ws',socket=new WebSocket(scheme+'://'+location.host+'/ws?token='+encodeURIComponent(DATA.token));socket.onopen=()=>{retry=0;connection.textContent=DATA.strings.connected;sync()};socket.onmessage=event=>{try{const message=JSON.parse(event.data);if(message.t==='message'||message.t==='translation')add(message);else if(message.t==='meeting-closed'&&!ended){ended=true;closed.textContent=' · '+DATA.strings.closed;setTimeout(()=>{sync();socket.close()},60000)}}catch(e){}};socket.onclose=()=>{connection.textContent=DATA.strings.disconnected;if(!ended)timer=setTimeout(connect,Math.min(10000,500*2**retry++))};socket.onerror=()=>socket.close()}
 function applyTheme(){const dark=root.dataset.theme==='dark'||(!root.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);theme.textContent=dark?DATA.strings.light:DATA.strings.dark}theme.onclick=()=>{const dark=root.dataset.theme==='dark'||(!root.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);root.dataset.theme=dark?'light':'dark';try{localStorage.setItem('lct.theme',root.dataset.theme)}catch(e){}applyTheme()};
 function applySize(next){root.dataset.size=next;size.textContent=labels[sizes.indexOf(next)];try{localStorage.setItem('lct.fontSize',next)}catch(e){}refollow()}document.getElementById('smaller').onclick=()=>applySize(sizes[Math.max(0,sizes.indexOf(root.dataset.size||'md')-1)]);document.getElementById('larger').onclick=()=>applySize(sizes[Math.min(sizes.length-1,sizes.indexOf(root.dataset.size||'md')+1)]);
 applyTheme();size.textContent=labels[sizes.indexOf(root.dataset.size||'md')];followSoon();if(!DATA.closed)connect();else connection.textContent=DATA.strings.disconnected;

@@ -63,6 +63,8 @@ export function classifyOpenAiError(status: number, detail: string): string | un
  * 프롬프트로 강하게 막고, 그래도 새면 후처리로 걷어 낸다.
  */
 
+const WRAPPER_QUOTES = new Map([['"', '"'], ["'", "'"], ["“", "”"], ["「", "」"], ["『", "』"]]);
+
 /** LLM 이 습관적으로 붙이는 껍데기를 걷어 낸다. */
 function stripWrapper(text: string): string {
   let output = text.trim();
@@ -70,11 +72,22 @@ function stripWrapper(text: string): string {
   // "Translation:" / "번역:" 류의 머리말
   output = output.replace(/^(translation|translated text|번역)\s*[:：]\s*/i, "");
 
-  // 전체를 감싼 따옴표 (원문에 따옴표가 있으면 짝이 맞지 않으므로 양끝만 본다)
-  const quoted = /^(["'“”「『])([\s\S]*)(["'“”」』])$/.exec(output);
-  if (quoted) output = quoted[2].trim();
+  // 전체를 감싼 따옴표. 여는·닫는 짝이 맞고 안쪽에 같은 따옴표가 없을 때만 걷는다.
+  // `"A" is better than "B"` 처럼 양끝이 서로 다른 인용의 일부인 문장을 자르지 않는다.
+  const close = WRAPPER_QUOTES.get(output[0] ?? "");
+  if (close && output.length > 1 && output.endsWith(close)) {
+    const inner = output.slice(1, -1);
+    if (!inner.includes(output[0]!) && !inner.includes(close)) output = inner.trim();
+  }
 
   return output;
+}
+
+const TRAILING_ELLIPSIS = /\s*(?:\.{2,}|…+)\s*$/u;
+
+/** 음성은 최대 길이에서 문장 중간에 잘린다. 원문에 없는 말줄임표를 붙이면 번역이 끊긴 것처럼 보이니 걷어 낸다. */
+function dropAddedEllipsis(output: string, source: string): string {
+  return TRAILING_ELLIPSIS.test(source) ? output : output.replace(TRAILING_ELLIPSIS, "") || output;
 }
 
 function buildSystemPrompt(
@@ -98,7 +111,9 @@ function buildSystemPrompt(
     "- The declared source language can be wrong. Translate the actual input text instead of copying text in an unexpected script.",
     ...targetLanguageRules(to, styleCue).map((rule) => `- ${rule}`),
     "- Earlier lines may be supplied as context. Use them only to resolve pronouns and keep terminology consistent — never translate them.",
+    "- Live speech is split into pieces, so the input may continue the last context line mid-sentence. Translate only the input, phrased so it reads naturally as that continuation.",
     `- If the input is already in ${target.logName}, return it unchanged.`,
+    "- The input may be a fragment cut mid-sentence from continuous speech. Translate exactly what is there. Do not add an ellipsis (...) or complete the sentence.",
   ];
 
   if (glossary.length) {
@@ -230,7 +245,7 @@ export const openaiEngine: TranslationEngine = {
       { role: "system", content: buildSystemPrompt(from, to, styleCue, glossary) },
       { role: "user", content: userContent },
     ];
-    const first = stripWrapper(await requestChat(messages, signal, false, model));
+    const first = dropAddedEllipsis(stripWrapper(await requestChat(messages, signal, false, model)), text);
     if (!hasHangulLeak(first, to)) return first;
 
     const corrected = stripWrapper(
@@ -252,7 +267,7 @@ export const openaiEngine: TranslationEngine = {
     if (hasHangulLeak(corrected, to)) {
       throw new TranslationError("OpenAI 번역에 한국어 원문이 남았습니다", "openai");
     }
-    return corrected;
+    return dropAddedEllipsis(corrected, text);
   },
 
   /**
@@ -296,6 +311,6 @@ export const openaiEngine: TranslationEngine = {
       );
     }
 
-    return parsed.data.items.map((item, index) => item.trim() ? stripWrapper(item) : texts[index]);
+    return parsed.data.items.map((item, index) => item.trim() ? dropAddedEllipsis(stripWrapper(item), texts[index]) : texts[index]);
   },
 };

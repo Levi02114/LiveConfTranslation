@@ -74,3 +74,21 @@ export function upsertTranslation(
     return { ...entry, translations, updatedAt: Math.max(entry.updatedAt, message.createdAt) };
   });
 }
+
+/** 재연결 뒤 다시 받은 변경분을 합친다. 같은 메시지는 revision 규칙대로 갱신하고 순서는 ID로 맞춘다. */
+export function mergeCombinedEntries(entries: CombinedEntry[], incoming: CombinedEntry[]): CombinedEntry[] {
+  let next = entries;
+  for (const entry of incoming) {
+    next = upsertSource(next, { ...entry, lang: entry.sourceLang, body: entry.sourceBody });
+    for (const translation of entry.translations) {
+      next = upsertTranslation(next, {
+        ...translation,
+        error: translation.error ?? undefined,
+        messageId: entry.messageId,
+        revision: entry.revision,
+        createdAt: entry.updatedAt,
+      });
+    }
+  }
+  return next === entries ? entries : next.slice().sort((a, b) => a.messageId - b.messageId);
+}

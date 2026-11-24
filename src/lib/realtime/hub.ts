@@ -174,6 +174,8 @@ export function claimInputName(connection: Connection, name: string): boolean {
   const duplicate = [...(state().rooms.get(connection.meetingId) ?? [])].some(
     (peer) =>
       peer !== connection &&
+      // 네트워크가 바뀌어 다시 붙은 같은 브라우저의 이전 연결은 중복으로 보지 않는다.
+      peer.clientId !== connection.clientId &&
       (peer.kind === "input" || peer.kind === "combined-input") &&
       peer.nameClaimed &&
       peer.name.normalize("NFKC").toLocaleLowerCase() === normalized,

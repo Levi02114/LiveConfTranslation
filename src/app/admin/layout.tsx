@@ -9,7 +9,9 @@ import { listEngines } from "@/lib/translate";
 import { AppSettings } from "./app-settings";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  if (!(await isAdmin())) return children;
+  // 로그인 전후로 트리 모양을 같게 둔다. 로그인 직후 첫 router.refresh()에서 children(Zoom 실행 화면 등)이
+  // 통째로 다시 마운트돼 진행 중인 상태를 잃었다.
+  if (!(await isAdmin())) return <>{null}{children}</>;
   const codes = listLanguages().map((row) => row.code);
   const lang = toAdminLang((await cookies()).get(ADMIN_LANG_COOKIE)?.value, codes);
   return <>

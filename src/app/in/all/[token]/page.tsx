@@ -5,6 +5,7 @@ import { getStrings } from "@/lib/i18n";
 import { getLanguage } from "@/lib/languages";
 import {
   getMeeting,
+  isZoomMeeting,
   getMeetingActiveLangs,
   getMeetingLanguageConfigs,
   getPageByToken,
@@ -68,6 +69,7 @@ export default async function CombinedInputPage({
       rewriteAvailable={transcriptionProviderConfigured("openai")}
       requireVoiceLanguage={meeting.transcriptionProvider === "google"}
       speakerLabels={meeting.speakerLabels}
+      zoomLinked={isZoomMeeting(meeting.id)}
     />
   );
 }

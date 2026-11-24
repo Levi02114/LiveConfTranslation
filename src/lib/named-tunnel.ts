@@ -252,8 +252,10 @@ export function startNamedTunnelControl(verify = verifyTunnel, launch = launchNa
     if (custom) { result.origin = state === "connected" ? settings.origin : original.origin; result.tunnel = state; result.externalTunnel = settings.mode === "external"; result.tunnelBusy = busy || stopPending; result.tunnelFailure = null; }
     result.tunnelOrigin = custom ? (state === "connected" ? settings.origin : null)
       : original.tunnelOrigin ?? (original.tunnel === "connected" ? original.origin : null);
-    if (settings.shareOrigin) result.origin = original.addresses.find((item) => item.origin === settings.shareOrigin)?.origin
-      ?? original.addresses[0]?.origin ?? original.origin;
+    // Cloudflare 연결 중에는 공개 주소가 링크·QR에 우선한다. 저장한 LAN 선택은 터널이 꺼졌을 때만 쓴다.
+    // 저장한 공유 주소가 사라지면 가상 어댑터를 거른 기본 선택으로 돌아간다(첫 어댑터가 WSL·Hyper-V일 수 있다).
+    if (settings.shareOrigin && !result.tunnelOrigin) result.origin = original.addresses.find((item) => item.origin === settings.shareOrigin)?.origin
+      ?? original.origin;
     return result;
   };
   const control = { run, snapshot };

@@ -7,6 +7,7 @@ import { ScrollToLatest } from "@/components/scroll-to-latest";
 import { VoiceLevelMeter } from "@/components/voice-level-meter";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useVoiceInput } from "@/hooks/use-voice-input";
+import { SYSTEM_AUDIO_DEVICE } from "@/hooks/use-combined-voice-input";
 import type { UiStrings } from "@/lib/i18n-builtin";
 import { type Language, textDirection } from "@/lib/languages";
 import { formatClock } from "@/lib/log-format";
@@ -165,6 +166,7 @@ export function CaptureView({
                     {device.label || `${strings.capture.microphone} ${index + 1}`}
                   </option>
                 ))}
+                {voice.systemAudio ? <option value={SYSTEM_AUDIO_DEVICE}>{strings.capture.systemAudio}</option> : null}
               </select>
             </label>
             <button
@@ -182,7 +184,7 @@ export function CaptureView({
           </div>
           {voice.state === "active" ? (
             <div className="mt-2.5">
-              <VoiceLevelMeter meter={voice.meter} strings={strings.capture} />
+              <VoiceLevelMeter meter={voice.meter} strings={strings.capture} systemAudio={voice.deviceId === SYSTEM_AUDIO_DEVICE} />
             </div>
           ) : null}
           {voice.error ? <p className="mt-2 font-mono text-[11px] text-fg">{voice.error}</p> : null}

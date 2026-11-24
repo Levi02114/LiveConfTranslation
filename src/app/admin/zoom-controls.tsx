@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { newBrowserId } from "@/lib/browser-id";
-import { readZoomMeeting, startZoomCapture, stopZoomCapture, ZoomChatDelivery } from "@/lib/zoom-chat";
+import { readZoomMeeting, startZoomCapture, stopZoomCapture, ZoomChatDelivery, type ZoomStopReport } from "@/lib/zoom-chat";
 import { engineIdSchema, type EngineId } from "@/lib/translate/types";
 import { AppearanceControls } from "@/components/appearance-controls";
 import { useSetAdminLang } from "@/hooks/use-admin-lang";
@@ -84,7 +83,6 @@ export function ZoomPanel({ strings, ui, lang, languages, engines, defaultEngine
   engines: { id: EngineId; label: string; configured: boolean }[]; defaultEngine: EngineId; openaiModel: string;
 }) {
   const s = strings.zoom;
-  const router = useRouter();
   const origin = usePublicOrigin();
   const setLang = useSetAdminLang();
   const [meeting, setMeeting] = useState<{ uuid: string; title: string } | null>(null);
@@ -93,6 +91,8 @@ export function ZoomPanel({ strings, ui, lang, languages, engines, defaultEngine
   const [fallbackEngine, setFallbackEngine] = useState<EngineId | null>(null);
   const [sourceLang, setSourceLang] = useState(languages.find((lang) => zoomLanguageId(lang.code) >= 0)?.code ?? "");
   const [targets, setTargets] = useState<string[]>([]);
+  const [audioMode, setAudioMode] = useState<"speakers" | "mixed" | "transcript" | "chat">("speakers");
+  const [chat, setChat] = useState(false);
   const [consent, setConsent] = useState(false);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -103,9 +103,13 @@ export function ZoomPanel({ strings, ui, lang, languages, engines, defaultEngine
   const lock = useRef(false);
   const currentOwner = useRef<string | null>(null);
   const boundMeeting = useRef("");
+  // 채팅 전송만 하는 실행은 Zoom RTMS를 시작하지 않았으므로 멈출 것도 없다.
+  const boundChatOnly = useRef(false);
   const stopping = useRef<Promise<unknown> | null>(null);
   const pendingStart = useRef<AbortController | null>(null);
   const recorded = status?.session ?? existing;
+  // Zoom 자체 전사만 첫 발언 언어가 필요하다. 음성 모드는 세션 언어 중 첫 언어를 기준으로 보낸다.
+  const startLang = audioMode === "transcript" ? (targets.includes(sourceLang) ? sourceLang : "") : targets[0] ?? "";
 
   useEffect(() => () => { pendingStart.current?.abort(); }, []);
 
@@ -114,8 +118,10 @@ export function ZoomPanel({ strings, ui, lang, languages, engines, defaultEngine
     lock.current = true; setBusy(true); setError(""); setReady(false);
     try {
       const zoom = (await import("@zoom/appssdk")).default;
-      const capabilities = ["getRunningContext", "getMeetingUUID", "getMeetingContext", "sendMessageToChat", "startRTMS", "stopRTMS"] as const;
-      const config = await zoom.config({ version: "0.16", capabilities: [...capabilities], timeout: 10000 });
+      const capabilities = ["getRunningContext", "getMeetingUUID", "sendMessageToChat", "startRTMS", "stopRTMS"] as const;
+      // 선택 기능: getMeetingContext(회의 제목, 호스트·공동 호스트 전용)와 getRTMSStatus(중지 결과 확인).
+      // 일반 참가자에게는 제목 API가 지원되지 않으므로 필수로 요구하지 않는다.
+      const config = await zoom.config({ version: "0.16", capabilities: [...capabilities, "getMeetingContext", "getRTMSStatus"], timeout: 10000 });
       if (config.runningContext !== "inMeeting" || config.auth.status !== "authorized" || capabilities.some((api) => config.unsupportedApis.includes(api))) throw new Error();
       const current = await readZoomMeeting(zoom, s.untitled);
       const saved = zoomSettingsSchema.parse(await zoomRequest("GET", undefined, current.uuid)).existingSession;
@@ -133,7 +139,7 @@ export function ZoomPanel({ strings, ui, lang, languages, engines, defaultEngine
   }
 
   async function start() {
-    if (lock.current || currentOwner.current || !sdk.current || !meeting || !consent || !targets.length) return;
+    if (lock.current || currentOwner.current || !sdk.current || !meeting || !consent || !targets.length || !startLang) return;
     lock.current = true; setBusy(true); setError("");
     const next = newBrowserId();
     const controller = new AbortController();
@@ -146,14 +152,17 @@ export function ZoomPanel({ strings, ui, lang, languages, engines, defaultEngine
       if (current.uuid !== meeting.uuid) { setReady(false); throw new Error("zoomRequired"); }
       if (controller.signal.aborted) return;
       boundMeeting.current = current.uuid;
+      const chatOnly = audioMode === "chat";
+      boundChatOnly.current = chatOnly;
       const result = zoomStatusSchema.parse(await zoomRequest("POST", { action: "start", owner: next,
-        zoomMeeting: current.uuid, zoomTitle: current.title, engine, fallbackEngine, sourceLang, targets, consent: true }));
-      if (result.state !== "waiting") throw new Error("requestFailed");
+        zoomMeeting: current.uuid, zoomTitle: current.title, engine, fallbackEngine, sourceLang: startLang, targets, audioMode, chat, consent: true }));
+      if (result.state !== (chatOnly ? "live" : "waiting")) throw new Error("requestFailed");
       currentOwner.current = next;
       setStatus(result);
       setExisting({ ...result.session, closed: false, engine, fallbackEngine, model: existing?.model ?? openaiModel, targets });
-      router.refresh();
-      await startZoomCapture(zoom, current.uuid, controller.signal);
+      // 서버 트리를 다시 받지 않는다. 이 화면은 응답으로 상태를 갖고, 관리자 목록은 POST의 revalidatePath가 맡는다.
+      if (!chatOnly) await startZoomCapture(zoom, current.uuid, controller.signal);
+      else if (controller.signal.aborted) throw new DOMException("", "AbortError");
       setOwner(next);
     } catch (error) {
       // A lost start response may still have armed the backend; always cancel our ID.
@@ -172,6 +181,7 @@ export function ZoomPanel({ strings, ui, lang, languages, engines, defaultEngine
     const zoom = sdk.current;
     const runOwner = owner;
     const runMeeting = boundMeeting.current;
+    const chatOnly = boundChatOnly.current;
     let disposed = false;
     let failures = 0;
     let timer: ReturnType<typeof setTimeout>;
@@ -208,10 +218,13 @@ export function ZoomPanel({ strings, ui, lang, languages, engines, defaultEngine
       disposed = true; clearTimeout(timer);
       setBusy(true);
       // The next start waits for this stop to finish, including a delayed SDK reply.
-      stopping.current = Promise.allSettled([
-        zoomRequest("POST", { action: "stop", owner }),
-        stopZoomCapture(zoom, runMeeting).catch(() => { setReady(false); setError("stopFailed"); }),
-      ]).finally(() => setBusy(false));
+      // Zoom 쪽을 먼저 멈춘다. 서버가 먼저 스트림을 닫으면 stopRTMS가 이미 끝난 스트림에 실패를 돌려준다.
+      stopping.current = (async () => {
+        if (chatOnly) { await zoomRequest("POST", { action: "stop", owner }).catch(() => {}); return; }
+        const report: ZoomStopReport = await stopZoomCapture(zoom, runMeeting).catch(() => ({ ok: false, response: "rejected", status: "unknown" }));
+        if (!report.ok) { setReady(false); setError("stopFailed"); }
+        await zoomRequest("POST", { action: "stop", owner, sdk: { response: report.response, code: report.code, status: report.status } }).catch(() => {});
+      })().finally(() => setBusy(false));
     };
   }, [owner]);
 
@@ -230,25 +243,46 @@ export function ZoomPanel({ strings, ui, lang, languages, engines, defaultEngine
         <option value="">{strings.list.noFallback}</option>{engines.filter((item) => item.id !== engine).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
       </select></label>
       {engine === "openai" || fallbackEngine === "openai" ? <p>{strings.list.model}: {existing?.model ?? openaiModel}</p> : null}
-      <label>{s.source}<select className={field} value={sourceLang} onChange={(event) => setSourceLang(event.target.value)}>
-        {languages.filter((lang) => zoomLanguageId(lang.code) >= 0).map((lang) => <option key={lang.code} value={lang.code}>{lang.nativeName}</option>)}
-      </select></label><p className="text-muted">{s.sourceHelp}</p>
+      <label>{s.mode}<select className={field} value={audioMode} onChange={(event) => {
+        const next = event.target.value; if (next === "speakers" || next === "mixed" || next === "transcript" || next === "chat") setAudioMode(next);
+      }}>
+        <option value="speakers">{s.modeSpeakers}</option><option value="mixed">{s.modeMixed}</option><option value="transcript">{s.modeTranscript}</option>
+        <option value="chat">{s.modeChat}</option>
+      </select></label><p className="text-muted">{audioMode === "chat" ? s.chatOnlyHelp : s.modeHelp}</p>
+      {audioMode === "transcript" ? <><label>{s.source}<select className={field} value={sourceLang} onChange={(event) => setSourceLang(event.target.value)}>
+        {languages.filter((lang) => zoomLanguageId(lang.code) >= 0 && targets.includes(lang.code)).map((lang) => <option key={lang.code} value={lang.code}>{lang.nativeName}</option>)}
+      </select></label><p className="text-muted">{s.sourceHelp}</p></> : null}
       <fieldset className="grid gap-2 border border-line p-3"><legend>{s.targets}</legend>
         {languages.map((lang) => <label key={lang.code} className="flex items-start gap-2">
           <input type="checkbox" disabled={Boolean(existing)} checked={targets.includes(lang.code)} onChange={(event) => setTargets((old) => event.target.checked ? [...old, lang.code] : old.filter((code) => code !== lang.code))} />{lang.nativeName}
         </label>)}
       </fieldset><p className="text-muted">{s.targetsHelp}</p>
+      {audioMode !== "chat" ? <><label className="flex items-start gap-2"><input type="checkbox" checked={chat} onChange={(event) => setChat(event.target.checked)} />{s.chat}</label>
+        <p className="text-muted">{s.chatHelp}</p></> : null}
       <label className="flex items-start gap-2"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />{s.archiveConsent}</label>
     </fieldset>
-    <div className="flex flex-wrap gap-2"><button className={button} disabled={!ready || busy || Boolean(owner) || !meeting || !sourceLang || !targets.length || !consent} onClick={() => void start()}>{busy ? s.working : s.archiveStart}</button>
+    <div className="flex flex-wrap gap-2"><button className={button} disabled={!ready || busy || Boolean(owner) || !meeting || !startLang || !targets.length || !consent} onClick={() => void start()}>{busy ? s.working : s.archiveStart}</button>
       <button className={button} disabled={!owner || busy} onClick={() => void stop()}>{s.stop}</button></div>
     {recorded ? <nav className="grid min-w-0 gap-2 border border-line p-3" aria-label={s.savedSession}>
       <p className="break-words">{s.savedSession}: {recorded.title}</p>
       <a className="underline" href={`/admin/meetings/${recorded.id}`} target="_blank" rel="noreferrer">{s.manageSession}</a>
       {recorded.viewerPath ? <a className="underline" href={`${origin}${recorded.viewerPath}`} target="_blank" rel="noreferrer">{s.viewSession}</a> : null}
     </nav> : null}
-    {status ? <div role="status" className="grid gap-2 border border-line bg-panel p-3"><p>{s[status.state]}</p>
-      <p>{s.received}: {status.received} · {s.sent}: {status.sent} · {s.pending}: {status.pending}</p></div> : null}
+    {status ? <div role="status" className="grid gap-2 border border-line bg-panel p-3"><p>{status.state === "live" && audioMode === "chat" ? s.chatOnlyLive : s[status.state]}</p>
+      <p>{s.received}: {status.received}{chat || status.sent || status.pending ? ` · ${s.sent}: ${status.sent} · ${s.pending}: ${status.pending}` : ""}</p></div> : null}
+    {owner && audioMode !== "transcript" && audioMode !== "chat" && status ? <section className="grid min-w-0 gap-2 border border-line p-3" aria-label={s.speakers}>
+      <p>{s.speakers}</p>
+      {status.speakers.length ? status.speakers.map((speaker) => <label key={speaker.key} className="grid min-w-0 gap-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,14rem)] sm:items-center">
+        <span className="break-words">{speaker.key === "mixed" ? s.mixedSpeaker : speaker.name || speaker.key}{speaker.active ? " ●" : ""}</span>
+        {audioMode === "speakers" ? <select className={field} value={speaker.lang ?? ""} onChange={(event) => {
+          const lang = event.target.value || null;
+          void zoomRequest("POST", { action: "assign", owner, speaker: speaker.key, lang }).catch(() => setError("requestFailed"));
+        }}>
+          <option value="">{s.speakerAuto}</option>
+          {languages.filter((lang) => targets.includes(lang.code)).map((lang) => <option key={lang.code} value={lang.code}>{lang.nativeName}</option>)}
+        </select> : null}
+      </label>) : <p className="text-muted">{s.speakersEmpty}</p>}
+    </section> : null}
     {error ? <p role="alert">{errorText(s, error)}</p> : null}
   </section>;
 }

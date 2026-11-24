@@ -20,7 +20,7 @@ test("private approval, help, current links, one receiver, pairing, one-shot con
   const tunnel = { state: "connected", url: "https://first.trycloudflare.com", origin: "https://first.trycloudflare.com", auto: true, identity: 5, busy: false };
   const snapshot = { at: now, sessions: [{ id: "session-one", title: "Session one", languages: [{ code: "ko", nativeName: "한국어", label: "한국어" }],
     counts: { total: 2, languages: [{ lang: "ko", input: 1, output: 1 }], combined: 0, combinedInput: 0, capture: 0 },
-    pages: [{ kind: "output", lang: "ko", path: "/out/test-token" }, { kind: "combined", path: "/all/combined-token", token: "combined-token" }],
+    pages: [{ kind: "output", lang: "ko", path: "/out/test-token" }, { kind: "combined", path: "/all/combined-token", token: "combined-token", inputGuideToken: "combined-token.guide-signature" }],
   }] };
   let pending, active = 0, maxActive = 0, opened = "", lastId = 100, releaseAction, failAction = false;
   const bot = createTelegramBot({
@@ -82,6 +82,7 @@ test("private approval, help, current links, one receiver, pairing, one-shot con
     tunnel.url = tunnel.origin = "https://second.trycloudflare.com";
     await click(refresh);
     assert.ok(messages.at(-1).reply_markup.inline_keyboard.flat().some((row) => row.url === "https://second.trycloudflare.com/join/combined-token"));
+    assert.ok(messages.at(-1).reply_markup.inline_keyboard.flat().some((row) => row.url === "https://second.trycloudflare.com/join/input/combined-token.guide-signature"));
     const staleSessionButton = latestButton("새로고침");
     const saved = snapshot.sessions;
     snapshot.sessions = [];

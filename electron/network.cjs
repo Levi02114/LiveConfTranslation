@@ -42,7 +42,8 @@ function pickLanAddress(interfaces) {
 }
 
 function extractQuickTunnelUrl(text) {
-  return text.match(/https:\/\/[-a-z0-9]+\.trycloudflare\.com\b/i)?.[0] ?? null;
+  // cloudflared 오류 줄의 API 주소(api.trycloudflare.com)는 터널 주소가 아니다.
+  return text.match(/https:\/\/(?!api\.)[-a-z0-9]+\.trycloudflare\.com\b/i)?.[0] ?? null;
 }
 
 function parseHealth(text) {

@@ -73,11 +73,11 @@ test("named and external connection checks preserve the current URL, require app
     assert.ok(runtime);
     const localOrigin = state.addresses[0].origin;
     assert.deepEqual(await runtime.run({ action: "share", origin: localOrigin }), {});
-    assert.equal(runtime.snapshot().origin, localOrigin);
+    assert.equal(runtime.snapshot().origin, state.origin, "the connected public tunnel wins over a saved LAN choice");
     assert.equal(runtime.snapshot().tunnelOrigin, state.origin);
     assert.equal(runtime.snapshot().tunnel, "connected", "changing sharing never stops the external tunnel");
     runtime.close(); runtime = startNamedTunnelControl(verify, launch)!;
-    assert.equal(runtime.snapshot().origin, localOrigin, "sharing choice survives restart");
+    assert.equal(runtime.snapshot().origin, state.origin, "public URL still wins after restart");
     assert.deepEqual(await runtime.run({ action: "share", origin: "https://arbitrary.invalid" }), { error: "genericError" });
     await runtime.run({ action: "share", origin: state.origin });
     assert.equal(runtime.snapshot().origin, state.origin, "the public URL can be selected again without restarting it");
@@ -108,11 +108,12 @@ test("named and external connection checks preserve the current URL, require app
     assert.equal(baseCalls, 0, "externally owned process is never stopped or modified");
     assert.deepEqual(notifications, [pending.origin]);
     await runtime.run({ action: "share", origin: localOrigin });
-    assert.equal(runtime.snapshot().origin, localOrigin);
+    assert.equal(runtime.snapshot().origin, pending.origin, "a connected fixed domain wins over the LAN choice");
     assert.equal(runtime.snapshot().tunnelOrigin, pending.origin);
     assert.deepEqual(await runtime.run({ action: "auto", enabled: true }), {}, "named auto mode does not require Telegram");
     processes.at(-1)!.process.emit("exit", 1, null);
     assert.equal(runtime.snapshot().tunnel, "recovering");
+    assert.equal(runtime.snapshot().origin, localOrigin, "the saved LAN choice applies while the tunnel is down");
     await runtime.run({ action: "auto", enabled: false });
     assert.equal(runtime.snapshot().tunnel, "off", "disabling recovery allows a manual restart");
     runtime.close();
@@ -121,7 +122,7 @@ test("named and external connection checks preserve the current URL, require app
     assert.equal(runtime.snapshot().connection!.mode, "named");
     assert.equal(runtime.snapshot().tunnel, "off", "disabled auto mode stays stopped after restart");
     assert.deepEqual(await runtime.run({ action: "start" }), {});
-    assert.equal(runtime.snapshot().origin, localOrigin, "named reconnect does not overwrite LAN sharing");
+    assert.equal(runtime.snapshot().origin, pending.origin, "named reconnect returns links to the public URL");
     assert.equal(runtime.snapshot().tunnelOrigin, pending.origin);
     await runtime.run({ action: "share", origin: pending.origin });
     await runtime.run({ action: "auto", enabled: true });
@@ -133,6 +134,7 @@ test("named and external connection checks preserve the current URL, require app
     assert.equal(runtime.snapshot().tunnel, "off", "stop acknowledges the inactive public URL before the process exits");
     assert.equal(runtime.snapshot().tunnelOrigin, null);
     assert.deepEqual(await runtime.run({ action: "share", origin: localOrigin }), {}, "LAN selection remains available during deferred shutdown");
+    assert.equal(runtime.snapshot().origin, localOrigin);
     assert.deepEqual(await runtime.run({ action: "start" }), { error: "busy" }, "delayed stop cannot kill a replacement connector");
     await new Promise((resolve) => setTimeout(resolve, 800));
     assert.equal(runtime.snapshot().tunnel, "off");
@@ -144,7 +146,7 @@ test("named and external connection checks preserve the current URL, require app
     assert.equal(runtime.snapshot().externalTunnel, true);
     assert.equal(runtime.snapshot().tunnelOrigin, "https://external.example.com");
     assert.deepEqual(await runtime.run({ action: "share", origin: localOrigin }), {});
-    assert.equal(runtime.snapshot().origin, localOrigin);
+    assert.equal(runtime.snapshot().origin, "https://external.example.com", "a connected external tunnel wins over LAN");
     assert.deepEqual(await runtime.run({ action: "share", origin: "https://external.example.com" }), {});
     assert.equal(runtime.snapshot().origin, "https://external.example.com", "external public address can be reselected without restarting its tunnel");
     assert.deepEqual(await runtime.run({ action: "stop", confirmed: true }), { error: "genericError" });

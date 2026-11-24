@@ -43,8 +43,13 @@ export function LoginForm({
         body: JSON.stringify({ password }),
       });
 
+      if (response.status === 429) {
+        const seconds = Math.max(1, Math.ceil(Number(response.headers.get("retry-after")) || 1));
+        setError(strings.login.rateLimited.replace("{seconds}", String(seconds)));
+        return;
+      }
       if (!response.ok) {
-        setError(strings.login.wrongPassword);
+        setError(response.status === 401 ? strings.login.wrongPassword : strings.login.failed);
         setPassword("");
         return;
       }

@@ -22,7 +22,7 @@ import {
   formatSourceLine,
   formatTranslationLine,
 } from "@/lib/log-format";
-import type { EngineId } from "@/lib/translate/types";
+import { isEngineId, type EngineId } from "@/lib/translate/types";
 import {
   bodyRowSchema,
   combinedTranslationRowSchema,
@@ -404,6 +404,11 @@ export function getZoomMeeting(zoomMeeting: string): Meeting | null {
   return row ? toMeeting(parseRequiredSqlRow(meetingRowSchema, row, "Zoom session")) : null;
 }
 
+/** Zoom 회의에 묶인 세션인지. 참가자 입력 화면이 Zoom 채팅 전송 설정을 보일지 정한다. */
+export function isZoomMeeting(meetingId: string): boolean {
+  return Boolean(getDb().prepare("SELECT 1 FROM meetings WHERE id = ? AND zoom_meeting IS NOT NULL").get(meetingId));
+}
+
 export function listMeetings(): Meeting[] {
   const rows = parseSqlRows(
     meetingRowSchema,
@@ -744,7 +749,8 @@ export type OutputEntry = {
 export function getRecentOutput(
   meetingId: string,
   lang: LanguageCode,
-  limit = 200,
+  // 기본은 전체 기록이다. 중간에 들어온 참석자도 세션 처음부터 볼 수 있어야 한다.
+  limit: number | null = null,
 ): OutputEntry[] {
   const rows = parseSqlRows(
     outputRowSchema,
@@ -762,7 +768,7 @@ export function getRecentOutput(
          JOIN messages m ON m.id = t.message_id
          WHERE m.meeting_id = ? AND t.lang = ?
        ) ORDER BY message_id DESC LIMIT ?`,
-    ).all(meetingId, lang, meetingId, lang, limit),
+    ).all(meetingId, lang, meetingId, lang, limit ?? -1),
     "출력 이력",
   );
 
@@ -919,18 +925,22 @@ export function manageTranslationJobs(meetingId: string, action: "retry" | "canc
       LEFT JOIN translation_jobs j ON j.message_id = m.id AND j.source_revision = m.revision AND j.target_lang = ml.lang
       WHERE m.meeting_id = ? AND (t.id IS NULL OR t.status = 'error') AND j.id IS NULL LIMIT ?`).all(meetingId, limits.jobsPerSession + 1);
     const total = Number(getDb().prepare("SELECT COUNT(*) AS n FROM translation_jobs WHERE status IN ('pending','running')").get()?.n ?? 0);
-    if (counts.pending + counts.running + counts.failed + missing.length > limits.jobsPerSession || total + counts.failed + missing.length > limits.jobsTotal) throw new InputError("queue-full");
+    // 취소한 작업도 재시도로 되살린다. 취소 행이 있으면 위 LEFT JOIN이 새 작업을 만들지 않기 때문이다.
+    const revivable = counts.failed + Number(getDb().prepare(`SELECT COUNT(*) AS n FROM translation_jobs j
+      JOIN messages m ON m.id = j.message_id AND m.revision = j.source_revision
+      WHERE j.meeting_id = ? AND j.status = 'cancelled'`).get(meetingId)?.n ?? 0);
+    if (counts.pending + counts.running + revivable + missing.length > limits.jobsPerSession || total + revivable + missing.length > limits.jobsTotal) throw new InputError("queue-full");
     const insertMissing = getDb().prepare("INSERT INTO translation_jobs(meeting_id, message_id, source_revision, target_lang, engine, next_at) VALUES (?, ?, ?, ?, ?, ?)");
     for (const row of missing) insertMissing.run(meetingId, row.id, row.revision, row.lang, row.engine, Date.now());
     getDb().prepare(`UPDATE translation_jobs SET status = 'pending', attempts = 0, error = NULL, next_at = ?
-      WHERE meeting_id = ? AND status = 'failed' AND EXISTS(SELECT 1 FROM messages m WHERE m.id = translation_jobs.message_id AND m.revision = translation_jobs.source_revision)`)
+      WHERE meeting_id = ? AND status IN ('failed', 'cancelled') AND EXISTS(SELECT 1 FROM messages m WHERE m.id = translation_jobs.message_id AND m.revision = translation_jobs.source_revision)`)
       .run(Date.now(), meetingId);
     return cancelled;
   });
 }
 
 /** 대시보드가 처음 열릴 때 채워 넣을 최근 원문 */
-export function getRecentMessages(meetingId: string, limit: number | null = 200): Message[] {
+export function getRecentMessages(meetingId: string, limit: number | null = null): Message[] {
   const rawRows = limit === null
     ? getDb().prepare(`SELECT * FROM messages WHERE meeting_id = ? ORDER BY id`).all(meetingId)
     : getDb()
@@ -1670,6 +1680,23 @@ export function upsertEngineSetting(engine: EngineId, model: string | null): voi
          model = excluded.model`,
     )
     .run(engine, model);
+}
+
+/** 새 세션 폼에서 마지막으로 고른 선택 폴백 엔진. 고르지 않았으면 null. */
+export function getFallbackEngineSetting(): EngineId | null {
+  const row = getDb().prepare(`SELECT model FROM engine_settings WHERE engine = 'fallback'`).get();
+  const value = row?.model == null ? null : String(row.model);
+  return value && isEngineId(value) ? value : null;
+}
+
+export function setFallbackEngineSetting(engine: EngineId | null): void {
+  getDb()
+    .prepare(
+      `INSERT INTO engine_settings (engine, model, updated_at)
+       VALUES ('fallback', ?, ?)
+       ON CONFLICT (engine) DO UPDATE SET model = excluded.model, updated_at = excluded.updated_at`,
+    )
+    .run(engine, Date.now());
 }
 
 /** 관리자 화면에서 마지막으로 고른 음성 인식 엔진. */

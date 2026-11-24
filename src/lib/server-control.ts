@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { devNull, networkInterfaces } from "node:os";
 import { z } from "zod";
 import { createTelegramBot } from "../../electron/telegram-bot.cjs";
-import { extractQuickTunnelUrl, listLanAddresses } from "../../electron/network.cjs";
+import { extractQuickTunnelUrl, listLanAddresses, pickLanAddress } from "../../electron/network.cjs";
 import { decryptSecret, encryptSecret } from "./crypto";
 import { type DesktopAction, type DesktopState } from "./desktop-control";
 import { desktopOperations } from "./desktop-operations";
@@ -47,7 +47,11 @@ export function startServerControl() {
   const addresses = () => [{ origin: loopback, label: "127.0.0.1" }, ...listLanAddresses(networkInterfaces()).map((item: { name: string; address: string }) => ({
     origin: `http://${item.address}:${serverEnvironment().port}`, label: `${item.name} · ${item.address}`,
   }))];
-  const origin = () => (state === "connected" ? url : null) ?? (addresses().some((item) => item.origin === settings.origin) ? settings.origin! : addresses()[1]?.origin ?? loopback);
+  const preferred = () => {
+    const address = pickLanAddress(networkInterfaces());
+    return address === "127.0.0.1" ? loopback : `http://${address}:${serverEnvironment().port}`;
+  };
+  const origin = () => (state === "connected" ? url : null) ?? (addresses().some((item) => item.origin === settings.origin) ? settings.origin! : preferred());
   const strings = () => desktopOperations("ko").strings;
   const previousOrigins = globalThis.__liveConfAllowedOrigins;
   globalThis.__liveConfLocalTunnelProxy = true;

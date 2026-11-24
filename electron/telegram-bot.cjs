@@ -126,7 +126,7 @@ function createTelegramBot(deps) {
       const combined = session.pages.find((entry) => entry.kind === "combined");
       if (combined) links.push(
         { text: s.participantGuide, url: new URL(`/join/${combined.token}`, tunnel.origin).href },
-        { text: s.inputGuide, url: new URL(`/join/input/${combined.token}`, tunnel.origin).href },
+        { text: s.inputGuide, url: new URL(`/join/input/${combined.inputGuideToken}`, tunnel.origin).href },
       );
       const pager = [];
       if (page) pager.push(button(actor, s.previous, "links", { id: session.id, page: page - 1 }));

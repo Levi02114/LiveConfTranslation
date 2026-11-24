@@ -17,12 +17,25 @@ export const zoomStartSchema = z.object({
   fallbackEngine: engineIdSchema.nullable(),
   sourceLang: z.string().min(2).max(40),
   targets: z.array(z.string().min(2).max(40)).min(1).max(20),
+  /**
+   * speakers: 참가자별 음성 스트림, mixed: 합친 음성(자동 감지), transcript: Zoom 자체 전사,
+   * chat: 회의 음성을 받지 않고(RTMS·호스트 승인 없음) 참가자가 고른 입력만 Zoom 채팅으로 보낸다.
+   */
+  audioMode: z.enum(["speakers", "mixed", "transcript", "chat"]),
+  /** 번역문을 Zoom 회의 채팅에도 보낼지. 끄면 세션 기록·조회 화면에만 남는다. */
+  chat: z.boolean(),
   consent: z.literal(true),
 }).strict();
 export const zoomActionSchema = z.discriminatedUnion("action", [
   zoomStartSchema,
   z.object({ action: z.literal("poll"), owner: ownerSchema, ack: z.number().int().nonnegative().optional() }).strict(),
-  z.object({ action: z.literal("stop"), owner: ownerSchema }).strict(),
+  z.object({ action: z.literal("stop"), owner: ownerSchema, sdk: z.object({
+    // Zoom SDK stopRTMS 결과(진단 기록용). 판정은 클라이언트가 getRTMSStatus까지 확인해 내린다.
+    response: z.enum(["success", "failure", "rejected", "timeout", "unbound"]),
+    code: z.string().regex(/^\d{1,8}$/).optional(),
+    status: z.enum(["stopped", "running", "unknown"]).optional(),
+  }).strict().optional() }).strict(),
+  z.object({ action: z.literal("assign"), owner: ownerSchema, speaker: z.string().min(1).max(64), lang: z.string().min(2).max(40).nullable() }).strict(),
 ]);
 export type ZoomStart = z.infer<typeof zoomStartSchema>;
 
@@ -31,6 +44,7 @@ export const zoomStatusSchema = z.object({
   state: z.enum(["waiting", "connecting", "live", "paused", "stopped", "error"]),
   error: z.string().nullable(), received: z.number(), sent: z.number(), pending: z.number(),
   next: z.object({ sequence: z.number().int(), text: z.string() }).nullable(),
+  speakers: z.array(z.object({ key: z.string(), name: z.string(), lang: z.string().nullable(), active: z.boolean() })),
 });
 export type ZoomStatus = z.infer<typeof zoomStatusSchema>;
 export const zoomSettingsSchema = z.object({
@@ -50,10 +64,13 @@ export function zoomLanguageId(code: string): number {
   return exact >= 0 ? exact : ZOOM_LANGUAGES.findIndex((lang) => lang === code.split("-")[0]);
 }
 
-/** Stay below legacy meeting-chat limits without splitting surrogate pairs. */
-export function zoomChatChunks(speaker: string, lang: string, text: string): string[] {
-  const prefix = `[${lang}] ${speaker.replace(/\p{Cc}/gu, " ").slice(0, 100)}\n`;
-  const chars = Array.from(text);
+/**
+ * 발화 하나를 모든 언어와 함께 한 메시지로 묶는다. 언어마다 따로 보내면 채팅 전송이 발화 속도를
+ * 따라가지 못한다. 옛 회의 채팅 한도보다 짧게 자르고 서로게이트 쌍은 쪼개지 않는다.
+ */
+export function zoomChatChunks(speaker: string, rows: readonly { lang: string; body: string }[]): string[] {
+  const prefix = `${speaker.replace(/\p{Cc}/gu, " ").slice(0, 100)}\n`;
+  const chars = Array.from(rows.map((row) => `[${row.lang}] ${row.body}`).join("\n"));
   const result: string[] = [];
   let chunk = prefix;
   for (const char of chars) {

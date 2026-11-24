@@ -151,6 +151,10 @@ test("같은 세션에서는 언어가 달라도 닉네임을 중복 등록할 �
   try {
     assert.equal(claimInputName(first, "Levi"), true);
     assert.equal(claimInputName(second, "ｌｅｖｉ"), false);
+    const reconnected: Connection = { ...first, nameClaimed: false };
+    join(reconnected);
+    assert.equal(claimInputName(reconnected, "Levi"), true, "same browser reconnecting keeps its name");
+    leave(reconnected);
     leave(first);
     assert.equal(claimInputName(second, "Levi"), true);
   } finally {

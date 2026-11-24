@@ -1,4 +1,5 @@
 import { getAdminStrings } from "./i18n-resolver";
+import { inputGuideToken } from "./input-guide";
 import { getLanguage } from "./languages";
 import { connectionCounts } from "./realtime/hub";
 import type { SessionConnections } from "./realtime/protocol";
@@ -35,6 +36,7 @@ export function desktopOperations(locale: string) {
         lang: page.lang,
         path: `${page.kind === "combined" ? "/all" : page.kind === "combined-input" ? "/in/all" : page.kind === "input" ? "/in" : page.kind === "output" ? "/out" : "/capture"}/${page.token}`,
         token: page.kind === "combined" ? page.token : undefined,
+        inputGuideToken: page.kind === "combined" ? inputGuideToken(page.token) : undefined,
       })),
     })),
   };

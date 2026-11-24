@@ -51,11 +51,17 @@ export function AppSettings(props: Props) {
   useEffect(() => {
     if (!visible) return;
     const show = () => setOpen(true);
-    const close = () => dialog.current?.close();
+    // 실시간 연결이 끊긴 것만으로 닫지 않는다(와이파이 순간 끊김·서버 재시작·이 브라우저의 비밀번호 변경).
+    // 로그인이 실제로 풀렸을 때만 닫아 미저장 입력을 지킨다.
+    const close = () => {
+      void fetch("/api/admin/desktop", { cache: "no-store" }).then((response) => {
+        if (response.status === 401) { dialog.current?.close(); router.replace("/admin/login"); }
+      }).catch(() => {});
+    };
     window.addEventListener("lct-open-settings", show);
     window.addEventListener("lct-admin-disconnected", close);
     return () => { window.removeEventListener("lct-open-settings", show); window.removeEventListener("lct-admin-disconnected", close); };
-  }, [visible]);
+  }, [router, visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -194,7 +200,7 @@ function SettingsBody({ section, desktop, writable, loadFailed, onDesktop, onClo
         <h2>{n.current}</h2>
         {desktop.connection ? <p>{n.mode}: {n[desktop.connection.mode]}</p> : null}
         <p className="break-all">{desktop.origin}</p>
-        <label>{s.share}<select disabled={!writable || busy || (desktop.connection?.busy && desktop.tunnel !== "off")} value={desktop.origin}
+        <label>{s.share}<select disabled={!writable || busy || Boolean(desktop.tunnelOrigin) || (desktop.connection?.busy && desktop.tunnel !== "off")} value={desktop.origin}
           onChange={(event) => void run({ action: "share", origin: event.target.value })}>
           {desktop.tunnelOrigin ? <option value={desktop.tunnelOrigin}>{n.origin}: {desktop.tunnelOrigin}</option> : null}
           {!desktop.tunnelOrigin && !desktop.addresses.some((item) => item.origin === desktop.origin) ? <option value={desktop.origin} disabled>{desktop.origin}</option> : null}

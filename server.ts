@@ -18,13 +18,14 @@ import { createServer as createHttpsServer } from "node:https";
 import type { IncomingMessage, Server as HttpServer } from "node:http";
 import type { Server as HttpsServer } from "node:https";
 import { createHash, randomUUID } from "node:crypto";
+import { EventEmitter } from "node:events";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join as joinPath } from "node:path";
 import { initializeDiagnostics } from "./electron/diagnostics.cjs";
 import { log, errorFields, safeRoute, withContext, flushDiagnostics } from "@/lib/diagnostics";
 
 import next from "next";
-import { WebSocket as WsSocket, WebSocketServer, type WebSocket } from "ws";
+import { WebSocket as WsSocket, WebSocketServer, type RawData, type WebSocket } from "ws";
 import { z } from "zod";
 
 import { isAdminFromCookieHeader } from "@/lib/auth-core";
@@ -36,6 +37,7 @@ import { notifyAppSettings, subscribeAppSettings, type VoiceSettings } from "@/l
 import { validateRequest, limitRequestBody, requestRequiresOrigin } from "@/lib/http-security";
 import { rateLimit } from "@/lib/security-limits";
 import { activeTranscriptions } from "@/lib/realtime/transcription-registry";
+import type { InternalTranscriptionRequest } from "@/lib/realtime/internal-transcription";
 import { matchDetectedLanguage } from "@/lib/detected-language";
 import {
   localHttpsCaPath,
@@ -94,6 +96,7 @@ import {
 } from "@/lib/transcribe-config";
 import { singleTranscriptionProfile } from "@/lib/transcription-profile";
 import { RescueAudioTurns, RESCUE_MAX_BYTES, rescueTranscribe } from "@/lib/transcription-rescue";
+import { dropOverlap, OVERLAP_PCM_BYTES } from "@/lib/transcript-overlap";
 
 declare global {
   var __liveConfTranslationAppRoot: string | undefined;
@@ -429,7 +432,7 @@ const transcriptionClientMessageSchema = z.union([
     autoSubmit: z.boolean().optional(),
   }),
   z.object({ t: z.literal("heartbeat") }),
-  z.object({ t: z.literal("commit") }),
+  z.object({ t: z.literal("commit"), overlap: z.boolean().optional() }),
   z.object({ t: z.literal("clear") }),
 ]);
 
@@ -446,6 +449,7 @@ type TranscriptionServerMessage =
       lang: LanguageCode;
       usedFallback: boolean;
       leaseId: string | null;
+      replaceLastWord?: boolean;
     };
 
 type OpenAiTranscriptionSettings = {
@@ -459,7 +463,62 @@ type OpenAiTranscriptionSettings = {
 const PARTIAL_INTERVAL_MS = 50;
 const MAX_VIEWER_BUFFERED_BYTES = 512 * 1024;
 
-function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
+/**
+ * 서버가 직접 받은 음성(Zoom 회의 등)을 /ws/transcribe 와 같은 처리에 붙이는 메모리 소켓.
+ * 브라우저 경로의 동작은 그대로 두고, 같은 전사·재전사·문자 검사·lease·동시 한도를 쓴다.
+ */
+/** attachTranscription 이 쓰는 소켓 기능만. 브라우저 WebSocket과 서버 내부 소켓이 모두 맞춘다. */
+type TranscriptionSocket = {
+  readonly readyState: number;
+  readonly OPEN: number;
+  send: (data: string) => void;
+  close: (code?: number, reason?: string) => void;
+  on: ((event: "message", listener: (raw: RawData, binary: boolean) => void) => void) &
+    ((event: "close" | "error", listener: () => void) => void);
+};
+type TranscriptionClientMessage = z.infer<typeof transcriptionClientMessageSchema>;
+
+class InternalTranscriptionSocket extends EventEmitter implements TranscriptionSocket {
+  readonly OPEN = 1;
+  readyState = 1;
+  constructor(private readonly onEvent: InternalTranscriptionRequest["onEvent"]) { super(); }
+  send(data: string) {
+    let message: TranscriptionServerMessage;
+    try { message = JSON.parse(data); } catch { return; }
+    if (message.t === "ready") this.onEvent({ t: "ready" });
+    else if (message.t === "transcript") this.onEvent({ t: "transcript", itemId: message.itemId, body: message.body, lang: message.lang });
+    else if (message.t === "error") this.onEvent({ t: "error", reason: message.reason });
+  }
+  close() {
+    if (this.readyState !== 1) return;
+    this.readyState = 3;
+    this.emit("close");
+    this.onEvent({ t: "closed" });
+  }
+}
+
+globalThis.__liveConfInternalTranscription = (request) => {
+  const meeting = getMeeting(request.meetingId);
+  const languages = request.languages.filter(Boolean);
+  if (!meeting || meeting.status !== "open" || !languages.length) return null;
+  const socket = new InternalTranscriptionSocket(request.onEvent);
+  const id = `internal:${meeting.id}:${request.streamKey}`;
+  attachTranscription(socket, {
+    testAuthorized: request.authorized, clientId: id, languages, mode: "combined",
+    page: { id, meetingId: meeting.id, token: "", kind: "combined-input", lang: languages[0]!, createdAt: Date.now() },
+    meeting,
+  });
+  const message = (value: TranscriptionClientMessage) => socket.emit("message", Buffer.from(JSON.stringify(value)), false);
+  return {
+    start: (input) => message({ t: "start", speakerName: input.speakerName, lang: input.lang, autoSubmit: true }),
+    audio: (pcm) => socket.emit("message", pcm, true),
+    commit: () => message({ t: "commit" }),
+    heartbeat: () => message({ t: "heartbeat" }),
+    close: () => socket.close(),
+  };
+};
+
+function attachTranscription(ws: TranscriptionSocket, target: TranscriptionTarget) {
   const connectionId = randomUUID();
   log("info", "transcription.open", { connectionId, meetingId: target.meeting.id, provider: target.meeting.transcriptionProvider });
   const local = target.meeting.transcriptionProvider === "local";
@@ -472,6 +531,8 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   let closed = false;
   const abort = new AbortController();
   let lastHeartbeat = Date.now();
+  // 브라우저는 ready 뒤에만 하트비트를 보낸다. 로컬 Whisper 첫 시작(최대 60초)을 끊지 않게 준비 전에는 더 기다린다.
+  let readySent = false;
   let turnBytes = 0;
   let queuedSegments = 0;
   let openaiPending = 0;
@@ -480,12 +541,21 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   let lastAudio = Date.now();
   let waitingSince = 0;
   const watchdog = setInterval(() => {
-    if (Date.now() - lastHeartbeat >= 30_000 || (target.testAuthorized && !target.testAuthorized()) || (leaseId && (!ownsCapture(target.page.id, leaseId) ||
+    if (Date.now() - lastHeartbeat >= (readySent ? 30_000 : 90_000) || (target.testAuthorized && !target.testAuthorized()) || (leaseId && (!ownsCapture(target.page.id, leaseId) ||
       (!target.testAuthorized && (getMeeting(target.meeting.id)?.status !== "open" || !isPageEnabled(target.page))))) ||
       (waitingSince && Date.now() - waitingSince >= 60_000)) fail("lost");
+    else expireHead();
   }, 1000);
   watchdog.unref();
   const committed: string[] = [];
+  const committedAt = new Map<string, number>();
+  // 강제 컷 뒤 끝 1초를 겹쳐 보낸 턴. 커밋 순서대로 item_id 에 결합해 앞 전사와 겹친 말을 걷어 낸다.
+  let recentPcm = Buffer.alloc(0);
+  const overlapQueue: boolean[] = [];
+  const overlapped = new Set<string>();
+  let previousBody = "";
+  // 기다리다 포기한 항목. 늦게 온 결과는 이미 부분 전사로 저장했으므로 버린다(중복 방지).
+  const abandoned = new Set<string>();
   const completedEvents = new Map<string, OpenAiTranscriptionEvent>();
   const partials = new Map<string, string>();
   let partialTimer: ReturnType<typeof setTimeout> | null = null;
@@ -503,6 +573,7 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
   let rescueAudio: RescueAudioTurns | null = null;
 
   const send = (message: TranscriptionServerMessage) => {
+    if (message.t === "ready" && !readySent) { readySent = true; lastHeartbeat = Date.now(); }
     if (message.t === "ready" || message.t === "error" || message.t === "transcript") log(message.t === "error" ? "warn" : "info", `transcription.${message.t}`,
       { connectionId, meetingId: target.meeting.id, provider: target.meeting.transcriptionProvider,
         reason: message.t === "error" ? message.reason : undefined, bytes: message.t === "transcript" ? Buffer.byteLength(message.body) : undefined });
@@ -640,15 +711,20 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
     );
     const fixedLang = selectedLang ?? (target.mode === "single" ? target.page.lang : null);
     const fixedPrimary = fixedLang?.toLowerCase().split("-")[0] ?? null;
+    // 빈 턴은 싱할라 고정만 다시 듣는다. 그 결과는 깨끗한 싱할라 문자일 때만 받으므로,
+    // 다른 언어에서 무음을 재전사하면 생기는 "감사합니다" 같은 환각을 저장하지 않는다.
     const wrongFixedScript = Boolean(
       fixedLang &&
         (fixedPrimary === "si"
           ? needsSinhalaRescue(body)
-          : hasScriptEvidence(body, fixedLang) === false),
+          : Boolean(body) && hasScriptEvidence(body, fixedLang) === false),
     );
-    if ((usedFallback || conflict || contradicted || wrongFixedScript) && rescueEnabled && sessionKey) {
+    // 실측: Realtime 전사가 같은 화자에게 빈 결과를 연달아 돌려주는 구간이 있었다(배치 전사는 같은 음성을 정상 인식).
+    // 2초 이상 말한 턴이 비어 오면 배치로 한 번 더 듣는다.
+    const emptyTurn = !body && !local && !google && Boolean(turnPcm && turnPcm.byteLength >= 2 * 48_000);
+    if ((((usedFallback && body) || conflict || contradicted || wrongFixedScript) && rescueEnabled || emptyTurn) && sessionKey) {
       if (turnPcm && turnPcm.byteLength <= RESCUE_MAX_BYTES) {
-        const rescueLang = wrongFixedScript ? fixedLang ?? undefined : undefined;
+        const rescueLang = wrongFixedScript || emptyTurn ? fixedLang ?? undefined : undefined;
         // `language=si` 는 배치 API도 400으로 거부한다. 실시간 힌트와 같은
         // 지원 목록을 쓰고, 미지원 언어는 이미 강한 프롬프트에만 맡긴다.
         const apiLanguage = rescueLang && TRANSCRIBE_HINT_LANGS.includes(
@@ -667,13 +743,16 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
         if (rescued) {
           // 언어를 고정한 재전사는 그 문자가 실제로 나온 경우만, 자동 재전사는
           // 문자 증거가 세션 언어 하나를 가리킨 경우만 받아들인다.
+          // 빈 턴 재전사는 고유 문자가 없는 언어(es·en 등)도 받는다. 다른 문자가 나온 경우만 거른다.
           const rescuedLang = rescueLang
             ? (rescueLang.toLowerCase().split("-")[0] === "si"
                 ? hasCleanSinhalaScript(rescued)
-                : hasScriptEvidence(rescued, rescueLang) === true)
+                : emptyTurn
+                  ? hasScriptEvidence(rescued, rescueLang) !== false && (scriptLanguageOf(rescued, target.languages) ?? rescueLang) === rescueLang
+                  : hasScriptEvidence(rescued, rescueLang) === true)
               ? rescueLang
               : null
-            : scriptLanguageOf(rescued, target.languages);
+            : scriptLanguageOf(rescued, target.languages) ?? (emptyTurn ? lang : null);
           if (rescuedLang) {
             body = rescued;
             lang = rescuedLang;
@@ -686,22 +765,53 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
         console.warn(
           `[rescue] item=${itemId} duration=${(turnPcm.byteLength / 48_000).toFixed(1)}s status=${rescueStatus}`,
         );
+        if (emptyTurn) log("warn", "transcription.empty-rescue", { connectionId, meetingId: target.meeting.id, durationMs: Math.round(turnPcm.byteLength / 48), phase: rescueStatus, bytes: Buffer.byteLength(body) });
       } else {
         console.warn(`[rescue] item=${itemId} status=skipped-audio`);
       }
     }
 
-    if (body) {
-      send({
-        t: "transcript",
-        itemId,
-        contentIndex: event.content_index ?? 0,
-        body,
-        lang,
-        usedFallback,
-        leaseId,
-      });
+    let replaceLastWord = false;
+    if (overlapped.delete(itemId) && body && previousBody) {
+      const trimmed = dropOverlap(previousBody, body);
+      log("info", "transcription.overlap", { connectionId, meetingId: target.meeting.id, count: body.length - trimmed.text.length, okay: trimmed.replaceLastWord });
+      body = trimmed.text;
+      replaceLastWord = trimmed.replaceLastWord;
     }
+    if (body) previousBody = body;
+
+    // 빈 전사도 보낸다. 브라우저는 커밋마다 응답 하나를 기다리므로, 안 보내면 중지가 60초 동안 끝나지 않는다.
+    send({
+      t: "transcript",
+      itemId,
+      contentIndex: event.content_index ?? 0,
+      body,
+      lang,
+      usedFallback: usedFallback && Boolean(body),
+      leaseId,
+      replaceLastWord: replaceLastWord || undefined,
+    });
+  };
+
+  /**
+   * 맨 앞 항목의 결과가 오지 않으면 뒤 결과까지 모두 막혀 초안만 길게 쌓인다. 뒤 결과가 먼저 왔으면 15초,
+   * 아니어도 30초를 넘기면 그 항목은 지금까지 받은 부분 전사로 확정하고 넘어간다.
+   */
+  const expireHead = () => {
+    if (draining || nextTranscript || !committed.length) return;
+    const itemId = committed[0];
+    if (completedEvents.has(itemId)) return;
+    const waited = Date.now() - (committedAt.get(itemId) ?? Date.now());
+    const laterDone = committed.some((id, index) => index > 0 && completedEvents.has(id));
+    if (waited < (laterDone ? 15_000 : 30_000)) return;
+    const partial = partials.get(itemId) ?? "";
+    log("warn", "transcription.item-timeout", { connectionId, meetingId: target.meeting.id, durationMs: waited, bytes: Buffer.byteLength(partial) });
+    abandoned.add(itemId);
+    openaiPending = Math.max(0, openaiPending - 1);
+    partials.delete(itemId);
+    flushPartial();
+    completedEvents.set(itemId, { type: "conversation.item.input_audio_transcription.completed", item_id: itemId, content_index: 0, transcript: partial });
+    void drainCompleted();
   };
 
   const drainCompleted = async () => {
@@ -714,10 +824,14 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
         if (!event) break;
         nextTranscript += 1;
         completedEvents.delete(itemId);
+        committedAt.delete(itemId);
         await handleCompleted(itemId, event);
       }
+      // 결과가 하나라도 나왔으면 대기 시계를 다시 잰다. 계속 말하는 세션은 항상 대기 항목이 있어
+      // 처음 시각을 유지하면 60초마다 연결이 끊긴다.
+      const progressed = nextTranscript > 0;
       if (nextTranscript) { committed.splice(0, nextTranscript); nextTranscript = 0; }
-      waitingSince = committed.length || completedEvents.size ? waitingSince || Date.now() : 0;
+      waitingSince = committed.length || completedEvents.size ? (progressed ? Date.now() : waitingSince || Date.now()) : 0;
     } finally {
       draining = false;
       if (
@@ -778,7 +892,7 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
     }
     sessionKey = key;
     const params = localParams();
-    if (rescueEnabled) {
+    {
       rescuePrompt = params.prompt +
         (params.keywords.length ? ` Terminology: ${params.keywords.join(", ")}.` : "");
     }
@@ -834,7 +948,9 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
         return;
       }
       if (event.type === "input_audio_buffer.committed" && event.item_id) {
+        if (overlapQueue.shift()) overlapped.add(event.item_id);
         committed.push(event.item_id);
+        committedAt.set(event.item_id, Date.now());
         waitingSince ||= Date.now();
         rescueAudio?.bindCommit(event.item_id);
         void drainCompleted();
@@ -848,11 +964,17 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
         partials.set(event.item_id, (partials.get(event.item_id) ?? "") + (event.delta ?? ""));
         if ((partials.get(event.item_id)?.length ?? 0) > 10000) { fail("lost"); return; }
         schedulePartial();
-      } else if (event.type === "conversation.item.input_audio_transcription.completed") {
+      } else if (
+        event.type === "conversation.item.input_audio_transcription.completed" ||
+        event.type === "conversation.item.input_audio_transcription.failed"
+      ) {
+        // 실패한 턴은 빈 전사로 처리해 뒤 턴을 막지 않는다.
+        if (event.type.endsWith(".failed")) console.warn(`[transcribe] item=${event.item_id} 전사 실패`);
+        if (abandoned.delete(event.item_id)) return;
         openaiPending = Math.max(0, openaiPending - 1);
         partials.delete(event.item_id);
         flushPartial();
-        completedEvents.set(event.item_id, event);
+        completedEvents.set(event.item_id, event.type.endsWith(".failed") ? { ...event, transcript: "" } : event);
         void drainCompleted();
       }
     });
@@ -894,6 +1016,7 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
       if (!upstream || upstream.readyState !== WsSocket.OPEN) return;
       // 2차 전사(rescue)용으로 원시 PCM 을 세션 동안만 보관한다.
       rescueAudio?.append(audio);
+      recentPcm = Buffer.concat([recentPcm, audio]).subarray(-OVERLAP_PCM_BYTES);
       upstream.send(JSON.stringify({
         type: "input_audio_buffer.append",
         audio: audio.toString("base64"),
@@ -937,7 +1060,8 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
               ? singleTranscriptionProfile(target.page.lang).model
               : "gpt-transcribe",
         ).unsupported.length > 0;
-      rescueAudio = rescueEnabled ? new RescueAudioTurns() : null;
+      // 빈 결과 재전사를 위해 OpenAI 경로는 항상 턴 음성을 잠시 보관한다(최대 60초).
+      rescueAudio = !local && !google ? new RescueAudioTurns() : null;
       started = true;
       start();
     } else if (message.t === "heartbeat" && leaseId) {
@@ -957,8 +1081,14 @@ function attachTranscription(ws: WebSocket, target: TranscriptionTarget) {
         if (openaiPending >= 4) { fail("busy"); return; }
         openaiPending++;
         waitingSince ||= Date.now();
-        rescueAudio?.markCommit();
+        const overlap = message.overlap ? recentPcm : null;
+        rescueAudio?.markCommit(overlap?.byteLength ?? 0);
+        overlapQueue.push(Boolean(overlap?.byteLength));
         upstream.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+        if (overlap?.byteLength) {
+          upstream.send(JSON.stringify({ type: "input_audio_buffer.append", audio: overlap.toString("base64") }));
+          turnBytes = overlap.byteLength;
+        }
       }
     }
   });

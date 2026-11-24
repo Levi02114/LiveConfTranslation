@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { z } from "zod";
 
 import { AppearanceControls } from "@/components/appearance-controls";
+import { useConfirmation } from "@/components/confirm-dialog";
 import { generateQr, QrDialog, type QrImage } from "@/components/qr-dialog";
 import { useSetAdminLang } from "@/hooks/use-admin-lang";
 import { usePublicOrigin } from "@/hooks/use-public-origin";
@@ -55,6 +56,7 @@ export function MeetingList({
   defaultLangs,
   engines: initialEngines,
   defaultEngine,
+  defaultFallbackEngine,
   openaiModel,
   presets,
   localTranscriptionAvailable,
@@ -71,6 +73,7 @@ export function MeetingList({
   engineKeys: EngineKeyStatus[];
   googleSpeechCredentials: GoogleSpeechStatus;
   defaultEngine: EngineId;
+  defaultFallbackEngine: EngineId | null;
   /** OpenAI 번역에 쓰는 고정 언어모델. */
   openaiModel: string;
   presets: SessionPreset[];
@@ -96,7 +99,7 @@ export function MeetingList({
     combinedInputFallbackLang: null,
   }));
   const [engine, setEngine] = useState<EngineId>(defaultEngine);
-  const [fallbackEngine, setFallbackEngine] = useState<EngineId | null>(null);
+  const [fallbackEngine, setFallbackEngine] = useState<EngineId | null>(defaultFallbackEngine);
   const [transcriptionProvider, setTranscriptionProvider] = useState(defaultTranscriptionProvider);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -104,7 +107,14 @@ export function MeetingList({
   const [deleting, setDeleting] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
   const [meetingRows, setMeetingRows] = useState(meetings);
+  // RSC 갱신으로 받은 목록을 반영한다. 컴포넌트를 다시 마운트하지 않아 작성 중인 새 세션 폼이 남는다.
+  const [syncedMeetings, setSyncedMeetings] = useState(meetings);
+  if (meetings !== syncedMeetings) {
+    setSyncedMeetings(meetings);
+    setMeetingRows(meetings);
+  }
   const connections = useConnectionStats();
+  const { confirm, confirmation } = useConfirmation({ confirm: ui.speaker.confirm, cancel: ui.message.cancel });
   // 키를 등록하면 "(키 없음)" 표시가 즉시 사라져야 한다.
   const [engines, setEngines] = useState(initialEngines);
   useEffect(() => {
@@ -133,6 +143,8 @@ export function MeetingList({
 
   const removeLanguage = async (code: LanguageCode) => {
     if (actionPending) return;
+    const name = languages.find((item) => item.code === code)?.nativeName ?? code;
+    if (!await confirm(strings.languages.removeConfirm.replace("{name}", name))) return;
     setActionPending(true);
     setError(null);
     try {
@@ -184,6 +196,26 @@ export function MeetingList({
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ engine: next }),
+      });
+      if (!response.ok) setError(strings.list.settingFailed);
+    } catch {
+      setError(strings.list.settingFailed);
+    } finally {
+      setActionPending(false);
+    }
+  };
+
+  // 선택 폴백도 마지막 선택을 SQLite에 남겨 새로고침·재시작 뒤 같은 값으로 시작한다.
+  const selectFallbackEngine = async (next: EngineId | null) => {
+    if (actionPending) return;
+    setFallbackEngine(next);
+    setActionPending(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/engine-settings", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fallbackEngine: next }),
       });
       if (!response.ok) setError(strings.list.settingFailed);
     } catch {
@@ -285,7 +317,7 @@ export function MeetingList({
 
   const removeMeeting = async (meeting: Row) => {
     const prompt = strings.list.deleteConfirm.replace("{title}", meeting.title);
-    if (!window.confirm(prompt)) return;
+    if (!await confirm(prompt)) return;
 
     setDeleting(meeting.id);
     setError(null);
@@ -306,7 +338,7 @@ export function MeetingList({
 
   const closeMeeting = async (meeting: Row) => {
     const prompt = strings.list.closeConfirm.replace("{title}", meeting.title);
-    if (!window.confirm(prompt)) return;
+    if (!await confirm(prompt)) return;
 
     setClosing(meeting.id);
     setError(null);
@@ -356,6 +388,7 @@ export function MeetingList({
   return (
     <div className="admin-page mx-auto max-w-[840px] px-4 pt-20 pb-12 sm:px-8 sm:pb-16">
       <AdminBusyOverlay label={busyLabel} />
+      {confirmation}
       <AppGuide stage="admin" strings={strings} ui={ui} />
       <AppearanceControls
         leading={<button className="app-settings-launcher" aria-haspopup="dialog" onClick={() => window.dispatchEvent(new Event("lct-open-settings"))}>⚙ {strings.appSettings.title}</button>}
@@ -514,7 +547,7 @@ export function MeetingList({
             notInstalledLabel={strings.list.notInstalled}
             noneLabel={strings.list.noFallback}
             exclude={engine}
-            onChange={setFallbackEngine}
+            onChange={(next) => void selectFallbackEngine(next)}
           />
           <OpenaiModelSelect
             label={strings.list.model}

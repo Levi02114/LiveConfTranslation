@@ -7,7 +7,9 @@ import { ScrollToLatest } from "@/components/scroll-to-latest";
 import { FailedSubmissions, type FailedSubmission } from "@/components/failed-submissions";
 import { TranslationEntry } from "@/components/translation-entry";
 import { VoiceLevelMeter } from "@/components/voice-level-meter";
-import { useServerVoiceInput } from "@/hooks/use-combined-voice-input";
+import { useZoomChatMode, zoomChatFor, ZoomChatSelect } from "@/components/zoom-chat-select";
+import { SYSTEM_AUDIO_DEVICE, useServerVoiceInput } from "@/hooks/use-combined-voice-input";
+import { useHistoryResync } from "@/hooks/use-history-resync";
 import { useRealtime } from "@/hooks/use-realtime";
 import { postPageMessage, retryAfterMilliseconds, useSubmitQueue } from "@/hooks/use-submit-queue";
 import { upsertSource, upsertTranslation } from "@/lib/combined-entry";
@@ -36,6 +38,7 @@ export function CombinedInputView({
   rewriteAvailable,
   requireVoiceLanguage,
   speakerLabels,
+  zoomLinked,
 }: {
   token: string;
   pageId: string;
@@ -51,6 +54,8 @@ export function CombinedInputView({
   rewriteAvailable: boolean;
   requireVoiceLanguage: boolean;
   speakerLabels: boolean;
+  /** Zoom 회의에 묶인 세션이면 참가자별 Zoom 채팅 전송 설정을 보인다. */
+  zoomLinked: boolean;
 }) {
   const [entries, setEntries] = useState(history);
   const [peers, setPeers] = useState<Peer[]>([]);
@@ -75,9 +80,15 @@ export function CombinedInputView({
   const contentRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [zoomChatMode, setZoomChatMode] = useZoomChatMode(token, zoomLinked);
+  // 검토형 음성 초안이 섞인 입력은 사람이 보내도 마이크 입력으로 본다. 언어 선택 대기 중인 문장도 그 표시를 유지한다.
+  const voiceDraft = useRef(false);
+  const pendingVoice = useRef(false);
   const appendTranscript = useCallback((body: string) => {
+    voiceDraft.current = true;
     setText((current) => appendTranscriptDraft(current, body));
   }, []);
+  const zoomChatUnavailable = useCallback(() => setError(strings.zoomChat.unavailable), [strings.zoomChat.unavailable]);
 
   const nameOf = useCallback(
     (code: LanguageCode) => languages.find((language) => language.code === code)?.label ?? code,
@@ -102,6 +113,8 @@ export function CombinedInputView({
     autoSubmit: voiceMode,
     rewrite,
     onTranscript: appendTranscript,
+    zoomChat: zoomChatFor(zoomChatMode, true),
+    onZoomChatUnavailable: zoomChatUnavailable,
     enabled: voiceAvailable && voiceLanguageReady,
     requestPermissionOnMount: voiceAvailable && voiceLanguageReady,
   });
@@ -138,9 +151,11 @@ export function CombinedInputView({
       stopVoice(false);
     }
   }, [stopVoice, strings.speaker.duplicate, token]);
+  const resync = useHistoryResync(token, history, setEntries);
   const { state, send } = useRealtime(
     `token=${encodeURIComponent(token)}&clientId=${participantId}`,
     onMessage,
+    resync,
   );
   const speakerReady = !speakerLabels || (speakerClaimed && Boolean(speakerName.trim()));
 
@@ -186,6 +201,7 @@ export function CombinedInputView({
 
   const changeText = (value: string) => {
     setText(value);
+    if (!value.trim()) voiceDraft.current = false;
     if (draftTimer.current) return;
     draftTimer.current = setTimeout(() => {
       draftTimer.current = null;
@@ -196,6 +212,9 @@ export function CombinedInputView({
     const body = (pendingLanguageBody ?? text).trim();
     if (!body || closed || !speakerReady || (!explicitLang && sending)) return;
     const choosingLanguage = Boolean(pendingLanguageBody);
+    const fromVoice = choosingLanguage ? pendingVoice.current : voiceDraft.current;
+    if (!choosingLanguage) voiceDraft.current = false;
+    const zoomChat = zoomChatFor(zoomChatMode, fromVoice);
     textareaRef.current?.focus({ preventScroll: true });
     if (!choosingLanguage) {
       setText("");
@@ -222,12 +241,14 @@ export function CombinedInputView({
           ingestKey,
           lang: explicitLang || undefined,
           speakerName: speakerLabels ? speakerName.trim() : undefined,
+          zoomChat: zoomChat || undefined,
         });
         const payload = parseMessageResponse(await response.text());
         if (payload?.error === "session-closed") {
           setClosed(true);
           retain(response);
         } else if (response.status === 422 && payload?.error === "language-ambiguous") {
+          pendingVoice.current = fromVoice;
           setPendingLanguageBody(body);
         } else if (!response.ok) {
           setError(response.status === 429 ? strings.error.rateLimited : response.status === 413 ? strings.error.payloadTooLarge :
@@ -236,6 +257,7 @@ export function CombinedInputView({
         } else {
           setPendingLanguageBody(null);
           if (payload?.usedFallback) showFallback(payload.message?.lang ?? fallbackLang);
+          if (payload?.zoomChat === "unavailable") zoomChatUnavailable();
         }
       } catch {
         setError(strings.error.sendFailed);
@@ -244,6 +266,16 @@ export function CombinedInputView({
       });
     };
     attempt();
+  };
+  // 언어를 고르지 않고 닫으면 보내지 못한 문장을 입력칸으로 되돌린다.
+  const cancelLanguagePrompt = () => {
+    const body = pendingLanguageBody;
+    setPendingLanguageBody(null);
+    if (!body) return;
+    if (pendingVoice.current) voiceDraft.current = true;
+    const next = text.trim() ? `${body}\n${text}` : body;
+    setText(next);
+    send({ t: "draft", text: next });
   };
   const saveSpeakerName = () => {
     const name = speakerDraft.trim();
@@ -368,7 +400,7 @@ export function CombinedInputView({
                 </button>
               ))}
             </div>
-            <button type="button" onClick={() => setPendingLanguageBody(null)} className="mt-4 cursor-pointer font-mono text-[12px] text-muted hover:text-fg">
+            <button type="button" onClick={cancelLanguagePrompt} className="mt-4 cursor-pointer font-mono text-[12px] text-muted hover:text-fg">
               {strings.input.cancelLanguage}
             </button>
           </div>
@@ -459,11 +491,13 @@ export function CombinedInputView({
               </label>
             ) : null}
 
-            {voiceAvailable && voice.devices.length ? (
+            {voiceAvailable && (voice.devices.length || voice.systemAudio) ? (
               <select aria-label={strings.capture.microphone} value={voice.deviceId} onChange={(event) => voice.setDeviceId(event.target.value)} disabled={voice.state !== "idle"} className="h-9 min-w-0 flex-1 border border-line bg-bg px-2 text-fg outline-none disabled:opacity-50 sm:max-w-[320px]">
                 {voice.devices.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `${strings.capture.microphone} ${index + 1}`}</option>)}
+                {voice.systemAudio ? <option value={SYSTEM_AUDIO_DEVICE}>{strings.capture.systemAudio}</option> : null}
               </select>
             ) : null}
+            {zoomLinked ? <ZoomChatSelect strings={strings.zoomChat} value={zoomChatMode} onChange={setZoomChatMode} /> : null}
             {!voiceAvailable ? <span className="text-muted">{strings.capture.keyRequired}</span> : null}
             {voiceAvailable && !voiceLanguageReady ? <span className="text-muted">{strings.input.chooseLanguage}</span> : null}
             {voice.state !== "idle" ? (
@@ -471,7 +505,7 @@ export function CombinedInputView({
                 {voice.state === "stopping" ? strings.capture.stopping : voice.state === "active" ? strings.capture.listening : strings.capture.starting}
               </span>
             ) : null}
-            {voice.state === "active" ? <VoiceLevelMeter meter={voice.meter} strings={strings.capture} /> : null}
+            {voice.state === "active" ? <VoiceLevelMeter meter={voice.meter} strings={strings.capture} systemAudio={voice.deviceId === SYSTEM_AUDIO_DEVICE} /> : null}
             {voice.error ? <span>{voice.error}</span> : null}
           </div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 font-mono text-[11px] text-muted">

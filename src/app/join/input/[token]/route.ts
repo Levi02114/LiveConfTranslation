@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { ADMIN_LANG_COOKIE, ADMIN_LANG_MAX_AGE, toAdminLang } from "@/lib/admin-lang";
 import { renderGuidePage } from "@/lib/guide-page";
 import { getStrings } from "@/lib/i18n";
+import { combinedTokenFromInputGuide } from "@/lib/input-guide";
 import { getLanguage } from "@/lib/languages";
 import {
   getMeeting,
@@ -17,8 +18,8 @@ type Params = { params: Promise<{ token: string }> };
 
 /** 입력자가 자동 감지 또는 자기 입력 언어 페이지를 고르는 저대역폭 안내 화면. */
 export async function GET(_request: Request, { params }: Params) {
-  const { token } = await params;
-  const guidePage = getPageByToken(token);
+  const combinedToken = combinedTokenFromInputGuide((await params).token);
+  const guidePage = combinedToken ? getPageByToken(combinedToken) : null;
   if (!guidePage || guidePage.kind !== "combined" || !isPageEnabled(guidePage)) {
     return new Response("Not Found", { status: 404 });
   }

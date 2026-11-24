@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AudioTurnDetector } from "./audio-turn-detector";
+import { AudioTurnDetector, SOFT_PAUSE_MS } from "./audio-turn-detector";
 import { noiseGateRms } from "./voice-level";
 
 test("짧은 말 사이 쉼은 유지하고 1.1초 무음에서 자동 확정한다", () => {
@@ -73,4 +73,17 @@ test("RMS maximum duration changes at the next segment and silence can still fin
   detector.update(0.02, 36000);
   detector.update(0, 36100);
   assert.equal(detector.update(0, 37200), true, "silence ends before the maximum");
+});
+
+test("RMS fallback also cuts long continuous speech at a short pause after half the maximum", () => {
+  const detector = new AudioTurnDetector(() => 1100, () => 15000);
+  for (let i = 0; i < 100; i++) detector.calibrate(0.0008);
+  let now = 0;
+  const run = (ms: number, rms: number) => { let cut = false; for (const end = now + ms; now < end; now += 20) cut ||= detector.update(rms, now); return cut; };
+  assert.equal(run(3000, 0.02), false);
+  assert.equal(run(500, 0.0008), false, "an early pause keeps the turn");
+  assert.equal(run(4500, 0.02), false);
+  assert.equal(run(200, 0.0008), false, "a very short gap keeps the turn");
+  assert.equal(run(300, 0.02), false);
+  assert.equal(run(SOFT_PAUSE_MS + 20, 0.0008), true, "the first breath pause after 7.5s cuts");
 });

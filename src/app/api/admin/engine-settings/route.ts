@@ -3,7 +3,9 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import {
   getEngineSetting,
+  getFallbackEngineSetting,
   listOpenaiModels,
+  setFallbackEngineSetting,
   getTranscriptionProviderSetting,
   touchEngineSetting,
   upsertEngineSetting,
@@ -30,6 +32,7 @@ const engineSaveSchema = z.object({
 const saveSchema = z.union([
   engineSaveSchema,
   z.object({ transcriptionProvider: transcriptionProviderSchema }).strict(),
+  z.object({ fallbackEngine: z.string().refine(isEngineId).nullable() }).strict(),
 ]);
 
 export async function GET() {
@@ -42,6 +45,7 @@ export async function GET() {
       model: engine === "openai" ? resolveOpenaiModel() : getEngineSetting(engine)?.model ?? null,
     })),
     transcriptionProvider: getTranscriptionProviderSetting(),
+    fallbackEngine: getFallbackEngineSetting(),
   });
 }
 
@@ -60,6 +64,12 @@ export async function PUT(request: Request) {
   if ("transcriptionProvider" in parsed.data) {
     upsertTranscriptionProviderSetting(parsed.data.transcriptionProvider);
     return Response.json({ transcriptionProvider: parsed.data.transcriptionProvider });
+  }
+
+  if ("fallbackEngine" in parsed.data) {
+    const fallbackEngine = parsed.data.fallbackEngine;
+    setFallbackEngineSetting(fallbackEngine && isEngineId(fallbackEngine) ? fallbackEngine : null);
+    return Response.json({ fallbackEngine: getFallbackEngineSetting() });
   }
 
   const { engine, model } = parsed.data;

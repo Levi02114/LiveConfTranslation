@@ -14,7 +14,8 @@ export async function POST(request: Request) {
   }
   let event;
   try { event = zoomWebhookSchema.safeParse(JSON.parse(body)); } catch { return new Response(null, { status: 400 }); }
-  if (!event.success) return new Response(null, { status: 400 });
+  // 서명이 맞는 다른 이벤트(meeting.rtms_interrupted 등)는 받기만 한다. 4xx는 Zoom 구독 상태를 나쁘게 만든다.
+  if (!event.success) { log("info", "zoom.webhook-ignored", { reason: "unsupportedEvent" }); return new Response(null, { status: 204 }); }
   if (event.data.event === "endpoint.url_validation") {
     const plainToken = event.data.payload.plainToken;
     return Response.json({ plainToken, encryptedToken: createHmac("sha256", credentials.webhookSecret).update(plainToken).digest("hex") });

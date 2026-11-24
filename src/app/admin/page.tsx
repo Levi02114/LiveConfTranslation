@@ -8,6 +8,7 @@ import { getAdminStrings, getStrings } from "@/lib/i18n";
 import { getLanguage, isBuiltinLanguage, type LanguageCode } from "@/lib/languages";
 import {
   getMeetingLangs,
+  getFallbackEngineSetting,
   getLastEngineSetting,
   getTranscriptionProviderSetting,
   isLanguageUsed,
@@ -55,6 +56,7 @@ export default async function AdminPage() {
 
   const languages = listLanguages().map((row) => row.code);
   const selectedEngine = getLastEngineSetting()?.engine ?? "google";
+  const savedFallback = getFallbackEngineSetting();
   const localTranscriptionAvailable = localTranscriptionConfigured();
   const savedTranscriptionProvider = getTranscriptionProviderSetting();
   const defaultTranscriptionProvider = savedTranscriptionProvider === "local" && !localTranscriptionAvailable
@@ -69,9 +71,6 @@ export default async function AdminPage() {
 
   return (
     <MeetingList
-      key={meetings
-        .map((meeting) => `${meeting.id}:${meeting.status}:${meeting.closedAt ?? ""}`)
-        .join("|")}
       lang={lang}
       strings={getAdminStrings(lang)}
       ui={getStrings(lang)}
@@ -88,6 +87,7 @@ export default async function AdminPage() {
       localTranscriptionAvailable={localTranscriptionAvailable}
       defaultTranscriptionProvider={defaultTranscriptionProvider}
       defaultEngine={selectedEngine}
+      defaultFallbackEngine={savedFallback === selectedEngine ? null : savedFallback}
       openaiModel={resolveOpenaiModel()}
       presets={listSessionPresets()}
     />

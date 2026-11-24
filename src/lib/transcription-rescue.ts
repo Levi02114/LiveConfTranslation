@@ -11,6 +11,7 @@ import { openaiBaseUrl } from "@/lib/env";
 import { z } from "zod";
 
 import { parseJsonResponse } from "@/lib/json-response";
+import { OVERLAP_PCM_BYTES } from "@/lib/transcript-overlap";
 
 const transcriptionResponseSchema = z.object({ text: z.string() });
 
@@ -42,9 +43,10 @@ export class RescueAudioTurns {
     }
   }
 
-  markCommit(): void {
+  /** `overlapBytes` 만큼 끝 음성을 다음 턴이 다시 쓴다(강제 컷 겹침). */
+  markCommit(overlapBytes = 0): void {
     this.pending.push({ start: this.lastCommitOffset, end: this.totalOffset });
-    this.lastCommitOffset = this.totalOffset;
+    this.lastCommitOffset = Math.max(0, this.totalOffset - overlapBytes);
   }
 
   discardCurrent(): void { this.lastCommitOffset = this.totalOffset; }
@@ -65,7 +67,8 @@ export class RescueAudioTurns {
       relativeStart >= 0 && relativeEnd > relativeStart && relativeEnd <= this.retainedBytes
         ? Buffer.concat(this.chunks, this.retainedBytes).subarray(relativeStart, relativeEnd)
         : null;
-    this.pruneThrough(segment.end);
+    // 다음 턴이 겹쳐 쓰는 끝 1초는 남긴다.
+    this.pruneThrough(segment.end - OVERLAP_PCM_BYTES);
     return pcm;
   }
 

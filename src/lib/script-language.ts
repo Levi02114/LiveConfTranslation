@@ -29,6 +29,8 @@ export function hasScriptEvidence(text: string, lang: LanguageCode): boolean | n
   return new RegExp(range.re.source).test(text);
 }
 
+const LATIN_RE = /[A-Za-z\u00C0-\u024F\u1E00-\u1EFF]/g;
+
 const NON_SINHALA_SCRIPT_RE =
   /[\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F\u0E00-\u0E7F\u3040-\u30FF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\u0780-\u07BF]/;
 
@@ -63,6 +65,9 @@ export function scriptLanguageOf(
       winnerCount = count;
     }
   }
+  // 라틴 문자가 더 많으면 섞인 고유명사 한두 글자로 언어를 정하지 않는다
+  // ("Từ '감사' nghĩa là…", "Mr. 김 at Samsung"). 모델 감지에 맡긴다.
+  if (winner && (text.match(LATIN_RE)?.length ?? 0) >= winnerCount) return null;
   if (!winner) {
     if (/[\u3400-\u4DBF\u4E00-\u9FFF]/.test(text)) {
       return candidates.find((code) => code.toLowerCase().split("-")[0] === "zh") ?? null;

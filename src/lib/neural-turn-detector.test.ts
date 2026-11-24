@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { gateVadFrame, MAX_TURN_MS, redemptionMsFor, SpeechTurnCommitter } from "@/lib/neural-turn-detector";
 import { noiseGateRms } from "@/lib/voice-level";
+import { SOFT_PAUSE_MS } from "@/lib/audio-turn-detector";
 
 test("neural noise gate zeros classifier frames without modifying original audio or loud speech", () => {
   const quiet = new Float32Array(512).fill(0.003);
@@ -103,4 +104,24 @@ test("neural maximum duration changes only at the next segment, including contin
   detector.destroy();
   context.mock.timers.tick(30000);
   assert.equal(commits, 3, "stop cancels the configurable timer");
+});
+
+test("long continuous speech is cut at a short breath pause after half the maximum, not mid-word", (context) => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  let now = 0;
+  let commits = 0;
+  const detector = new SpeechTurnCommitter(() => { commits++; }, () => 15000, () => now);
+  detector.handleSpeechStart();
+  const frames = (ms: number, probability: number) => { for (let t = 0; t < ms; t += 32) { now += 32; detector.handleSpeechFrame(probability); } };
+  frames(3000, 0.9); frames(400, 0.1);
+  assert.equal(commits, 0, "a pause before half the maximum does not cut");
+  frames(4500, 0.9); frames(200, 0.2); frames(300, 0.9);
+  assert.equal(commits, 0, "a pause shorter than the soft pause does not cut");
+  frames(SOFT_PAUSE_MS + 32, 0.1);
+  assert.equal(commits, 1, "the first breath pause after half the maximum cuts");
+  frames(600, 0.1);
+  assert.equal(commits, 1, "silence alone does not commit an empty turn");
+  frames(2000, 0.9);
+  context.mock.timers.tick(15000);
+  assert.equal(commits, 2, "speech without any pause still ends at the maximum");
 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { releaseVoiceAudio, type VoiceAudioResources } from "./voice-cleanup";
+import { RELEASE_STAGE_TIMEOUT_MS, releaseVoiceAudio, type VoiceAudioResources } from "./voice-cleanup";
 import { clientDiagnosticSchema } from "./client-diagnostic-schema";
 import { safeFields } from "../../electron/diagnostics.cjs";
 
@@ -27,6 +27,19 @@ test("audio stops synchronously; model initialization/destruction precede contex
   await cleanup;
   assert.deepEqual(order, ["port", "track", "node", "vad", "context"]);
   assert.equal(done, true);
+});
+
+test("a model release that never settles still closes the context after the stage limit", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const events: string[] = [];
+  const cleanup = releaseVoiceAudio({
+    stream: null, processor: null, nodes: [], vad: new Promise(() => {}),
+    context: { close: async () => { events.push("context"); } },
+  }, (phase) => { events.push(phase); });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  t.mock.timers.tick(RELEASE_STAGE_TIMEOUT_MS);
+  await cleanup;
+  assert.deepEqual(events.slice(-3), ["vad-destroy-timeout", "context", "context-close-done"]);
 });
 
 test("individual cleanup failures cannot skip the remaining tracks, nodes or context", async () => {
