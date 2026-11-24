@@ -10,6 +10,9 @@ import { getNamedTunnelSettings, upsertUiStrings } from "./repo";
 import { getAdminStrings, sourceEntries, resolveEntries } from "./i18n-resolver";
 import { launchNamedTunnel, publicTunnelAddress, startNamedTunnelControl, tunnelOrigin, tunnelProbeAnswer } from "./named-tunnel";
 
+// spawn 하지 않은 ChildProcess 의 kill() 은 초기화되지 않은 pid 로 신호를 보낸다. pid 가 0 이면 테스트 프로세스 그룹 전체가 끝나므로 막는다.
+const fakeChild = () => Object.assign(new ChildProcess(), { kill: () => true });
+
 test("cloudflared receives a private token file, never a token argument or captured logs", (t) => {
   let file = "";
   const secret = "FAKE_test_only_not_a_real_cloudflare_token";
@@ -21,7 +24,7 @@ test("cloudflared receives a private token file, never a token argument or captu
     assert.equal(options.stdio, "ignore");
     assert.equal(readFileSync(file, "utf8"), secret);
     if (process.platform !== "win32") assert.equal(statSync(file).mode & 0o777, 0o600);
-    return new ChildProcess();
+    return fakeChild();
   });
   const connector = launchNamedTunnel(secret);
   assert.equal(connector.ready(), false, "process creation alone does not mean the connector authenticated");
@@ -64,7 +67,7 @@ test("named and external connection checks preserve the current URL, require app
   const token = "FAKE_test_only_tunnel_token_never_a_real_credential_123456";
   const launch = (value: string) => {
     assert.equal(value, token);
-    const connector = { process: new ChildProcess(), ready: () => true, stopped: false, stop() { this.stopped = true; this.process.emit("exit", 0, null); } };
+    const connector = { process: fakeChild(), ready: () => true, stopped: false, stop() { this.stopped = true; this.process.emit("exit", 0, null); } };
     processes.push(connector); return connector;
   };
   const verify = async () => { checks++; if (fail) throw new Error("secret-provider-error-must-not-be-returned"); };
